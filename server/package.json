@@ -10,6 +10,7 @@
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
     "db:seed-demo": "tsx prisma/demo-seed.ts",
+    "db:hydrate": "npm run db:seed && npm run db:seed-demo",
     "db:reset": "prisma migrate reset"
   },
   "dependencies": {
