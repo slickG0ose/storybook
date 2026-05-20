@@ -18,7 +18,7 @@ import adminRouter from './routes/admin';
 import testRouter from './routes/test';
 import { snapshotDb } from './db/snapshot';
 
-import type { Request, Response } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 
 const app = express();
 const PORT: number = parseInt(process.env.PORT || '3001', 10);
@@ -44,6 +44,24 @@ if (process.env.NODE_ENV !== 'production') {
 
 app.get('/api/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok' });
+});
+
+// Final error handler. Express recognises this as an error middleware
+// because of the four-arg signature — do NOT drop `_next` even though
+// it's unused on the response path. Without this, an async-handler
+// rejection that escapes a route's try/catch hangs the request
+// indefinitely (Express 4 doesn't auto-await), and the client sees the
+// `Unexpected end of JSON input` empty-body symptom.
+//
+// We deliberately do NOT leak err.message or err.stack to the client —
+// callers get a generic envelope, the full detail is in the server log.
+app.use((err: unknown, _req: Request, res: Response, next: NextFunction): void => {
+  console.error('[express:error]', err);
+  if (res.headersSent) {
+    next(err);
+    return;
+  }
+  res.status(500).json({ error: 'Internal server error' });
 });
 
 app.listen(PORT, () => {

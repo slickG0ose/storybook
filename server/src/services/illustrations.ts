@@ -19,32 +19,53 @@ interface OpenAIImageItem {
   b64_json?: string;
 }
 
-async function callOpenAIImage(apiKey: string, prompt: string): Promise<Buffer | null> {
-  const res = await fetch('https://api.openai.com/v1/images/generations', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: IMAGE_MODEL,
-      prompt,
-      n: 1,
-      size: '1024x1024',
-    }),
-  });
+// Cap a single image-generation request at 120s. Without this, a hung
+// response from OpenAI (or an intermediary like a corporate proxy that
+// drops the connection silently) leaves the route handler awaiting forever
+// and the client sees nothing actionable. 120s is a generous upper bound —
+// gpt-image-1 typically responds in 10-30s.
+const OPENAI_IMAGE_TIMEOUT_MS = 120_000;
+
+async function callOpenAIImage(apiKey: string, prompt: string): Promise<Buffer> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), OPENAI_IMAGE_TIMEOUT_MS);
+
+  let res: Response;
+  try {
+    res = await fetch('https://api.openai.com/v1/images/generations', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: IMAGE_MODEL,
+        prompt,
+        n: 1,
+        size: '1024x1024',
+      }),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if ((err as { name?: string }).name === 'AbortError') {
+      throw new Error(`OpenAI image request timed out after ${OPENAI_IMAGE_TIMEOUT_MS / 1000}s`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!res.ok) {
     const err = await res.text();
     console.error(`OpenAI image error (${IMAGE_MODEL}):`, err);
-    return null;
+    const snippet = err.slice(0, 500);
+    throw new Error(`OpenAI image API returned ${res.status} ${res.statusText || ''}: ${snippet}`);
   }
 
   const data = await res.json() as { data: OpenAIImageItem[] };
   const item = data.data[0];
   if (!item) {
-    console.error('OpenAI image response had no data entries');
-    return null;
+    throw new Error('OpenAI image response had no data entries');
   }
 
   if (item.b64_json) {
@@ -53,14 +74,12 @@ async function callOpenAIImage(apiKey: string, prompt: string): Promise<Buffer |
   if (item.url) {
     const imageRes = await fetch(item.url);
     if (!imageRes.ok) {
-      console.error('Failed to download generated image:', imageRes.status);
-      return null;
+      throw new Error(`Failed to download generated image: ${imageRes.status} ${imageRes.statusText || ''}`);
     }
     return Buffer.from(await imageRes.arrayBuffer());
   }
 
-  console.error('OpenAI image response had neither b64_json nor url');
-  return null;
+  throw new Error('OpenAI image response had neither b64_json nor url');
 }
 
 export async function generateIllustration(
@@ -82,7 +101,6 @@ export async function generateIllustration(
   }
 
   const buffer = await callOpenAIImage(apiKey, prompt);
-  if (!buffer) return null;
 
   const dir = join(ILLUSTRATIONS_DIR, bookId);
   await mkdir(dir, { recursive: true });
@@ -198,7 +216,6 @@ export async function generateCover(
   const prompt = `${castPrefix}Children's book cover illustration for a story titled "${title}". Scene: ${description}. ${style}. Composition suitable for a book cover (centered subject, room at top for title). No text or words in the image.`;
 
   const buffer = await callOpenAIImage(apiKey, prompt);
-  if (!buffer) return null;
 
   const dir = join(ILLUSTRATIONS_DIR, bookId);
   await mkdir(dir, { recursive: true });
