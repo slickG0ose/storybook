@@ -80,6 +80,9 @@ export default function BookSpread({
   const [illustrationFeedback, setIllustrationFeedback] = useState('')
 
   const spread = spreads[spreadIndex]
+  // canNext/canPrev keep spreadIndex in bounds; this guard exists so the
+  // discriminated-union narrowing on `spread.kind` works in the JSX below.
+  if (!spread) return null
   const canPrev = spreadIndex > 0
   const canNext = spreadIndex < spreads.length - 1
 
