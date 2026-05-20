@@ -7,6 +7,7 @@ purpose|AI-powered children's book storefront — browse, create, and purchase p
 stack|React 19 / Vite 8 / Tailwind 4 / Express 4 / Prisma 5 (SQLite) / Anthropic SDK / TypeScript 5.8
 type|Full-stack web app (SPA + REST API)
 entry|server/src/index.ts, client/src/main.tsx
+dev|npm run dev (concurrently runs client on :5173 and server on :3001)
 build|cd client && npm run build
 test|cd server && npm test; cd client && npm test; cd e2e && npm test
 
@@ -44,6 +45,8 @@ ai-integration|server/src/routes/generate.ts, server/src/services/illustrations.
 testing|server/src/__tests__/, e2e/tests/
 
 ## Docs
+CLAUDE.md|Behavioral rules — branching, delegation, guardrails, done criteria (auto-loaded by Claude Code)
+.claude/agents/{storefront,booksmith,qa}.md|Zone-specific agent definitions and conventions
 .code-captain/docs/toc.md|Compressed codebase index with full structure and API pointers
 .code-captain/docs/tech-stack.md|Full tech stack, dependencies, tooling
 .code-captain/docs/code-style.md|Naming conventions, patterns, linting rules
