@@ -23,7 +23,7 @@ Sequential dependency chain — each item unblocks the next.
 ## Tier 3 — Operations & Hygiene
 
 - [x] **OPS.1** — Replace demo-seed examples. Shipped 2026-05-19 with a fixture-driven seed (`server/prisma/demo-seed-fixtures/*.json` + committed PNGs at `server/public/illustrations/{book-id}/`). One demo book ("A Spot for Sunny") rather than the original 3-5; richer test data stays in your local `dev.db` per the preservation pattern in CLAUDE.md. See [Completed work](#completed-work) for the rationale and non-obvious conventions.
-- [ ] **OPS.2** — Admin role on User (referenced in commit f71d253). Add `role: 'user' | 'admin'`, soft-delete on User and Book, and an admin-only API surface to inspect/clean orphaned state.
+- [x] **OPS.2** — Admin role on User, soft-delete on User and Book, admin-only API surface to inspect/clean orphaned state. Initial implementation shipped 2026-05-15 in commit `f5751de` (off-backlog); finish-and-verify pass (cart soft-delete filter + orphan cleanup endpoint) shipped 2026-05-19 in PR #27. See [Completed work](#completed-work) for non-obvious conventions.
 - [ ] **OPS.4** — Add `server/.env.example` documenting expected vars (`DATABASE_URL`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `PORT`). Discovered during the OPS.1 spike when a missing `ANTHROPIC_API_KEY` returned a 500 with no signposting back to "you need to set this var." Fresh checkouts hit the failure blind. ~5-minute fix.
 - [ ] **OPS.5** — Gitignore `.claude/settings.local.json`. It's local-only Claude Code settings but currently shows as untracked in every `git status`, polluting routine output. One-line addition to root `.gitignore`.
 - [x] **OPS.3** — Implement client/server type-sharing via Zod, with OpenAPI as a forward-compatible upgrade path. Shipped 2026-05-18 across PRs #22 (foundation + `orders.ts`), #23 (`cart.ts`), and #24 (`books.ts`/`admin.ts`/`test.ts`). See [Completed work](#completed-work) for non-obvious conventions.
@@ -63,9 +63,30 @@ Aspirational, not committed. Captured so structural decisions today stay forward
 
 Update this section as work proceeds. Subagents read from here.
 
-_(Currently empty — last entry was the OPS.1 demo-seed refresh, now collapsed into Completed work below.)_
+_(Currently empty — last entry was OPS.2 finish-and-verify, now collapsed into Completed work below.)_
 
 ## Completed work
+
+### OPS.2 — Admin role + soft-delete + orphan cleanup (shipped 2026-05-19)
+
+Two-phase delivery. Schema migration (`User.role`, `User.deleted_at`, `Book.deleted_at`), `requireAdmin` helper, `adminGate` middleware, the bulk of `/api/admin/*` routes (list users/books incl. soft-deleted, restore endpoints, featured toggle, list orphan illustration dirs), shared Zod schemas, client `<Admin />` page, and tests all landed off-backlog in commit `f5751de` (2026-05-15). PR #27 (2026-05-19) closed two gaps the original commit left: cart hydration didn't filter soft-deleted books, and admin could see orphan dirs but couldn't clean them.
+
+**Non-obvious conventions worth preserving** (future contributors — read these before extending the admin surface or touching soft-delete read paths):
+
+- **Cart silent-hide for soft-deleted books.** `GET /api/cart/:sessionId` uses a Prisma relation filter (`where: { session_id, book: { deleted_at: null } }`) — items pointing at tombstoned books just disappear on next fetch. No banner, no 4xx. POST to add a soft-deleted book returns 404 (same as not-found). Don't replace this with a "1 item no longer available" banner without an explicit product call; the UX choice was deliberate (demo-scope, less surface to test).
+- **Orphan-of-orphan deletion is allowed.** `DELETE /api/admin/orphan-illustrations/:id` 409s only when the dir matches a LIVE book row (`deleted_at IS NULL`). Dirs whose books are soft-deleted remain deletable — they're orphans of orphans, and the listing endpoint already includes them. If you tighten the 409 to "any matching book row," you'll break the listing's semantics.
+- **Receipts intentionally include soft-deleted books.** `orders.ts` reads do NOT filter `deleted_at`. This is correct: `OrderItem` snapshots `title` and `price` at checkout, so receipts must render regardless of later book state. The inverse of the cart pattern — don't unify them.
+- **Email tombstone.** `User.email` stays full `@unique`. Soft-deleted users' emails are reserved and can't be re-registered until admin restores or hard-deletes. Conscious choice (the admin owns the tombstone). If email reuse becomes a need, switch to a partial unique index `(email) WHERE deleted_at IS NULL` via raw SQL — Prisma doesn't generate partial indexes natively.
+- **Admin bootstrap is sqlite-only by design.** Only path to a first admin is `server/prisma/demo-seed.ts` upserting `demo@storybook.local` with `role: 'admin'`. No promote API exists. Adding one (`PUT /api/admin/users/:id/role` or similar) was explicitly rejected — keeps the role-escalation attack surface at zero. Promote a second admin via `sqlite3` or `prisma studio` when actually needed.
+- **`adminGate` is role-aware, not env-token-gated.** `server/src/routes/admin.ts:70-82` — calls `getAuthUser` (401 if missing) then `requireAdmin` (403 if role !== 'admin') in one middleware. Emits the correct status code itself instead of chaining `requireAuth` + a separate role gate. Lives parallel to `requireAuth` (used in `books.ts`); both coexist. Auth middleware order rule from OPS.3 still applies — `adminGate` runs BEFORE `validate()` so 401/403 wins over 400.
+- **Path-traversal defense is layered.** The orphan-delete endpoint guards against `..`, `/`, `\`, `\0` in the path component AND uses `path.resolve` + prefix check on the resolved path. Either guard alone would catch most attacks; both together mean a future regression in one doesn't unlock it.
+- **`resetDatabase()` doesn't need OPS.2-specific logic.** Prisma column defaults (`role = 'user'`, `deleted_at = null`) supply the new columns on every fresh seed. The test reset works as-is. See header comment at `server/src/__tests__/setup.ts:26-32`.
+- **Schema migration was purely additive.** `20260517232231_add_admin_role_and_soft_delete` adds columns + defaults — no `prisma migrate reset` required. Existing rows backfill to `role='user'`, `deleted_at=null`. No index on `deleted_at` — at demo scale the SQLite query plan won't change; revisit if data volume grows.
+
+**Deferred for follow-up backlog items:**
+- `DELETE /api/admin/users/:id` (admin-driven user soft-delete) — no user-facing self-delete exists either; defer until there's a real workflow that needs it.
+- `GET /api/admin/orders` — useful operator surface, not blocking OPS.2.
+- Indexes on `deleted_at` columns — defer until query plans show they matter.
 
 ### OPS.1 — Demo-seed refresh (shipped 2026-05-19)
 
