@@ -93,7 +93,7 @@ Update this section as work proceeds. Subagents read from here.
 - Surfacing partial-failure when "Illustrate All" succeeds for some pages and fails for others — current loop will throw on the first failure and lose the partial work. Note for follow-up backlog item if user encounters it.
 
 **Plan**
-- [ ] (storefront) Harden `handleIllustrate` JSON parsing — return text-then-try-parse pattern; audit other `await res.json()` calls in `BookDetail.tsx` for the same issue
+- [x] (storefront) Harden `handleIllustrate` JSON parsing — added `safeReadJson` helper + `errorMessageFromResponse` builder in `BookDetail.tsx`; applied to `handleIllustrate` (both paths), `handleRevise`, and `handleRestore` (long-running mutation flows). Skipped `handleEditPrompt`/`handlePublish`/`revertIllustration` — they're quick mutations whose failure mode is silent (no UI leak class to fix). 4 new tests added covering empty 500, non-JSON 502, valid JSON error, and empty 2xx success paths.
 - [x] (booksmith) Make `callOpenAIImage` throw on `!res.ok` so the route's catch block surfaces the OpenAI error
 - [x] (booksmith) Add `AbortController` timeout (~120s) to the OpenAI fetch
 - [x] (booksmith) Add global error handler in `server/src/index.ts`

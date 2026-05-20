@@ -414,6 +414,125 @@ describe('BookDetail — Illustration history active indicator', () => {
   })
 })
 
+describe('BookDetail — Illustrate empty-response handling', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  // The illustration endpoint can return non-2xx with an empty body — when it
+  // does, a bare `await res.json()` throws "Unexpected end of JSON input" and
+  // the raw browser error string leaks into the UI. We should surface a
+  // status-code-based message instead.
+  function setupIllustrateMock(illustrateResponse: () => Response) {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      const method = init?.method ?? 'GET'
+
+      if (url === '/api/books/book-1' && method === 'GET') {
+        return Promise.resolve(
+          new Response(JSON.stringify(baseBook), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        )
+      }
+      if (url === '/api/books/book-1/versions' && method === 'GET') {
+        return Promise.resolve(
+          new Response(JSON.stringify(versionsResponse), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        )
+      }
+      if (url === '/api/books/book-1/illustrate' && method === 'POST') {
+        return Promise.resolve(illustrateResponse())
+      }
+
+      return Promise.resolve(
+        new Response(JSON.stringify({ error: `unmocked ${method} ${url}` }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+    })
+  }
+
+  it('shows a status-code message instead of "Unexpected end of JSON input" when the server returns an empty 500', async () => {
+    setupIllustrateMock(() => new Response('', { status: 500, statusText: 'Internal Server Error' }))
+    // baseBook has 2 unillustrated pages, so "Illustrate All" triggers a
+    // confirm. Auto-accept it for these tests.
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    renderBookDetail()
+
+    // Wait for the book to load and the "Illustrate All" button to appear.
+    const illustrateBtn = await screen.findByRole('button', { name: /illustrate all/i })
+    fireEvent.click(illustrateBtn)
+
+    // The new error message should mention the status code, not the browser's
+    // raw "Unexpected end of JSON input" error.
+    await waitFor(() => {
+      expect(screen.getByText(/Server returned 500/i)).toBeInTheDocument()
+    })
+    expect(screen.getByText(/empty response/i)).toBeInTheDocument()
+    expect(screen.queryByText(/Unexpected end of JSON input/i)).not.toBeInTheDocument()
+  })
+
+  it('falls back to a non-JSON body message when the server returns garbage', async () => {
+    setupIllustrateMock(() => new Response('<html>oops</html>', { status: 502, statusText: 'Bad Gateway' }))
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    renderBookDetail()
+
+    const illustrateBtn = await screen.findByRole('button', { name: /illustrate all/i })
+    fireEvent.click(illustrateBtn)
+
+    await waitFor(() => {
+      expect(screen.getByText(/Server returned 502 Bad Gateway with a non-JSON body/i)).toBeInTheDocument()
+    })
+  })
+
+  it('still surfaces the server error field when the body is valid JSON', async () => {
+    setupIllustrateMock(() =>
+      new Response(JSON.stringify({ error: 'OpenAI quota exceeded' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    )
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    renderBookDetail()
+
+    const illustrateBtn = await screen.findByRole('button', { name: /illustrate all/i })
+    fireEvent.click(illustrateBtn)
+
+    await waitFor(() => {
+      expect(screen.getByText(/OpenAI quota exceeded/i)).toBeInTheDocument()
+    })
+  })
+
+  it('treats an empty 2xx response as an error rather than wiping book state', async () => {
+    setupIllustrateMock(() => new Response('', { status: 200 }))
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    renderBookDetail()
+
+    const illustrateBtn = await screen.findByRole('button', { name: /illustrate all/i })
+    fireEvent.click(illustrateBtn)
+
+    // Should surface an error message and the book should still render
+    // (title from baseBook remains visible).
+    await waitFor(() => {
+      expect(screen.getByText(/Server returned 200/i)).toBeInTheDocument()
+    })
+    expect(screen.getByText('Test Adventure')).toBeInTheDocument()
+  })
+})
+
 describe('BookDetail — Post-revise comparison modal', () => {
   beforeEach(() => {
     vi.restoreAllMocks()

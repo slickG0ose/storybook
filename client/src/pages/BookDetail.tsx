@@ -21,6 +21,42 @@ function formatRelativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString()
 }
 
+// Defensive JSON parser. The illustration generator (and other long-running
+// mutations) occasionally returns a non-2xx response with an empty body — when
+// that happens, `await res.json()` throws the browser's raw "Unexpected end of
+// JSON input" error string into the UI. Read text first, then attempt parse,
+// so callers get either a parsed object, `null` (empty body), or a friendly
+// error fallback they can surface to the user.
+type ParsedJsonResult<T> = T | { error: string } | null
+async function safeReadJson<T>(res: Response): Promise<ParsedJsonResult<T>> {
+  const text = await res.text()
+  if (!text) return null
+  try {
+    return JSON.parse(text) as T
+  } catch {
+    const status = `${res.status}${res.statusText ? ` ${res.statusText}` : ''}`
+    return { error: `Server returned ${status} with a non-JSON body` }
+  }
+}
+
+// Build a user-facing error message for a non-2xx fetch response. Prefers the
+// server's `error` field, falls back to a status-code message when the body
+// is empty or non-JSON.
+function errorMessageFromResponse(
+  parsed: ParsedJsonResult<unknown>,
+  res: Response,
+  fallback: string
+): string {
+  if (parsed && typeof parsed === 'object' && 'error' in parsed && typeof (parsed as { error: unknown }).error === 'string') {
+    return (parsed as { error: string }).error
+  }
+  if (parsed === null) {
+    const status = `${res.status}${res.statusText ? ` ${res.statusText}` : ''}`
+    return `Server returned ${status} with an empty response. Try again, or check the server logs.`
+  }
+  return fallback
+}
+
 export default function BookDetail() {
   const { id } = useParams<{ id: string }>()
   const { addToCart } = useCart()
@@ -155,11 +191,14 @@ export default function BookDetail() {
         },
         body: JSON.stringify(body),
       })
+      const parsed = await safeReadJson<BookWithPages>(res)
       if (!res.ok) {
-        const data = await res.json() as { error?: string }
-        throw new Error(data.error || 'Revision failed')
+        throw new Error(errorMessageFromResponse(parsed, res, 'Revision failed'))
       }
-      const updated = await res.json() as BookWithPages
+      if (parsed === null || (typeof parsed === 'object' && 'error' in parsed)) {
+        throw new Error(errorMessageFromResponse(parsed, res, 'Revision failed'))
+      }
+      const updated = parsed
       setBook(updated)
       setFeedback('')
       setCurrentPage(0)
@@ -188,11 +227,14 @@ export default function BookDetail() {
         method: 'PUT',
         headers: { 'Authorization': `Bearer ${user.token}` },
       })
+      const parsed = await safeReadJson<BookWithPages>(res)
       if (!res.ok) {
-        const data = await res.json().catch(() => ({})) as { error?: string }
-        throw new Error(data.error || 'Failed to restore version')
+        throw new Error(errorMessageFromResponse(parsed, res, 'Failed to restore version'))
       }
-      const updated = await res.json() as BookWithPages
+      if (parsed === null || (typeof parsed === 'object' && 'error' in parsed)) {
+        throw new Error(errorMessageFromResponse(parsed, res, 'Failed to restore version'))
+      }
+      const updated = parsed
       setBook(updated)
       setCurrentPage(0)
       await fetchVersions(book.id, user.token)
@@ -249,12 +291,14 @@ export default function BookDetail() {
         },
         body: JSON.stringify(body),
       })
+      const parsed = await safeReadJson<BookWithPages>(res)
       if (!res.ok) {
-        const data = await res.json() as { error?: string }
-        throw new Error(data.error || 'Illustration failed')
+        throw new Error(errorMessageFromResponse(parsed, res, 'Illustration failed'))
       }
-      const updated = await res.json() as BookWithPages
-      setBook(updated)
+      if (parsed === null || (typeof parsed === 'object' && 'error' in parsed)) {
+        throw new Error(errorMessageFromResponse(parsed, res, 'Illustration failed'))
+      }
+      setBook(parsed)
     } catch (err) {
       setIllustrateError(err instanceof Error ? err.message : 'Illustration failed')
     } finally {
