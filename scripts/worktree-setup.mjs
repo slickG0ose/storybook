@@ -6,8 +6,12 @@
 //   npm run setup:worktree
 //
 // Currently copies (from the main checkout):
+//   .env                — root-level secrets (OPENAI_API_KEY, ANTHROPIC_API_KEY)
 //   server/.env         — DATABASE_URL etc.
 //   server/prisma/dev.db — local Prisma SQLite database
+//
+// Both .env files are needed because server/src/loadEnv.ts reads them both:
+// the root file holds API keys, the server file holds DATABASE_URL.
 //
 // No-op when invoked from the main checkout.
 
@@ -28,6 +32,7 @@ if (worktreeRoot === mainRepoRoot) {
 }
 
 const files = [
+  { rel: '.env' },
   { rel: 'server/.env' },
   { rel: 'server/prisma/dev.db' },
 ];
