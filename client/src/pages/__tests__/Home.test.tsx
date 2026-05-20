@@ -160,7 +160,7 @@ describe('Home', () => {
     expect(screen.queryByText('Kindness Kingdom')).not.toBeInTheDocument()
 
     // Click theme "All" to reset (first All button is the theme one)
-    const themeAllButton = screen.getAllByRole('button', { name: 'All' })[0]
+    const themeAllButton = screen.getAllByRole('button', { name: 'All' })[0]!
     fireEvent.click(themeAllButton)
     expect(screen.getAllByText('The Brave Little Fox').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('Kindness Kingdom')).toBeInTheDocument()

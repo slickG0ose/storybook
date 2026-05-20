@@ -4,6 +4,7 @@ dist/
 *.db
 data.json
 .DS_Store
+.claude/settings.local.json
 e2e/playwright-report/
 e2e/test-results/
 server/.backups/

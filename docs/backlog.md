@@ -24,8 +24,8 @@ Sequential dependency chain — each item unblocks the next.
 
 - [x] **OPS.1** — Replace demo-seed examples. Shipped 2026-05-19 with a fixture-driven seed (`server/prisma/demo-seed-fixtures/*.json` + committed PNGs at `server/public/illustrations/{book-id}/`). One demo book ("A Spot for Sunny") rather than the original 3-5; richer test data stays in your local `dev.db` per the preservation pattern in CLAUDE.md. See [Completed work](#completed-work) for the rationale and non-obvious conventions.
 - [x] **OPS.2** — Admin role on User, soft-delete on User and Book, admin-only API surface to inspect/clean orphaned state. Initial implementation shipped 2026-05-15 in commit `f5751de` (off-backlog); finish-and-verify pass (cart soft-delete filter + orphan cleanup endpoint) shipped 2026-05-19 in PR #27. See [Completed work](#completed-work) for non-obvious conventions.
-- [ ] **OPS.4** — Add `server/.env.example` documenting expected vars (`DATABASE_URL`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `PORT`). Discovered during the OPS.1 spike when a missing `ANTHROPIC_API_KEY` returned a 500 with no signposting back to "you need to set this var." Fresh checkouts hit the failure blind. ~5-minute fix.
-- [ ] **OPS.5** — Gitignore `.claude/settings.local.json`. It's local-only Claude Code settings but currently shows as untracked in every `git status`, polluting routine output. One-line addition to root `.gitignore`.
+- [x] **OPS.4** — `server/.env.example` documenting `DATABASE_URL`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` (required) plus `OPENAI_IMAGE_MODEL` and `PORT` (optional, commented). Shipped 2026-05-20.
+- [x] **OPS.5** — `.claude/settings.local.json` added to root `.gitignore`. Shipped 2026-05-20.
 - [x] **OPS.3** — Implement client/server type-sharing via Zod, with OpenAPI as a forward-compatible upgrade path. Shipped 2026-05-18 across PRs #22 (foundation + `orders.ts`), #23 (`cart.ts`), and #24 (`books.ts`/`admin.ts`/`test.ts`). See [Completed work](#completed-work) for non-obvious conventions.
 
   **Context.** `client/src/types.ts` and `server/src/types.ts` are hand-maintained duplicates with no compile-time link. Drift surfaced as a real production bug in OrderConfirmation (`book_title` vs `title` — order summary rendered empty book titles to every customer). Wire-shape assertions in `.claude/agents/qa.md` are an interim catch-net; this item is the structural fix.
@@ -63,7 +63,19 @@ Aspirational, not committed. Captured so structural decisions today stay forward
 
 Update this section as work proceeds. Subagents read from here.
 
-_(Currently empty — last entry was OPS.2 finish-and-verify, now collapsed into Completed work below.)_
+### agent/chore/ops4-ops5-and-ts-fixes — 2026-05-20
+
+**Backlog:** OPS.4 (`server/.env.example`) + OPS.5 (gitignore `.claude/settings.local.json`) + folded-in fix for pre-existing TS errors in `client/src/components/BookSpread.tsx` and `client/src/pages/__tests__/Home.test.tsx` (no backlog ID — surfaced during `/ship` of PR #27).
+**Owner:** main (all inline — qualifies under the 1-line-fixes exception in CLAUDE.md).
+
+**Plan**
+- [x] **OPS.4** — Created `server/.env.example` with `DATABASE_URL`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` as required, `OPENAI_IMAGE_MODEL` and `PORT` commented out as optional overrides. Vars sourced by grepping `process.env.*` in `server/src/`.
+- [x] **OPS.5** — Added `.claude/settings.local.json` to root `.gitignore` after `.DS_Store`.
+- [x] **TS fix — BookSpread.tsx** — `spreads[spreadIndex]` is `SpreadKind | undefined` under `noUncheckedIndexedAccess`. Added `if (!spread) return null` after the lookup with a comment explaining `canNext`/`canPrev` keep the index in bounds. Unblocks discriminated-union narrowing on `spread.kind` throughout the JSX.
+- [x] **TS fix — Home.test.tsx** — `getAllByRole('button', { name: 'All' })[0]` returns `HTMLElement | undefined`. Added `!` non-null assertion (length is already asserted on the line above).
+- [x] **Verify** — client tsc clean, client tests 40/40, client lint clean, client build clean, server tests 104/104, server tsc clean.
+
+**Note:** Tier 3 OPS.4/OPS.5 checkboxes marked `[x]` in this PR (matches OPS.1 pattern in PR #26 — small enough to bundle implementation + close-out).
 
 ## Completed work
 
