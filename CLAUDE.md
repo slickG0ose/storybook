@@ -121,3 +121,4 @@ NEVER claim a feature complete until ALL of:
 - **Backlog:** `docs/backlog.md`
 - **Research:** `docs/marketing-research.md`, `docs/print-publishing-research.md`
 - **Agent definitions:** `.claude/agents/{storefront,booksmith,qa}.md`
+- **Codebase map:** `AGENTS.md` (entry point), `.code-captain/docs/{toc,architecture,tech-stack,code-style,objective}.md` (deep reference)
