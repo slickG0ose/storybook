@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react'
 import type { ReactNode } from 'react'
-import type { User } from '../types'
+import type { User, UserRole } from '../types'
 
 interface AuthState {
   user: User | null
@@ -33,8 +33,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (res.ok) return res.json()
           throw new Error('expired')
         })
-        .then((data: { id: string; email: string; name: string }) => {
-          setUser({ ...data, token: parsed.token })
+        .then((data: { id: string; email: string; name: string; role?: UserRole }) => {
+          setUser({ ...data, token: parsed.token, role: data.role ?? 'user' })
         })
         .catch(() => {
           localStorage.removeItem('storybook-auth')
@@ -54,7 +54,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
     const data = await res.json()
     if (!res.ok) return data.error as string
-    const u: User = { id: data.id, email: data.email, name: data.name, token: data.token }
+    const u: User = {
+      id: data.id,
+      email: data.email,
+      name: data.name,
+      token: data.token,
+      role: (data.role as UserRole | undefined) ?? 'user',
+    }
     setUser(u)
     localStorage.setItem('storybook-auth', JSON.stringify(u))
     return null
@@ -68,7 +74,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
     const data = await res.json()
     if (!res.ok) return data.error as string
-    const u: User = { id: data.id, email: data.email, name: data.name, token: data.token }
+    const u: User = {
+      id: data.id,
+      email: data.email,
+      name: data.name,
+      token: data.token,
+      role: (data.role as UserRole | undefined) ?? 'user',
+    }
     setUser(u)
     localStorage.setItem('storybook-auth', JSON.stringify(u))
     return null

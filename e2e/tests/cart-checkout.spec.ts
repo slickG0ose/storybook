@@ -51,6 +51,9 @@ test.describe('Cart and checkout', () => {
   });
 
   test('full checkout flow: add -> cart -> checkout -> order confirmation', async ({ page }) => {
+    const firstTitle = await page.getByRole('heading', { level: 3 }).first().textContent();
+    expect(firstTitle).toBeTruthy();
+
     await page.getByRole('button', { name: 'Add to Cart' }).first().click();
     await expect(page.locator('nav .bg-red-500')).toHaveText('1');
 
@@ -66,5 +69,9 @@ test.describe('Cart and checkout', () => {
 
     await expect(page).toHaveURL(/\/order\/.+/);
     await expect(page.getByText('Order Confirmed!')).toBeVisible();
+
+    // Wire-shape guard: the confirmation must render the actual book title alongside the quantity,
+    // not a blank/undefined placeholder. Catches server↔client field-name drift on OrderItem.
+    await expect(page.getByText(`${firstTitle} x1`)).toBeVisible();
   });
 });

@@ -1,11 +1,18 @@
 {
   "name": "storybook-storefront",
   "private": true,
+  "workspaces": [
+    "shared",
+    "server",
+    "client",
+    "e2e"
+  ],
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "dev:client": "cd client && npm run dev",
     "dev:server": "cd server && npm run dev",
-    "install:all": "npm install && cd client && npm install && cd ../server && npm install"
+    "install:all": "npm install && cd client && npm install && cd ../server && npm install",
+    "setup:worktree": "node scripts/worktree-setup.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"

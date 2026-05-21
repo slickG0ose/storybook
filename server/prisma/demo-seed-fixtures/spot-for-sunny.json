@@ -1,0 +1,100 @@
+{
+  "book": {
+    "id": "b2fa23cf-3156-4b89-83e7-82d98c32c8b7",
+    "title": "A Spot for Sunny",
+    "author": "AI Storybook",
+    "description": "When Mira notices a quiet girl sitting alone at recess, she learns that the best friendships begin with simply making room. A gentle story about listening, kindness, and the joy of finding someone new.",
+    "theme": "friendship",
+    "age_range": "4-7",
+    "cover_emoji": "🌻",
+    "cover_color": "#f59e0b",
+    "cover_url": "/illustrations/b2fa23cf-3156-4b89-83e7-82d98c32c8b7/cover.png",
+    "price": 24.99,
+    "is_featured": false,
+    "is_user_created": true,
+    "status": "published",
+    "version": 1,
+    "characters_json": "[{\"role\":\"primary\",\"name\":\"Mira\",\"descriptor\":\"6-year-old girl with warm brown skin, dark curly hair pulled into two puffs with yellow ribbons, big curious eyes, denim overalls over a striped yellow-and-white t-shirt, red sneakers\"}]",
+    "style_descriptor": "Classic storybook illustration, soft ink outlines with watercolor washes, warm and whimsical, gentle textures, suitable for young children",
+    "style_reference_url": null,
+    "created_at": "2026-05-19T13:26:43.838Z"
+  },
+  "pages": [
+    {
+      "page_number": 1,
+      "text": "Mira loved recess more than almost anything. She loved the swings, the big oak tree, and most of all, her friends Bea and Leo, who always saved her a spot. Every day the three of them ran outside together, laughing before they even reached the door.",
+      "illustration_description": "A bright, cheerful schoolyard bathed in warm afternoon sunlight. Mira bursts through a red door with her dark curly puffs bouncing, yellow ribbons fluttering, denim overalls and red sneakers bright against the green grass. Beside her, Bea — a girl with long braids and a purple jacket — and Leo — a small boy with round glasses and a striped shirt — run with big grins. The oak tree stands wide and leafy in the background.",
+      "illustration_url": "/illustrations/b2fa23cf-3156-4b89-83e7-82d98c32c8b7/page-1.png"
+    },
+    {
+      "page_number": 2,
+      "text": "But one Tuesday, Mira noticed something she had never seen before. A girl sat alone on the bench by the fence, hugging an orange backpack and watching everyone else play. She had short black hair and a green sweater, and she wasn't saying a word. Mira slowed down and looked.",
+      "illustration_description": "The schoolyard is busy with playing children in the background. In the foreground, Mira stands still in the middle of the yard, her big curious eyes fixed on a small girl sitting alone on a wooden bench near a chain-link fence. The girl, Sunny, has short black hair, a green sweater, and an orange backpack held tightly in her lap. Her feet dangle above the ground and she stares at the grass. The contrast between the loud, colorful play behind Mira and the quiet stillness of Sunny gives the scene a gentle, tender feeling.",
+      "illustration_url": "/illustrations/b2fa23cf-3156-4b89-83e7-82d98c32c8b7/page-2.png"
+    },
+    {
+      "page_number": 3,
+      "text": "'Come on, Mira!' called Bea, waving from the swings. Leo was already calling her name too. Mira looked at the swings, then back at the girl on the bench. Her heart felt a little pull, like a gentle tug on her sleeve.",
+      "illustration_description": "A split-focus illustration showing Mira caught between two scenes. To her left, Bea waves enthusiastically from a swing set, her purple jacket swooshing, and Leo stands nearby holding a jump rope and squinting hopefully through his glasses. To Mira's right, the lonely girl on the bench looks quietly at a dandelion growing through a crack in the pavement. Mira stands in the center, her hand halfway raised toward her friends, but her eyes turned toward the bench. Her expression is thoughtful, not sad — she is deciding something.",
+      "illustration_url": "/illustrations/b2fa23cf-3156-4b89-83e7-82d98c32c8b7/page-3.png"
+    },
+    {
+      "page_number": 4,
+      "text": "Mira walked over to the bench. 'Hi,' she said softly. 'I'm Mira. What's your name?' The girl looked up, surprised. 'Sunny,' she whispered. 'I just moved here. I don't know anybody yet.' Mira sat down right beside her and said, 'Well, now you know me.'",
+      "illustration_description": "A close, warm illustration of the bench by the fence. Mira sits next to Sunny, close but not crowding her, turned toward her with a gentle smile. Sunny looks up with wide, cautious eyes that are just beginning to soften. The orange backpack rests between them like a little bridge. Dandelions and small white clover flowers dot the grass at their feet. The oak tree's shadow falls softly over them, making a quiet, sheltered feeling. Sunlight streams through the leaves above.",
+      "illustration_url": "/illustrations/b2fa23cf-3156-4b89-83e7-82d98c32c8b7/page-4-v2.png"
+    },
+    {
+      "page_number": 5,
+      "text": "Mira called Bea and Leo over, and the four of them sat together under the oak tree. It turned out Sunny loved bugs and knock-knock jokes, and she made everyone laugh three times before the bell rang. Walking back inside, Mira felt something warm and full in her chest — the feeling of a friendship just beginning.",
+      "illustration_description": "All four children sit together in a cheerful circle under the wide oak tree, legs crisscrossed in the grass. Mira grins with her yellow ribbons bright, Bea leans forward laughing with her braids swinging, Leo pushes up his glasses in delight, and Sunny — no longer hugging her backpack — holds up a little ladybug on her finger with a shy, radiant smile. The background shows the schoolyard, sunny and warm. The oak tree arches over all four of them like an embrace. The image feels full, complete, and happy.",
+      "illustration_url": "/illustrations/b2fa23cf-3156-4b89-83e7-82d98c32c8b7/page-5.png"
+    }
+  ],
+  "versions": [
+    {
+      "version": 1,
+      "pages_json": "[{\"text\":\"Mira loved recess more than almost anything. She loved the swings, the big oak tree, and most of all, her friends Bea and Leo, who always saved her a spot. Every day the three of them ran outside together, laughing before they even reached the door.\",\"illustrationDescription\":\"A bright, cheerful schoolyard bathed in warm afternoon sunlight. Mira bursts through a red door with her dark curly puffs bouncing, yellow ribbons fluttering, denim overalls and red sneakers bright against the green grass. Beside her, Bea — a girl with long braids and a purple jacket — and Leo — a small boy with round glasses and a striped shirt — run with big grins. The oak tree stands wide and leafy in the background.\"},{\"text\":\"But one Tuesday, Mira noticed something she had never seen before. A girl sat alone on the bench by the fence, hugging an orange backpack and watching everyone else play. She had short black hair and a green sweater, and she wasn't saying a word. Mira slowed down and looked.\",\"illustrationDescription\":\"The schoolyard is busy with playing children in the background. In the foreground, Mira stands still in the middle of the yard, her big curious eyes fixed on a small girl sitting alone on a wooden bench near a chain-link fence. The girl, Sunny, has short black hair, a green sweater, and an orange backpack held tightly in her lap. Her feet dangle above the ground and she stares at the grass. The contrast between the loud, colorful play behind Mira and the quiet stillness of Sunny gives the scene a gentle, tender feeling.\"},{\"text\":\"'Come on, Mira!' called Bea, waving from the swings. Leo was already calling her name too. Mira looked at the swings, then back at the girl on the bench. Her heart felt a little pull, like a gentle tug on her sleeve.\",\"illustrationDescription\":\"A split-focus illustration showing Mira caught between two scenes. To her left, Bea waves enthusiastically from a swing set, her purple jacket swooshing, and Leo stands nearby holding a jump rope and squinting hopefully through his glasses. To Mira's right, the lonely girl on the bench looks quietly at a dandelion growing through a crack in the pavement. Mira stands in the center, her hand halfway raised toward her friends, but her eyes turned toward the bench. Her expression is thoughtful, not sad — she is deciding something.\"},{\"text\":\"Mira walked over to the bench. 'Hi,' she said softly. 'I'm Mira. What's your name?' The girl looked up, surprised. 'Sunny,' she whispered. 'I just moved here. I don't know anybody yet.' Mira sat down right beside her and said, 'Well, now you know me.'\",\"illustrationDescription\":\"A close, warm illustration of the bench by the fence. Mira sits next to Sunny, close but not crowding her, turned toward her with a gentle smile. Sunny looks up with wide, cautious eyes that are just beginning to soften. The orange backpack rests between them like a little bridge. Dandelions and small white clover flowers dot the grass at their feet. The oak tree's shadow falls softly over them, making a quiet, sheltered feeling. Sunlight streams through the leaves above.\"},{\"text\":\"Mira called Bea and Leo over, and the four of them sat together under the oak tree. It turned out Sunny loved bugs and knock-knock jokes, and she made everyone laugh three times before the bell rang. Walking back inside, Mira felt something warm and full in her chest — the feeling of a friendship just beginning.\",\"illustrationDescription\":\"All four children sit together in a cheerful circle under the wide oak tree, legs crisscrossed in the grass. Mira grins with her yellow ribbons bright, Bea leans forward laughing with her braids swinging, Leo pushes up his glasses in delight, and Sunny — no longer hugging her backpack — holds up a little ladybug on her finger with a shy, radiant smile. The background shows the schoolyard, sunny and warm. The oak tree arches over all four of them like an embrace. The image feels full, complete, and happy.\"}]",
+      "description": null,
+      "characters_json": null,
+      "created_at": "2026-05-19T13:26:43.838Z"
+    }
+  ],
+  "illustration_versions": [
+    {
+      "page_number": 1,
+      "version": 1,
+      "url": "/illustrations/b2fa23cf-3156-4b89-83e7-82d98c32c8b7/page-1.png",
+      "feedback": null,
+      "created_at": "2026-05-19T13:28:18.827Z"
+    },
+    {
+      "page_number": 2,
+      "version": 1,
+      "url": "/illustrations/b2fa23cf-3156-4b89-83e7-82d98c32c8b7/page-2.png",
+      "feedback": null,
+      "created_at": "2026-05-19T13:29:11.221Z"
+    },
+    {
+      "page_number": 3,
+      "version": 1,
+      "url": "/illustrations/b2fa23cf-3156-4b89-83e7-82d98c32c8b7/page-3.png",
+      "feedback": null,
+      "created_at": "2026-05-19T13:29:58.761Z"
+    },
+    {
+      "page_number": 4,
+      "version": 1,
+      "url": "/illustrations/b2fa23cf-3156-4b89-83e7-82d98c32c8b7/page-4-v2.png",
+      "feedback": "IMPORTANT: Sunny is a young girl (about 6 years old), NOT a dog or pet. Show two children together on the bench: Mira (the primary character from the cast) sitting next to Sunny, a quiet-looking girl about the same age. No animals in this illustration.",
+      "created_at": "2026-05-19T14:16:03.605Z"
+    },
+    {
+      "page_number": 5,
+      "version": 1,
+      "url": "/illustrations/b2fa23cf-3156-4b89-83e7-82d98c32c8b7/page-5.png",
+      "feedback": null,
+      "created_at": "2026-05-19T13:31:33.264Z"
+    }
+  ]
+}

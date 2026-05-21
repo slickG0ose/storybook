@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { ShoppingCart, BookOpen, Sparkles, Moon, Sun, User, LogOut } from 'lucide-react'
+import { ShoppingCart, BookOpen, Sparkles, Moon, Sun, User, LogOut, Shield } from 'lucide-react'
 import { useCart } from '../context/CartContext'
 import { useTheme } from '../context/ThemeContext'
 import { useAuth } from '../context/AuthContext'
@@ -7,8 +7,10 @@ import { useAuth } from '../context/AuthContext'
 export default function Navbar() {
   const { items } = useCart()
   const { dark, toggle } = useTheme()
-  const { user, logout } = useAuth()
+  const { user, loading: authLoading, logout } = useAuth()
   const count = items.reduce((sum, i) => sum + i.quantity, 0)
+  // Don't show role-conditional UI until auth resolves to avoid flashes.
+  const showAdminLink = !authLoading && user?.role === 'admin'
 
   return (
     <nav className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-b border-amber-100 dark:border-gray-700 sticky top-0 z-50 transition-colors">
@@ -27,6 +29,16 @@ export default function Navbar() {
             <Link to="/my-books" className="text-amber-800 dark:text-amber-300 hover:text-amber-600 dark:hover:text-amber-200 flex items-center gap-1 no-underline font-semibold">
               <User size={18} />
               <span className="hidden sm:inline">My Books</span>
+            </Link>
+          )}
+          {showAdminLink && (
+            <Link
+              to="/admin"
+              aria-label="Admin"
+              className="text-amber-800 dark:text-amber-300 hover:text-amber-600 dark:hover:text-amber-200 flex items-center gap-1 no-underline font-semibold"
+            >
+              <Shield size={18} />
+              <span className="hidden sm:inline">Admin</span>
             </Link>
           )}
           <Link to="/create" className="bg-gradient-to-r from-purple-500 to-pink-500 text-white px-4 py-2 rounded-full flex items-center gap-1.5 no-underline font-semibold hover:shadow-lg transition-shadow text-sm">

@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import type { Store, Book } from '../types';
+import type { Store, LegacyBook } from '../types';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DB_PATH = join(__dirname, '..', '..', 'data.json');
@@ -60,7 +60,7 @@ export function initDb(): void {
 }
 
 function seed(): void {
-  const books: Book[] = [
+  const books: LegacyBook[] = [
     {
       id: 'luna-star-garden',
       title: 'Luna and the Star Garden',

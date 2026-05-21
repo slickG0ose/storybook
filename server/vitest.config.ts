@@ -10,5 +10,9 @@ export default defineConfig({
     minWorkers: 1,
     fileParallelism: false,
     globalSetup: ['src/__tests__/globalSetup.ts'],
+    env: {
+      DATABASE_URL: 'file:./test.db',
+      NODE_ENV: 'test',
+    },
   },
 });

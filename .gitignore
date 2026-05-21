@@ -4,6 +4,18 @@ dist/
 *.db
 data.json
 .DS_Store
+.claude/settings.local.json
 e2e/playwright-report/
 e2e/test-results/
 server/.backups/
+# server/public/ holds generated content (uploads, generated illustrations).
+# Ignore everything inside it by default, then re-include the per-book
+# subdirectories that hold committed demo-seed fixture PNGs. Note: we ignore
+# `server/public/*` (contents) rather than `server/public/` (the dir itself)
+# because gitignore cannot re-include a file whose parent directory is ignored.
+# Add a new `!server/public/illustrations/<book-id>/` line per fixture book.
+server/public/*
+!server/public/illustrations/
+server/public/illustrations/*
+!server/public/illustrations/b2fa23cf-3156-4b89-83e7-82d98c32c8b7/
+server/test-results/

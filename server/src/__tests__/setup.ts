@@ -4,6 +4,7 @@ import authRouter from '../routes/auth';
 import booksRouter from '../routes/books';
 import cartRouter from '../routes/cart';
 import ordersRouter from '../routes/orders';
+import adminRouter from '../routes/admin';
 
 const seedBooks = [
   { id: 'luna-star-garden', title: 'Luna and the Star Garden', author: 'AI Storybook', description: 'A story about stars.', theme: 'fantasy', age_range: '4-7', cover_emoji: '\u{1F31F}', cover_color: '#7c3aed', price: 19.99, is_featured: true, is_user_created: false },
@@ -22,11 +23,18 @@ const seedPages = [
   { book_id: 'luna-star-garden', page_number: 5, text: 'Page 5 text', illustration_description: 'Illustration 5' },
 ];
 
+// resetDatabase: wipes every table, then re-seeds 6 books + 5 luna-star-garden
+// pages. Verified for OPS.2: deleteMany clears any rows that prior tests soft-
+// deleted, and the re-seed inserts fresh rows so seeded books always have
+// deleted_at = null (Prisma default). No seeded users, so role/deleted_at on
+// User are tested via per-test /register calls which inherit the schema
+// defaults (role='user', deleted_at=null).
 export async function resetDatabase() {
   await prisma.orderItem.deleteMany();
   await prisma.order.deleteMany();
   await prisma.cartItem.deleteMany();
   await prisma.bookVersion.deleteMany();
+  await prisma.illustrationVersion.deleteMany();
   await prisma.page.deleteMany();
   await prisma.book.deleteMany();
   await prisma.user.deleteMany();
@@ -55,6 +63,7 @@ export function createTestApp(): express.Express {
   app.use('/api/books', booksRouter);
   app.use('/api/cart', cartRouter);
   app.use('/api/orders', ordersRouter);
+  app.use('/api/admin', adminRouter);
 
   return app;
 }

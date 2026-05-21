@@ -22,7 +22,21 @@ export async function getAuthUser(req: Request) {
   const header = req.headers.authorization;
   if (!header?.startsWith('Bearer ')) return null;
   const token = header.slice(7);
-  return prisma.user.findFirst({ where: { token } });
+  // Reject soft-deleted users: their tokens stop authenticating once an admin
+  // tombstones them, but rows remain so an admin can restore later.
+  return prisma.user.findFirst({ where: { token, deleted_at: null } });
+}
+
+/**
+ * Returns the authed user when they are also an admin; null otherwise.
+ * Callers decide whether the null case is a 401 (no auth) or 403 (wrong role)
+ * by checking getAuthUser themselves if they care to distinguish.
+ */
+export async function requireAdmin(req: Request) {
+  const user = await getAuthUser(req);
+  if (!user) return null;
+  if (user.role !== 'admin') return null;
+  return user;
 }
 
 router.post('/register', async (req: Request, res: Response) => {
@@ -36,7 +50,7 @@ router.post('/register', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Password must be at least 4 characters' });
   }
 
-  const existing = await prisma.user.findUnique({ where: { email } });
+  const existing = await prisma.user.findFirst({ where: { email, deleted_at: null } });
   if (existing) {
     return res.status(409).json({ error: 'An account with this email already exists' });
   }
@@ -51,7 +65,7 @@ router.post('/register', async (req: Request, res: Response) => {
     },
   });
 
-  res.status(201).json({ id: user.id, email: user.email, name: user.name, token });
+  res.status(201).json({ id: user.id, email: user.email, name: user.name, role: user.role, token });
 });
 
 router.post('/login', async (req: Request, res: Response) => {
@@ -61,7 +75,9 @@ router.post('/login', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'email and password are required' });
   }
 
-  const user = await prisma.user.findUnique({ where: { email } });
+  // Soft-deleted users should not be able to log in; treat them like a missing
+  // account so we don't leak that the row still exists.
+  const user = await prisma.user.findFirst({ where: { email, deleted_at: null } });
 
   if (!user || !verifyPassword(password, user.password_hash)) {
     return res.status(401).json({ error: 'Invalid email or password' });
@@ -70,7 +86,7 @@ router.post('/login', async (req: Request, res: Response) => {
   const token = uuidv4();
   await prisma.user.update({ where: { id: user.id }, data: { token } });
 
-  res.json({ id: user.id, email: user.email, name: user.name, token });
+  res.json({ id: user.id, email: user.email, name: user.name, role: user.role, token });
 });
 
 router.post('/logout', async (req: Request, res: Response) => {
@@ -86,7 +102,7 @@ router.get('/me', async (req: Request, res: Response) => {
   if (!user) {
     return res.status(401).json({ error: 'Not authenticated' });
   }
-  res.json({ id: user.id, email: user.email, name: user.name });
+  res.json({ id: user.id, email: user.email, name: user.name, role: user.role });
 });
 
 export default router;

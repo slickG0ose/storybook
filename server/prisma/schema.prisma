@@ -4,16 +4,18 @@ generator client {
 
 datasource db {
   provider = "sqlite"
-  url      = "file:./dev.db"
+  url      = env("DATABASE_URL")
 }
 
 model User {
-  id            String   @id @default(uuid())
-  email         String   @unique
+  id            String    @id @default(uuid())
+  email         String    @unique
   name          String
   password_hash String
   token         String?
-  created_at    DateTime @default(now())
+  role          String    @default("user")
+  deleted_at    DateTime?
+  created_at    DateTime  @default(now())
 
   books  Book[]
   orders Order[]
@@ -38,21 +40,39 @@ model Book {
   style_descriptor String?
   style_reference_url String?
   created_by      String?
+  deleted_at      DateTime?
   created_at      DateTime @default(now())
 
   creator    User?         @relation(fields: [created_by], references: [id])
   pages      Page[]
   versions   BookVersion[]
+  illustration_versions IllustrationVersion[]
   cartItems  CartItem[]
   orderItems OrderItem[]
 }
 
+model IllustrationVersion {
+  id           Int      @id @default(autoincrement())
+  book_id      String
+  page_number  Int
+  version      Int
+  url          String
+  feedback     String?
+  created_at   DateTime @default(now())
+
+  book Book @relation(fields: [book_id], references: [id], onDelete: Cascade)
+
+  @@unique([book_id, page_number, version])
+}
+
 model BookVersion {
-  id         Int      @id @default(autoincrement())
-  book_id    String
-  version    Int
-  pages_json String
-  created_at DateTime @default(now())
+  id              Int      @id @default(autoincrement())
+  book_id         String
+  version         Int
+  pages_json      String
+  description     String?
+  characters_json String?
+  created_at      DateTime @default(now())
 
   book Book @relation(fields: [book_id], references: [id], onDelete: Cascade)
 

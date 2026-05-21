@@ -12,6 +12,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@storybook/shared": "*",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"
   },

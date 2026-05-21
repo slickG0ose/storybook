@@ -11,9 +11,14 @@ test.describe('Home page', () => {
     await expect(page.getByRole('heading', { level: 1 })).toContainText('Magic');
   });
 
-  test('displays 6 seed books', async ({ page }) => {
-    // 3 featured + 6 all books = 9 total "Add to Cart" buttons (featured books appear twice)
-    await expect(page.getByRole('button', { name: 'Add to Cart' })).toHaveCount(9);
+  test('displays seed books and community demo', async ({ page }) => {
+    // 3 featured + 1 community + 7 all-books = 11 total "Add to Cart" buttons (featured books appear in both Featured and All Books)
+    await expect(page.getByRole('button', { name: 'Add to Cart' })).toHaveCount(11);
+  });
+
+  test('renders the Community Creations section with the demo book', async ({ page }) => {
+    await expect(page.getByRole('heading', { name: /Community Creations/i })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'A Spot for Sunny' }).first()).toBeVisible();
   });
 
   test('clicking a theme filter reduces the visible books', async ({ page }) => {
@@ -27,6 +32,6 @@ test.describe('Home page', () => {
     await expect(page.getByRole('button', { name: 'Add to Cart' })).toHaveCount(1);
 
     await page.getByRole('button', { name: 'All' }).first().click();
-    await expect(page.getByRole('button', { name: 'Add to Cart' })).toHaveCount(9);
+    await expect(page.getByRole('button', { name: 'Add to Cart' })).toHaveCount(11);
   });
 });

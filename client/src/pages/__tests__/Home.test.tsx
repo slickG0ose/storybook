@@ -14,9 +14,19 @@ const mockBooks: Book[] = [
     age_range: '3-5',
     cover_emoji: '🦊',
     cover_color: '#ff6600',
+    cover_url: null,
     price: 12.99,
-    is_featured: 1,
-    is_user_created: 0,
+    is_featured: true,
+    is_user_created: false,
+    status: 'published',
+    version: 1,
+    characters: [],
+    characters_json: null,
+    style_descriptor: null,
+    style_reference_url: null,
+    created_by: null,
+    created_at: new Date().toISOString(),
+    deleted_at: null,
   },
   {
     id: 'book-2',
@@ -27,9 +37,19 @@ const mockBooks: Book[] = [
     age_range: '4-7',
     cover_emoji: '👑',
     cover_color: '#ffcc00',
+    cover_url: null,
     price: 14.99,
-    is_featured: 0,
-    is_user_created: 0,
+    is_featured: false,
+    is_user_created: false,
+    status: 'published',
+    version: 1,
+    characters: [],
+    characters_json: null,
+    style_descriptor: null,
+    style_reference_url: null,
+    created_by: null,
+    created_at: new Date().toISOString(),
+    deleted_at: null,
   },
 ]
 
@@ -140,7 +160,7 @@ describe('Home', () => {
     expect(screen.queryByText('Kindness Kingdom')).not.toBeInTheDocument()
 
     // Click theme "All" to reset (first All button is the theme one)
-    const themeAllButton = screen.getAllByRole('button', { name: 'All' })[0]
+    const themeAllButton = screen.getAllByRole('button', { name: 'All' })[0]!
     fireEvent.click(themeAllButton)
     expect(screen.getAllByText('The Brave Little Fox').length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText('Kindness Kingdom')).toBeInTheDocument()

@@ -1,3 +1,5 @@
+import type { CartItem, Order, OrderItem } from '@storybook/shared';
+
 export interface User {
   id: string;
   email: string;
@@ -7,16 +9,48 @@ export interface User {
   created_at: string;
 }
 
-export type CharacterRole = 'primary' | 'antagonist' | 'supporting';
-
-export interface Character {
-  role: CharacterRole;
-  name: string;
-  descriptor?: string;
-  relationship?: string;
+// CartItemRow is the DB row shape used internally in the legacy Store interface.
+// The wire-shape CartItem (what clients receive) is sourced from @storybook/shared.
+export interface CartItemRow {
+  id: number;
+  session_id: string;
+  book_id: string;
+  quantity: number;
 }
 
-export interface Book {
+// Book, Page, Character, CharacterRole, CartItem, Order, OrderItem are all sourced
+// from @storybook/shared (Zod schemas). Do not redeclare them here — see
+// shared/src/{books,cart,orders}.ts. Re-exported so existing in-server consumers
+// can keep importing from '../types'.
+export type {
+  Book,
+  BookVersion,
+  BookWithPages,
+  CartItem,
+  Character,
+  CharacterRole,
+  IllustrationVersion,
+  Order,
+  OrderItem,
+  Page,
+} from '@storybook/shared';
+
+// ---------------------------------------------------------------------------
+// Legacy JSON-store shapes
+//
+// `Store` is the schema of the long-deprecated `data.json` file-store from
+// before the Prisma migration. The runtime app doesn't read or write it
+// anymore (test setup + production both use Prisma + resetDatabase), but the
+// `getStore` / `resetStore` / `initDb` exports still compile, so we keep the
+// types accurate.
+//
+// `LegacyBook` / `LegacyPage` are deliberately narrower than the wire-shape
+// `Book` / `Page` Zod schemas — the JSON store only ever persisted these
+// columns, and `is_featured` / `is_user_created` are 0/1 numbers, not booleans.
+// Kept local to the server so the shared schemas describe today's wire shape
+// without legacy-flag drag.
+// ---------------------------------------------------------------------------
+export interface LegacyBook {
   id: string;
   title: string;
   author: string;
@@ -25,59 +59,26 @@ export interface Book {
   age_range: string;
   cover_emoji: string;
   cover_color: string;
-  cover_url: string | null;
   price: number;
   is_featured: number;
   is_user_created: number;
-  status: string;
-  version: number;
-  characters: Character[];
-  style_descriptor: string | null;
-  style_reference_url: string | null;
   created_by: string | null;
   created_at: string;
 }
 
-export interface Page {
+export interface LegacyPage {
   id: number;
   book_id: string;
   page_number: number;
   text: string;
   illustration_description: string;
-  illustration_url: string | null;
-}
-
-export interface CartItem {
-  id: number;
-  session_id: string;
-  book_id: string;
-  quantity: number;
-}
-
-export interface Order {
-  id: string;
-  session_id: string;
-  customer_name: string;
-  customer_email: string;
-  total: number;
-  status: string;
-  created_at: string;
-}
-
-export interface OrderItem {
-  id: number;
-  order_id: string;
-  book_id: string;
-  title: string;
-  quantity: number;
-  price: number;
 }
 
 export interface Store {
   users: User[];
-  books: Book[];
-  pages: Page[];
-  cartItems: CartItem[];
+  books: LegacyBook[];
+  pages: LegacyPage[];
+  cartItems: CartItemRow[];
   orders: Order[];
   orderItems: OrderItem[];
 }

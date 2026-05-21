@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import prisma from '../db/prisma';
 import { getAuthUser } from './auth';
 import { generateCover, generateIllustration } from '../services/illustrations';
+import { parseAiJson } from '../services/parseAiJson';
 import type { Request, Response } from 'express';
 import type { Character, CharacterRole } from '../types';
 
@@ -153,17 +154,7 @@ Make the story warm, engaging, and age-appropriate. Use vivid but simple languag
     }
     const content: string = firstBlock.text;
 
-    let story: GeneratedStory;
-    try {
-      story = JSON.parse(content) as GeneratedStory;
-    } catch {
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        story = JSON.parse(jsonMatch[0]) as GeneratedStory;
-      } else {
-        throw new Error('Failed to parse story from AI response');
-      }
-    }
+    const story = parseAiJson(content) as GeneratedStory;
 
     const user = await getAuthUser(req);
 
@@ -195,7 +186,18 @@ Make the story warm, engaging, and age-appropriate. Use vivid but simple languag
         versions: {
           create: {
             version: 1,
-            pages_json: JSON.stringify(story.pages),
+            // Persist page_number explicitly so this snapshot matches the
+            // BookVersionPageSchema wire shape. story.pages comes from Claude
+            // without page_number — derive it from array index. Read sites
+            // also synth from index as a fallback, but writing it here keeps
+            // new snapshots forward-consistent.
+            pages_json: JSON.stringify(
+              story.pages.map((p, i) => ({
+                page_number: i + 1,
+                text: p.text,
+                illustrationDescription: p.illustrationDescription,
+              })),
+            ),
           },
         },
       },
@@ -208,6 +210,7 @@ Make the story warm, engaging, and age-appropriate. Use vivid but simple languag
         story.title,
         story.coverDescription || story.description,
         styleDescriptor,
+        characters,
       );
       if (coverUrl) {
         book = await prisma.book.update({
@@ -226,6 +229,7 @@ Make the story warm, engaging, and age-appropriate. Use vivid but simple languag
           page.illustration_description,
           undefined,
           styleDescriptor,
+          characters,
         );
         if (url) {
           await prisma.page.update({ where: { id: page.id }, data: { illustration_url: url } });

@@ -1,71 +1,126 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for Claude Code sessions working in StoryBook Storefront.
 
-## Project Overview
+## Project
 
-StoryBook Storefront — an AI-powered children's book store built with React + Express + Claude API. Users browse, create personalized stories, and purchase books. JSON file persistence (`data.json`), session-based cart via localStorage UUIDs.
+AI-powered children's book store. React + Express + Claude API. Working storefront with creation workflow being built out. Demo-grade product concept.
 
-## Monorepo Layout
+**Current focus:** see [docs/backlog.md](docs/backlog.md). Tier 1 is the dependency chain: versioning → story iteration → illustration generation → illustration iteration.
 
-| Directory | Stack | Purpose |
-|-----------|-------|---------|
-| `client/` | React 19, Vite 8, Tailwind CSS 4, TypeScript | SPA frontend |
-| `server/` | Express 4, TypeScript, tsx, Anthropic SDK | REST API + AI generation |
-| `e2e/` | Playwright 1.52, TypeScript | End-to-end tests |
+## Layout
 
-## Build & Run
+| Directory | Stack | Owner agent | Zone rules |
+|-----------|-------|-------------|------------|
+| `client/` | React 19, Vite 8, Tailwind 4, TS | @storefront | `.claude/agents/storefront.md` |
+| `server/` | Express 4, TS, Anthropic SDK | @booksmith | `.claude/agents/booksmith.md` |
+| `e2e/` | Playwright 1.52, TS | @qa | `.claude/agents/qa.md` |
+| `docs/` | Backlog, research notes | — | — |
+
+## Branching
+
+Trunk-based off `master`. Short-lived branches, squash-merge PRs. Prefixes follow conventional commits — the type before the slash drives changelog grouping and lets you scan `git log` at a glance.
+
+| Prefix | Use for |
+|--------|---------|
+| `feat/` | New user-facing capability |
+| `fix/` | Bug fix |
+| `chore/` | Tooling, deps, config — no user-facing change |
+| `docs/` | Documentation only |
+| `test/` | Tests only |
+| `refactor/` | Internal restructure, no behavior change |
+
+Descriptor is kebab-case and scope-y, not a sentence: `feat/illustration-iteration`, `fix/cart-session-leak`, `chore/bump-anthropic-sdk`.
+
+**Agent worktree branches** prefix with `agent/` first: `agent/feat/illustration-iteration`, `agent/fix/...`. Distinguishes agent-driven work from yours in `git log` and PR lists. The `/start-task` command creates these automatically.
+
+## Build & run
 
 ```bash
-npm run dev                          # Start both client (:5173) and server (:3001)
-npm run dev:client                   # Client only
-npm run dev:server                   # Server only
+npm run dev                          # both client (:5173) and server (:3001)
+npm run dev:client
+npm run dev:server
 ```
+
+## Local dev.db — preserving your books across iteration
+
+The seed files are upsert-only — `npm run db:seed` and `npm run db:seed-demo` never delete anything you created. Your locally-generated books survive both. `db:reset` is the only destructive op (drops the DB, re-runs migrations), and it does **not** auto-run any seed.
+
+`npm run db:hydrate` chains `db:seed && db:seed-demo` — use it after pulling a branch that ships new fixtures, or as `db:reset && npm run db:hydrate` for the full nuke-and-pave flow.
+
+**Auto-snapshot on startup.** `server/src/db/snapshot.ts` copies `dev.db` to `server/.backups/dev-{timestamp}.db` every time `npm run dev` boots. Old backups self-prune after 7 days. So you usually already have a recent backup without doing anything.
+
+**Manual backup before risky ops** (planned `db:reset`, migration testing, etc.):
+
+```bash
+cp server/prisma/dev.db server/prisma/dev.db.local-backup
+```
+
+`*.db` is gitignored at the root, so any naming works (`.bak`, `.local-backup`, etc.).
+
+**Restore.** Stop the dev server first, then reverse the cp:
+
+```bash
+cp server/prisma/dev.db.local-backup server/prisma/dev.db
+```
+
+**Schema-drift rule of thumb.** A `cp` restore is safe iff no new folder appeared in `server/prisma/migrations/` since the backup was taken. If the migrations directory changed, `db:reset && npm run db:hydrate` from a clean state — your old book rows won't have the new columns.
 
 ## Testing
 
 ```bash
-# Server unit/integration (Vitest + Supertest)
-cd server && npm test
-
-# Client unit (Vitest + React Testing Library)
-cd client && npm test
-
-# E2E (Playwright — auto-starts both servers)
-cd e2e && npm test
-cd e2e && npm run test:headed        # With browser visible
-cd e2e && npm run test:ui            # Interactive UI mode
+cd server && npm test                # Vitest + Supertest (33 tests)
+cd client && npm test                # Vitest + RTL (19 tests)
+cd e2e && npm test                   # Playwright (20 tests)
+cd e2e && npm run test:headed
+cd e2e && npm run test:ui
 ```
 
-## Key Conventions
+## Delegation rules (opinionated)
 
-- **TypeScript strict** on both client and server
-- **Tailwind CSS v4** — uses `@import "tailwindcss"` and `@custom-variant dark` (not v3 `darkMode` config)
-- **Dark mode** — `ThemeContext` toggles `.dark` class on `<html>`, all components use `dark:` variants
-- **Cart sessions** — UUID stored in localStorage (`storybook-session`), passed to `/api/cart/:sessionId`
-- **JSON store** — `server/src/db/init.ts` with `getStore()`/`save()` pattern, persists to `data.json`
-- **Claude API** — model `claude-sonnet-4-6` in `server/src/routes/generate.ts`, generates 5-page stories
-- **Corporate proxy** — `process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'` at top of `server/src/index.ts`
+For any non-trivial change in a zone, you MUST delegate to the owning agent via the Agent tool rather than editing directly:
 
-## API Structure
+- `client/**` → **@storefront**
+- `server/**` → **@booksmith**
+- Tests in any zone → **@qa**
 
-Routes in `server/src/routes/`: books.ts, cart.ts, orders.ts, generate.ts. Each exports an Express Router mounted at `/api/{name}`. Health check at `/api/health`.
+When work spans multiple zones, you MUST issue parallel Agent calls in a single message — do NOT do zone work serially in the main session. The main session's job is to orchestrate: read for context, plan, dispatch in parallel, then verify.
 
-## Data Model
+**Exceptions** (safe to do inline in main):
+- 1-line fixes
+- Pure orchestration (Reads, Glob, Grep, git inspection)
+- Renames or moves that mechanically span zones
 
-Defined in `server/src/types.ts` and `client/src/types.ts`. Core entities: Book, Page (5 per book), CartItem, Order, OrderItem. Books have `is_user_created` flag (0 = seed, 1 = AI-generated).
+**ALWAYS record delegations in the PR body** so the audit trail is visible. `/ship` drafts this from the work you actually did.
 
-## E2E Test Patterns
+**Zone-specific conventions, stack details, and patterns live in each agent's `.md` file** — not duplicated here.
 
-- Wait for visible content, never `waitForResponse` after navigation
-- Use `getByRole()` and `getByText()` selectors — not CSS classes
-- Cart tests clear localStorage in `beforeEach` for isolation
-- Playwright config auto-starts both servers via `webServer[]`
+## Done criteria
 
-## Agents
+NEVER claim a feature complete until ALL of:
+1. Relevant tests MUST pass (server + client + e2e if a user-facing flow changed)
+2. UI changes MUST be manually verified in browser in **both** light and dark mode
+3. NO TypeScript errors
+4. If `data.json` shape changed, seed MUST load cleanly
 
-Three specialized agents in `.claude/agents/`:
+## Guardrails (cross-cutting)
 
-- **@storefront** — Frontend: React components, routing, Tailwind styling, contexts, dark mode
-- **@booksmith** — Backend: Express routes, data store, Claude API integration, story generation
-- **@qa** — Testing: Vitest unit/integration tests, Playwright e2e specs, test infrastructure
+**ALWAYS confirm with user before:**
+- Deleting or replacing `data.json` (NEVER `rm` — use `resetStore()` for tests)
+- Changing seed data shape (breaks existing carts/orders)
+- Swapping the Claude model or upgrading SDK major versions
+- Adding new paid external APIs (image generation, payments)
+- Adding auth or session changes (UUID session model is load-bearing)
+- Deleting tests rather than fixing them
+
+**Safe without asking:**
+- UI tweaks, new components, additive routes, new tests
+- Refactoring within a single file
+- Dependencies that fit existing stack
+
+## Pointers
+
+- **Backlog:** `docs/backlog.md`
+- **Research:** `docs/marketing-research.md`, `docs/print-publishing-research.md`
+- **Agent definitions:** `.claude/agents/{storefront,booksmith,qa}.md`
+- **Codebase map:** `AGENTS.md` (entry point), `.code-captain/docs/{toc,architecture,tech-stack,code-style,objective}.md` (deep reference)

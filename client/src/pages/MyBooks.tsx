@@ -1,14 +1,17 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { BookOpen, Sparkles, Send, Trash2 } from 'lucide-react'
+import { BookOpen, Sparkles, Send, Trash2, EyeOff } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
-import type { Book } from '../types'
+import type { Book, BookWithPages } from '../types'
+
+type MyBook = Book & Partial<Pick<BookWithPages, 'pages'>>
 
 export default function MyBooks() {
   const { user } = useAuth()
-  const [books, setBooks] = useState<Book[]>([])
+  const [books, setBooks] = useState<MyBook[]>([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'all' | 'draft' | 'published'>('all')
+  const [unpublishingId, setUnpublishingId] = useState<string | null>(null)
 
   const fetchBooks = useCallback(() => {
     if (!user) return
@@ -16,7 +19,7 @@ export default function MyBooks() {
       headers: { Authorization: `Bearer ${user.token}` },
     })
       .then(res => res.json())
-      .then((data: Book[]) => setBooks(data))
+      .then((data: MyBook[]) => setBooks(data))
       .catch(() => setBooks([]))
       .finally(() => setLoading(false))
   }, [user])
@@ -30,6 +33,31 @@ export default function MyBooks() {
       headers: { Authorization: `Bearer ${user.token}` },
     })
     if (res.ok) fetchBooks()
+  }
+
+  const unpublishBook = async (bookId: string) => {
+    if (!user) return
+    const ok = window.confirm(
+      'Unpublish this book? It will be removed from the public catalog but kept as a draft you can keep editing.'
+    )
+    if (!ok) return
+    setUnpublishingId(bookId)
+    try {
+      const res = await fetch(`/api/books/${bookId}/unpublish`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${user.token}` },
+      })
+      if (res.ok) {
+        const updated = (await res.json()) as MyBook
+        setBooks(prev => prev.map(b => (b.id === updated.id ? { ...b, ...updated } : b)))
+      } else {
+        window.alert("Couldn't unpublish that book. It may already be a draft — refresh to see the latest state.")
+      }
+    } catch {
+      window.alert("Couldn't unpublish that book. Check your connection and try again.")
+    } finally {
+      setUnpublishingId(null)
+    }
   }
 
   const deleteBook = async (bookId: string) => {
@@ -123,13 +151,24 @@ export default function MyBooks() {
                 style={{ backgroundColor: book.cover_color + '20' }}
               >
                 <span className="drop-shadow-lg">{book.cover_emoji}</span>
-                <span className={`absolute top-3 right-3 text-xs font-bold px-2.5 py-1 rounded-full ${
-                  book.status === 'draft'
-                    ? 'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300'
-                    : 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300'
-                }`}>
-                  {book.status === 'draft' ? 'Draft' : 'Published'}
-                </span>
+                <div className="absolute top-3 right-3 flex items-center gap-1.5">
+                  {book.status === 'draft' && book.pages && book.pages.length > 0 && (() => {
+                    const unillustrated = book.pages.filter(p => !p.illustration_url).length
+                    if (unillustrated === 0) return null
+                    return (
+                      <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                        {unillustrated} unillustrated
+                      </span>
+                    )
+                  })()}
+                  <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${
+                    book.status === 'draft'
+                      ? 'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300'
+                      : 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300'
+                  }`}>
+                    {book.status === 'draft' ? 'Draft' : 'Published'}
+                  </span>
+                </div>
               </div>
             </Link>
             <div className="p-4">
@@ -148,6 +187,17 @@ export default function MyBooks() {
                   >
                     <Send size={14} />
                     Publish
+                  </button>
+                )}
+                {book.status === 'published' && (
+                  <button
+                    onClick={() => void unpublishBook(book.id)}
+                    disabled={unpublishingId === book.id}
+                    aria-label="Unpublish book"
+                    className="flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors cursor-pointer border border-gray-200 dark:border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <EyeOff size={14} />
+                    {unpublishingId === book.id ? 'Unpublishing...' : 'Unpublish'}
                   </button>
                 )}
                 <button

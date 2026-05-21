@@ -29,9 +29,19 @@ const mockBook: Book = {
   age_range: '3-5',
   cover_emoji: '🦊',
   cover_color: '#ff6600',
+  cover_url: null,
   price: 12.99,
-  is_featured: 1,
-  is_user_created: 0,
+  is_featured: true,
+  is_user_created: false,
+  status: 'published',
+  version: 1,
+  characters: [],
+  characters_json: null,
+  style_descriptor: null,
+  style_reference_url: null,
+  created_by: null,
+  created_at: new Date().toISOString(),
+  deleted_at: null,
 }
 
 function renderBookCard(book: Book = mockBook) {

@@ -3,4 +3,8 @@ node_modules
 .env
 
 /src/generated/prisma
-public/illustrations/
+# Ignore generated illustrations by default, but commit the per-book fixture
+# subdirectories that demo-seed.ts depends on. Add a `!public/illustrations/<id>/`
+# line per fixture book.
+public/illustrations/*
+!public/illustrations/b2fa23cf-3156-4b89-83e7-82d98c32c8b7/

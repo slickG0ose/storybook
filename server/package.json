@@ -10,18 +10,22 @@
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
     "db:seed-demo": "tsx prisma/demo-seed.ts",
+    "db:hydrate": "npm run db:seed && npm run db:seed-demo",
     "db:reset": "prisma migrate reset"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
     "@prisma/client": "^5.22.0",
+    "@storybook/shared": "*",
     "@types/multer": "^2.1.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
+    "jsonrepair": "^3.14.0",
     "multer": "^2.1.1",
     "prisma": "^5.22.0",
-    "uuid": "^11.1.0"
+    "uuid": "^11.1.0",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

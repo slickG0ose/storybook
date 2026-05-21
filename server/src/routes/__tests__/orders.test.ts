@@ -38,6 +38,15 @@ describe('Orders API routes', () => {
       expect(res.body.status).toBe('confirmed');
       expect(res.body.items).toHaveLength(2);
 
+      // Wire-shape assertion: pin the response item field names so client/server drift
+      // (e.g. title vs book_title) is caught at the unit-test layer.
+      expect(res.body.items[0]).toMatchObject({
+        book_id: expect.any(String),
+        title: expect.any(String),
+        quantity: expect.any(Number),
+        price: expect.any(Number),
+      });
+
       const expectedTotal = 19.99 + 17.99 * 2;
       expect(res.body.total).toBeCloseTo(expectedTotal, 2);
 
@@ -94,6 +103,15 @@ describe('Orders API routes', () => {
       expect(res.body.items[0].book_id).toBe('luna-star-garden');
       expect(res.body.items[0].quantity).toBe(1);
       expect(res.body.items[0].price).toBe(19.99);
+
+      // Wire-shape assertion: pin the response item field names so client/server drift
+      // (e.g. title vs book_title) is caught at the unit-test layer.
+      expect(res.body.items[0]).toMatchObject({
+        book_id: expect.any(String),
+        title: expect.any(String),
+        quantity: expect.any(Number),
+        price: expect.any(Number),
+      });
     });
 
     it('returns 404 for nonexistent order', async () => {
