@@ -10,13 +10,20 @@ import type { ZodSchema, ZodTypeAny } from 'zod';
 // through untouched.
 //
 // Drift behavior:
-//   - process.env.NODE_ENV !== 'production'  →  throw on mismatch (loud)
-//   - process.env.NODE_ENV === 'production'  →  console.warn (soft)
+//   - process.env.NODE_ENV !== 'production'  →  console.error + 500 envelope (loud, non-fatal)
+//   - process.env.NODE_ENV === 'production'  →  console.warn + serve body as-is (soft)
 //
 // Rationale: this exists to catch the OrderConfirmation `book_title` vs
 // `title` class of drift bug at test time, NOT to 500 every customer on a
 // bad deploy. The shape of the request schema is always enforced strictly
 // (returns 400). Response drift is the one we soften in prod.
+//
+// We MUST NOT throw from patchedJson — async route handlers reject and
+// Express 4 does not forward async rejections to the error middleware,
+// which makes Node exit on unhandledRejection and kills the dev server.
+// Instead we send a 500 envelope using the captured `originalJson` so we
+// don't recurse into the patched version. Loud (visible in console + the
+// request fails) without taking the process down.
 // ---------------------------------------------------------------------------
 
 export interface ValidateOptions<TReq extends ZodTypeAny, TRes extends ZodTypeAny> {
@@ -69,7 +76,9 @@ export function validate<TReq extends ZodTypeAny, TRes extends ZodTypeAny>(
               `Response shape drift on ${routeLabel}: ${summary}. ` +
               `Update the Zod schema in @storybook/shared or fix the handler.`;
             if (process.env.NODE_ENV !== 'production') {
-              throw new Error(message);
+              console.error('[validate] ' + message);
+              res.status(500);
+              return originalJson({ error: message });
             }
             console.warn('[validate] ' + message);
           }

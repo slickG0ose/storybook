@@ -84,7 +84,7 @@ describe('validate() middleware', () => {
       expect(res.body).toEqual({ id: 'a1', label: 'hello' });
     });
 
-    it('throws on response drift when NODE_ENV is not production (test/dev)', async () => {
+    it('returns a 500 envelope + console.error on response drift in non-prod', async () => {
       // NODE_ENV is 'test' in vitest by default; assert that explicitly.
       expect(process.env.NODE_ENV).not.toBe('production');
 
@@ -100,13 +100,53 @@ describe('validate() middleware', () => {
         },
       );
 
-      // Suppress the noisy uncaught-error log Express emits — we expect it.
       const consoleErr = vi.spyOn(console, 'error').mockImplementation(() => {});
 
       const res = await request(app).get('/drift');
 
-      // The throw inside res.json propagates as a 500 (Express default handler).
+      // We MUST NOT throw — async handler rejections kill the dev server
+      // under Express 4. Drift is loud (500 + console.error) but non-fatal.
       expect(res.status).toBe(500);
+      expect(res.body.error).toContain('Response shape drift on GET /drift');
+      expect(res.body.error).toContain('label');
+      expect(consoleErr).toHaveBeenCalled();
+      const message = consoleErr.mock.calls[0]?.[0];
+      expect(message).toContain('Response shape drift on GET /drift');
+      consoleErr.mockRestore();
+    });
+
+    it('does not crash the process when drift happens inside an async handler', async () => {
+      // Regression for the bug where `throw new Error(...)` inside the patched
+      // res.json escaped as an unhandledRejection because Express 4 does not
+      // forward async handler rejections to the default error middleware.
+      // Repro: an async handler that calls res.json with a drifting payload.
+      expect(process.env.NODE_ENV).not.toBe('production');
+
+      const Schema = z.object({ id: z.string(), label: z.string() });
+      const app = express();
+      app.get(
+        '/drift-async',
+        validate({ name: 'GET /drift-async', response: Schema }),
+        async (_req, res) => {
+          await Promise.resolve();
+          res.json({ id: 'a1', name: 'oops' });
+        },
+      );
+
+      const consoleErr = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const rejectionHandler = vi.fn();
+      process.on('unhandledRejection', rejectionHandler);
+
+      const res = await request(app).get('/drift-async');
+
+      // Yield to the event loop so any pending unhandledRejection would fire.
+      await new Promise(resolve => setImmediate(resolve));
+
+      process.off('unhandledRejection', rejectionHandler);
+
+      expect(res.status).toBe(500);
+      expect(res.body.error).toContain('Response shape drift');
+      expect(rejectionHandler).not.toHaveBeenCalled();
       consoleErr.mockRestore();
     });
 

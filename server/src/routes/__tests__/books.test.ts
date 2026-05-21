@@ -410,6 +410,78 @@ describe('Books API routes', () => {
     });
   });
 
+  describe('GET /api/books/:id/versions', () => {
+    async function claimBookForUser(bookId: string, email: string) {
+      const user = await prisma.user.findFirst({ where: { email } });
+      await prisma.book.update({
+        where: { id: bookId },
+        data: { created_by: user!.id, status: 'draft' },
+      });
+      return user!;
+    }
+
+    it('synthesizes page_number for legacy snapshots that lack it', async () => {
+      // Regression: BookVersion rows written by /api/generate before the
+      // page_number fix only contain { text, illustrationDescription }.
+      // The response schema requires page_number, so the GET handler must
+      // synth it from array index. Without this, the validate middleware
+      // returns a 500 on every GET versions call for legacy books.
+      const token = await createUserAndGetToken(app);
+      await claimBookForUser('luna-star-garden', 'author@example.com');
+
+      const legacyPages = [
+        { text: 'p1', illustrationDescription: 'i1' },
+        { text: 'p2', illustrationDescription: 'i2' },
+        { text: 'p3', illustrationDescription: 'i3' },
+      ];
+      await prisma.bookVersion.create({
+        data: {
+          book_id: 'luna-star-garden',
+          version: 1,
+          pages_json: JSON.stringify(legacyPages),
+        },
+      });
+
+      const res = await request(app)
+        .get('/api/books/luna-star-garden/versions')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(1);
+      expect(res.body[0].pages).toHaveLength(3);
+      expect(res.body[0].pages.map((p: { page_number: number }) => p.page_number)).toEqual([1, 2, 3]);
+      expect(res.body[0].pages[0].text).toBe('p1');
+      expect(res.body[0].pages[2].illustrationDescription).toBe('i3');
+    });
+
+    it('preserves explicit page_number on newer snapshots', async () => {
+      // The synth uses `?? i + 1` so snapshots that did persist page_number
+      // (e.g. from the /restore or /revise paths) keep their value even if
+      // it doesn't equal index + 1.
+      const token = await createUserAndGetToken(app);
+      await claimBookForUser('luna-star-garden', 'author@example.com');
+
+      const explicitPages = [
+        { page_number: 10, text: 'p10', illustrationDescription: 'i10' },
+        { page_number: 20, text: 'p20', illustrationDescription: 'i20' },
+      ];
+      await prisma.bookVersion.create({
+        data: {
+          book_id: 'luna-star-garden',
+          version: 1,
+          pages_json: JSON.stringify(explicitPages),
+        },
+      });
+
+      const res = await request(app)
+        .get('/api/books/luna-star-garden/versions')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body[0].pages.map((p: { page_number: number }) => p.page_number)).toEqual([10, 20]);
+    });
+  });
+
   describe('POST /api/books/:id/revise', () => {
     beforeEach(() => {
       mockCreate.mockReset();
