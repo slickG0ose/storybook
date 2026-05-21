@@ -186,7 +186,18 @@ Make the story warm, engaging, and age-appropriate. Use vivid but simple languag
         versions: {
           create: {
             version: 1,
-            pages_json: JSON.stringify(story.pages),
+            // Persist page_number explicitly so this snapshot matches the
+            // BookVersionPageSchema wire shape. story.pages comes from Claude
+            // without page_number — derive it from array index. Read sites
+            // also synth from index as a fallback, but writing it here keeps
+            // new snapshots forward-consistent.
+            pages_json: JSON.stringify(
+              story.pages.map((p, i) => ({
+                page_number: i + 1,
+                text: p.text,
+                illustrationDescription: p.illustrationDescription,
+              })),
+            ),
           },
         },
       },

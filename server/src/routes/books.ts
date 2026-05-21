@@ -568,10 +568,23 @@ router.get(
       orderBy: { version: 'desc' },
     });
 
-    res.json(versions.map(v => ({
-      ...v,
-      pages: JSON.parse(v.pages_json),
-    })));
+    // Synthesize page_number from array index for legacy snapshots — early
+    // BookVersion rows (written before generate.ts persisted page_number)
+    // contain only { text, illustrationDescription }. Page number is
+    // deterministically array-index + 1, so the data isn't lost, just
+    // implicit. `?? i + 1` lets newer snapshots that include an explicit
+    // page_number keep their value.
+    res.json(versions.map(v => {
+      const pages = JSON.parse(v.pages_json) as Array<{
+        text: string;
+        illustrationDescription: string;
+        page_number?: number;
+      }>;
+      return {
+        ...v,
+        pages: pages.map((p, i) => ({ ...p, page_number: p.page_number ?? i + 1 })),
+      };
+    }));
   },
 );
 

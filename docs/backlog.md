@@ -63,6 +63,43 @@ Aspirational, not committed. Captured so structural decisions today stay forward
 
 Update this section as work proceeds. Subagents read from here.
 
+### agent/fix/illustrate-empty-response — 2026-05-20
+
+**Backlog:** none (off-backlog — manual-QA surfaced a bug after PR #32). User clicked "Generate Illustration" on a single page in book view and saw `Failed to execute 'json' on 'Response': Unexpected end of JSON input` next to the Illustrate All CTA.
+**Owner:** multi-zone — @storefront (client/) + @booksmith (server/).
+
+**Scope (user-confirmed: symptom + obvious bugs):**
+
+1. **Client** — `client/src/pages/BookDetail.tsx:252-256` (`handleIllustrate`): bare `await res.json()` on the error AND success path crashes on an empty body, leaking the raw browser error string into the UI. Replace with a small helper that reads `res.text()`, attempts `JSON.parse`, and falls back to a status-code-based message (e.g., `Server returned ${res.status} ${res.statusText} with an empty response`). Same pattern applies anywhere else in this file that does `await res.json()` after a fetch where the server might 4xx/5xx without a body — audit and update consistently.
+
+2. **Server — surface OpenAI errors instead of silent null.** `server/src/services/illustrations.ts:37-41` (`callOpenAIImage`): currently logs the OpenAI error text and returns `null`. The route then proceeds, returns the book unchanged with 200 + JSON, and the user sees no error and no illustration. Change `callOpenAIImage` to throw with the OpenAI error text (status + first ~500 chars of body) so the route's existing `try/catch` at `server/src/routes/books.ts:614-643` turns it into `500 + { error: 'Failed to generate illustrations. <openai message>' }`. Apply to `generateCover` path too if it has the same pattern.
+
+3. **Server — global Express error handler.** `server/src/index.ts` mounts no `(err, req, res, next)` handler. Async-handler rejections in Express 4 currently hang the request. Add a final `app.use((err, req, res, next) => { ... })` that logs the error and responds `500 + { error: 'Internal server error' }` (no leaking stack to the client). This is defensive — not the proven cause of *this* incident, but the gap should be closed regardless.
+
+4. **Server — add request timeout to OpenAI fetch.** `server/src/services/illustrations.ts` `callOpenAIImage`: wrap the `fetch` with an `AbortController` set to ~120s. A hung request fails fast with a usable error instead of waiting forever (or being silently killed by an intermediary like a corporate proxy).
+
+5. **Tests — `POST /api/books/:id/illustrate` has zero coverage.** Add to `server/src/routes/__tests__/books.test.ts`:
+   - 401 when not authenticated
+   - 404 when book doesn't exist or belongs to another user
+   - 501 when `OPENAI_API_KEY` is missing
+   - 400 when there are no pages to illustrate
+   - Happy path (mock `generateIllustration` to return a URL) — asserts page row updated, response matches `BookIllustrateResponseSchema`
+   - Error path — `generateIllustration` mock throws; response is 500 + `{ error: ... }` (not empty)
+
+   `generateIllustration` is imported from `../services/illustrations`. Mock it via `vi.mock('../../services/illustrations', ...)` at the top of the describe block.
+
+**Out of scope** (deferred unless reproduction shows otherwise):
+- tsx-watch-restart-mid-request theory — would need to add restart suppression or move .backups outside the watch root; punt until we see it again with the better diagnostics in place.
+- Surfacing partial-failure when "Illustrate All" succeeds for some pages and fails for others — current loop will throw on the first failure and lose the partial work. Note for follow-up backlog item if user encounters it.
+
+**Plan**
+- [x] (storefront) Harden `handleIllustrate` JSON parsing — added `safeReadJson` helper + `errorMessageFromResponse` builder in `BookDetail.tsx`; applied to `handleIllustrate` (both paths), `handleRevise`, and `handleRestore` (long-running mutation flows). Skipped `handleEditPrompt`/`handlePublish`/`revertIllustration` — they're quick mutations whose failure mode is silent (no UI leak class to fix). 4 new tests added covering empty 500, non-JSON 502, valid JSON error, and empty 2xx success paths.
+- [x] (booksmith) Make `callOpenAIImage` throw on `!res.ok` so the route's catch block surfaces the OpenAI error
+- [x] (booksmith) Add `AbortController` timeout (~120s) to the OpenAI fetch
+- [x] (booksmith) Add global error handler in `server/src/index.ts`
+- [x] (booksmith) Add `POST /illustrate` test coverage in `server/src/routes/__tests__/books.test.ts`
+- [ ] (main) Verify per CLAUDE.md done criteria: server + client tests pass, manual reproduce in browser with new error path
+
 ### agent/chore/ops4-ops5-and-ts-fixes — 2026-05-20
 
 **Backlog:** OPS.4 (`server/.env.example`) + OPS.5 (gitignore `.claude/settings.local.json`) + folded-in fix for pre-existing TS errors in `client/src/components/BookSpread.tsx` and `client/src/pages/__tests__/Home.test.tsx` (no backlog ID — surfaced during `/ship` of PR #27).

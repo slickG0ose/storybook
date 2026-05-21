@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';
 import type { Express } from 'express';
 import { createTestApp, resetDatabase } from '../../__tests__/setup';
@@ -14,6 +14,22 @@ vi.mock('@anthropic-ai/sdk', () => {
     messages = { create: (...args: unknown[]) => mockCreate(...args) };
   }
   return { default: MockAnthropic };
+});
+
+// Stub the illustrations service so /illustrate tests don't hit OpenAI or
+// touch the real filesystem. Tests configure return value / throws per case.
+// We keep `listIllustrationVersions` as a passthrough to the real impl by
+// re-importing it inside the factory — the GET /illustrations/:pageNumber
+// suite uses real DB rows and shouldn't be affected.
+const mockGenerateIllustration = vi.fn();
+vi.mock('../../services/illustrations', async () => {
+  const actual = await vi.importActual<typeof import('../../services/illustrations')>(
+    '../../services/illustrations',
+  );
+  return {
+    ...actual,
+    generateIllustration: (...args: unknown[]) => mockGenerateIllustration(...args),
+  };
 });
 
 function mockClaudeReviseResponse(pages: { text: string; illustrationDescription: string }[], description = 'Revised description') {
@@ -394,6 +410,78 @@ describe('Books API routes', () => {
     });
   });
 
+  describe('GET /api/books/:id/versions', () => {
+    async function claimBookForUser(bookId: string, email: string) {
+      const user = await prisma.user.findFirst({ where: { email } });
+      await prisma.book.update({
+        where: { id: bookId },
+        data: { created_by: user!.id, status: 'draft' },
+      });
+      return user!;
+    }
+
+    it('synthesizes page_number for legacy snapshots that lack it', async () => {
+      // Regression: BookVersion rows written by /api/generate before the
+      // page_number fix only contain { text, illustrationDescription }.
+      // The response schema requires page_number, so the GET handler must
+      // synth it from array index. Without this, the validate middleware
+      // returns a 500 on every GET versions call for legacy books.
+      const token = await createUserAndGetToken(app);
+      await claimBookForUser('luna-star-garden', 'author@example.com');
+
+      const legacyPages = [
+        { text: 'p1', illustrationDescription: 'i1' },
+        { text: 'p2', illustrationDescription: 'i2' },
+        { text: 'p3', illustrationDescription: 'i3' },
+      ];
+      await prisma.bookVersion.create({
+        data: {
+          book_id: 'luna-star-garden',
+          version: 1,
+          pages_json: JSON.stringify(legacyPages),
+        },
+      });
+
+      const res = await request(app)
+        .get('/api/books/luna-star-garden/versions')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(1);
+      expect(res.body[0].pages).toHaveLength(3);
+      expect(res.body[0].pages.map((p: { page_number: number }) => p.page_number)).toEqual([1, 2, 3]);
+      expect(res.body[0].pages[0].text).toBe('p1');
+      expect(res.body[0].pages[2].illustrationDescription).toBe('i3');
+    });
+
+    it('preserves explicit page_number on newer snapshots', async () => {
+      // The synth uses `?? i + 1` so snapshots that did persist page_number
+      // (e.g. from the /restore or /revise paths) keep their value even if
+      // it doesn't equal index + 1.
+      const token = await createUserAndGetToken(app);
+      await claimBookForUser('luna-star-garden', 'author@example.com');
+
+      const explicitPages = [
+        { page_number: 10, text: 'p10', illustrationDescription: 'i10' },
+        { page_number: 20, text: 'p20', illustrationDescription: 'i20' },
+      ];
+      await prisma.bookVersion.create({
+        data: {
+          book_id: 'luna-star-garden',
+          version: 1,
+          pages_json: JSON.stringify(explicitPages),
+        },
+      });
+
+      const res = await request(app)
+        .get('/api/books/luna-star-garden/versions')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body[0].pages.map((p: { page_number: number }) => p.page_number)).toEqual([10, 20]);
+    });
+  });
+
   describe('POST /api/books/:id/revise', () => {
     beforeEach(() => {
       mockCreate.mockReset();
@@ -467,6 +555,147 @@ describe('Books API routes', () => {
       expect(page1).toBeDefined();
       expect(page1.text).toBe('NEW page 1 text');
       expect(page1.illustration_url).toBeNull();
+    });
+  });
+
+  describe('POST /api/books/:id/illustrate', () => {
+    let originalApiKey: string | undefined;
+
+    beforeEach(() => {
+      mockGenerateIllustration.mockReset();
+      originalApiKey = process.env.OPENAI_API_KEY;
+      process.env.OPENAI_API_KEY = 'sk-test';
+    });
+
+    afterEach(() => {
+      if (originalApiKey === undefined) {
+        delete process.env.OPENAI_API_KEY;
+      } else {
+        process.env.OPENAI_API_KEY = originalApiKey;
+      }
+    });
+
+    // Helper: claim luna-star-garden as the authed user's draft book so the
+    // route's ownership check passes. Returns the token.
+    async function setupOwnedDraft(): Promise<string> {
+      const token = await createUserAndGetToken(app);
+      const user = await prisma.user.findFirst({ where: { email: 'author@example.com' } });
+      await prisma.book.update({
+        where: { id: 'luna-star-garden' },
+        data: { status: 'draft', created_by: user!.id },
+      });
+      return token;
+    }
+
+    it('returns 401 without auth', async () => {
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/illustrate')
+        .send({});
+      expect(res.status).toBe(401);
+    });
+
+    it('returns 501 when OPENAI_API_KEY is not configured', async () => {
+      delete process.env.OPENAI_API_KEY;
+      const token = await setupOwnedDraft();
+
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/illustrate')
+        .set('Authorization', `Bearer ${token}`)
+        .send({});
+      expect(res.status).toBe(501);
+      expect(res.body.error).toMatch(/OPENAI_API_KEY/);
+    });
+
+    it("returns 404 when the book doesn't exist", async () => {
+      const token = await createUserAndGetToken(app);
+
+      const res = await request(app)
+        .post('/api/books/does-not-exist/illustrate')
+        .set('Authorization', `Bearer ${token}`)
+        .send({});
+      expect(res.status).toBe(404);
+    });
+
+    it("returns 404 when the book belongs to a different user", async () => {
+      const token = await createUserAndGetToken(app);
+      // Book is owned by no one (seed default) — handler treats this as "not
+      // owned by the caller" and 404s, same as another-user's-book.
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/illustrate')
+        .set('Authorization', `Bearer ${token}`)
+        .send({});
+      expect(res.status).toBe(404);
+    });
+
+    it('returns 400 when all pages are already illustrated and no pageNumber is set', async () => {
+      const token = await setupOwnedDraft();
+      // Mark every page as already illustrated so the route's
+      // "pages to illustrate" filter returns empty.
+      await prisma.page.updateMany({
+        where: { book_id: 'luna-star-garden' },
+        data: { illustration_url: '/illustrations/luna-star-garden/page-x.png' },
+      });
+
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/illustrate')
+        .set('Authorization', `Bearer ${token}`)
+        .send({});
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/No pages to illustrate/);
+    });
+
+    it('illustrates a single page on the happy path and persists the URL', async () => {
+      const token = await setupOwnedDraft();
+
+      const fakeUrl = '/illustrations/luna-star-garden/page-2.png';
+      mockGenerateIllustration.mockResolvedValueOnce(fakeUrl);
+
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/illustrate')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ pageNumber: 2 });
+
+      expect(res.status).toBe(200);
+      // Response matches BookWithPagesSchema — spot-check that the structure
+      // arrived (full schema validation runs in the response middleware).
+      expect(res.body).toHaveProperty('id', 'luna-star-garden');
+      expect(Array.isArray(res.body.pages)).toBe(true);
+      const updatedPage = res.body.pages.find((p: { page_number: number }) => p.page_number === 2);
+      expect(updatedPage.illustration_url).toBe(fakeUrl);
+
+      // Other pages should be untouched (no illustration_url set).
+      for (const page of res.body.pages) {
+        if (page.page_number !== 2) {
+          expect(page.illustration_url).toBeNull();
+        }
+      }
+
+      // Mock was called exactly once for page 2.
+      expect(mockGenerateIllustration).toHaveBeenCalledTimes(1);
+      expect(mockGenerateIllustration.mock.calls[0][1]).toBe(2);
+    });
+
+    it('returns 500 with a non-empty JSON error body when generation throws', async () => {
+      // This is the regression pin for the reported bug: server must respond
+      // with a parseable JSON envelope, NOT 200 + silent success and NOT a
+      // non-2xx with an empty body (which is what produced the user-visible
+      // "Unexpected end of JSON input" error in the browser).
+      const token = await setupOwnedDraft();
+
+      mockGenerateIllustration.mockRejectedValueOnce(
+        new Error('OpenAI image API returned 500 Internal Server Error: boom'),
+      );
+
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/illustrate')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ pageNumber: 1 });
+
+      expect(res.status).toBe(500);
+      expect(res.body).toBeDefined();
+      expect(typeof res.body.error).toBe('string');
+      expect(res.body.error.length).toBeGreaterThan(0);
+      expect(res.body.error).toMatch(/Failed to generate illustrations/);
     });
   });
 
