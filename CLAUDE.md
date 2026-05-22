@@ -6,7 +6,7 @@ Guidance for Claude Code sessions working in StoryBook Storefront.
 
 AI-powered children's book store. React + Express + Claude API. Working storefront with creation workflow being built out. Demo-grade product concept.
 
-**Current focus:** see [docs/backlog.md](docs/backlog.md). Tier 1 is the dependency chain: versioning → story iteration → illustration generation → illustration iteration.
+**Current focus:** see [GitHub Issues](https://github.com/slickG0ose/storybook/issues), grouped by milestone (Foundation, Harness Rebuild, Tier 2 Storefront, Illustration v2, Mobile + Series, Print/Subscription). The pre-migration backlog at [docs/backlog.md](docs/backlog.md) is preserved as a read-only archive of completed-work conventions (OPS.1–3) — do not add new items there.
 
 ## Layout
 
@@ -120,7 +120,8 @@ NEVER claim a feature complete until ALL of:
 
 ## Pointers
 
-- **Backlog:** `docs/backlog.md`
+- **Backlog (active):** https://github.com/slickG0ose/storybook/issues — grouped by milestone
+- **Backlog (archive):** `docs/backlog.md` — pre-migration, preserved for OPS conventions
 - **Research:** `docs/marketing-research.md`, `docs/print-publishing-research.md`
 - **Agent definitions:** `.claude/agents/{storefront,booksmith,qa}.md`
 - **Codebase map:** `AGENTS.md` (entry point), `.code-captain/docs/{toc,architecture,tech-stack,code-style,objective}.md` (deep reference)

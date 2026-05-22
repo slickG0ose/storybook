@@ -33,7 +33,8 @@ server/src/middleware/validate.ts|Zod validation middleware|Understanding contra
 shared/src/books.ts|Book API Zod schemas|Understanding shared types
 client/src/context/CartContext.tsx|Cart state management|Understanding cart flow
 CLAUDE.md|Project conventions + delegation rules|Understanding workflow
-docs/backlog.md|Current priorities + task tracking|Understanding what to build next
+github.com/slickG0ose/storybook/issues|Current priorities + task tracking (live tracker)|Understanding what to build next
+docs/backlog.md|Pre-migration archive (OPS.1-3 conventions)|Historical context only
 
 ## Navigate
 api-endpoints|server/src/routes/{books,cart,orders,generate,auth,admin}.ts
