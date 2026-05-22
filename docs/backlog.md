@@ -1,5 +1,12 @@
 # StoryBook Storefront — Product Backlog
 
+> [!IMPORTANT]
+> **Active work is tracked at https://github.com/slickG0ose/storybook/issues** (as of 2026-05-22, post-migration).
+>
+> This file is a **read-only archive** of the pre-migration backlog through 2026-05-22. It is preserved because the "Completed work" sections below contain non-obvious project conventions (OPS.1, OPS.2, OPS.3) that aren't captured anywhere else in the codebase. Do not edit; do not add new items here — open an issue in the GitHub tracker instead.
+>
+> Milestones on GitHub group active work: Foundation, Harness Rebuild, Tier 2 Storefront, Illustration v2, Mobile + Series, Print/Subscription.
+
 Established 2026-05-14. The app is a working storefront + AI book creation tool. Core pivot: evolve from one-shot generation to a **collaborative creation workflow** with iteration loops.
 
 **Why this matters:** This is a demo of a real product concept, not a toy. The creation workflow (story iteration + illustration iteration) is the core differentiator over competitors like Wonderbly and Hooray Heroes.
