@@ -43,6 +43,10 @@ jobs:
         working-directory: client
         env:
           VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
+          # GH Pages serves project sites under /<repo>. Match the path
+          # Pages serves at: slickg0ose.github.io/storybook/.
+          # If you switch to a custom domain or org root, set this to /.
+          VITE_BASE_PATH: /storybook/
         run: npm run build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
