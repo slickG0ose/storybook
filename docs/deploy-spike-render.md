@@ -57,6 +57,8 @@ Before clicking deploy:
 7. Once green, the web service URL is shown — typically `https://storybook-server.onrender.com`. Copy it.
 8. Open the URL — you should see whatever the root path renders (currently no static index on root; `GET /api/health` should return `{"status":"ok"}`).
 
+**If the Blueprint preview shows a build command that doesn't match `render.yaml`** (e.g., extra lines, missing flags, drifted from the file on disk), use **Sync Blueprint** in the Render dashboard to re-apply `render.yaml` over any manual dashboard edits. Manual overrides in the dashboard win over render.yaml until you sync.
+
 ### Step 2 — Wire up GitHub Pages
 
 1. In the repo on GitHub, go to **Settings > Pages**. Set Source to **GitHub Actions**.
@@ -99,6 +101,18 @@ on:
 ```
 
 Render's GitHub integration already auto-deploys the server on push to `master`.
+
+## Gotchas surfaced during the first real deploy attempt (fixed)
+
+These three bugs hit on the first attempt to apply the Blueprint. All three are fixed in render.yaml as of commit on this branch — calling out so future sessions don't re-introduce them.
+
+1. **`NODE_ENV=production` killed devDeps at build time.** Render evaluates env vars during build, so `NODE_ENV=production` made `npm ci` skip all devDeps. The server runs TypeScript directly via `tsx` (a devDep) at startup — without it, the server crashes before binding the port. Fix: `npm ci --include=dev` in the build command.
+
+2. **Shell state leaked across YAML literal-block lines.** The original buildCommand had `cd server && ...` on two separate lines. Render runs the literal block as a single bash script, so the working directory from line 2 persisted into line 3, and the second `cd server` tried to enter `server/server/` which doesn't exist. Fix: chain `cd server && cmd1 && cmd2` on one logical line.
+
+3. **Node version drift.** Render defaulted to Node 24 (bleeding edge); the rest of the stack (CI workflow, local dev) is on Node 22. Fix: explicit `NODE_VERSION: '22'` env var in render.yaml.
+
+If you see `bash: line N: cd: server: No such file or directory` in a build log after future schema changes, you've likely re-introduced bug #2.
 
 ## Known issues / limitations
 
