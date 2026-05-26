@@ -19,15 +19,25 @@ services:
     runtime: node
     plan: free
     region: oregon
+    # Build notes:
+    # - --include=dev is required because the server runs TypeScript at
+    #   runtime via tsx (a devDep); without this, Render's build-time
+    #   NODE_ENV=production omits devDeps and the server fails to start.
+    # - The cd + prisma commands MUST chain with && on a single logical
+    #   line. Render runs the literal block as one bash script and shell
+    #   state persists across lines — splitting the cd into separate
+    #   lines causes the second cd to fail with "cd: server: No such
+    #   file or directory" because we're already inside server/.
     buildCommand: |
-      npm ci
-      cd server && npx prisma generate --schema=prisma/schema.postgresql.prisma
-      cd server && npx prisma db push --schema=prisma/schema.postgresql.prisma --skip-generate --accept-data-loss
+      npm ci --include=dev
+      cd server && npx prisma generate --schema=prisma/schema.postgresql.prisma && npx prisma db push --schema=prisma/schema.postgresql.prisma --skip-generate --accept-data-loss
     startCommand: cd server && npm start
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
         value: production
+      - key: NODE_VERSION
+        value: '22'
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: OPENAI_API_KEY
