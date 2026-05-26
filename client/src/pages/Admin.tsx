@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { Shield, Users, BookOpen, FolderOpen, Loader2, RotateCcw, Star, AlertCircle, Trash2 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { api } from '../lib/apiBase'
 import type { AdminUser, AdminBook, OrphanIllustration } from '../types'
 
 // The orphan listing returns `path` as `/illustrations/<entry>`. The delete
@@ -57,7 +58,7 @@ export default function Admin() {
     setUsersLoading(true)
     setUsersError('')
     try {
-      const res = await fetch('/api/admin/users', {
+      const res = await fetch(api('/api/admin/users'), {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (!res.ok) throw new Error('Failed to load users')
@@ -75,7 +76,7 @@ export default function Admin() {
     setBooksLoading(true)
     setBooksError('')
     try {
-      const res = await fetch('/api/admin/books', {
+      const res = await fetch(api('/api/admin/books'), {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (!res.ok) throw new Error('Failed to load books')
@@ -93,7 +94,7 @@ export default function Admin() {
     setOrphansLoading(true)
     setOrphansError('')
     try {
-      const res = await fetch('/api/admin/orphan-illustrations', {
+      const res = await fetch(api('/api/admin/orphan-illustrations'), {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (!res.ok) throw new Error('Failed to load orphan illustrations')
@@ -128,7 +129,7 @@ export default function Admin() {
     if (!token) return
     if (!window.confirm('Restore this user? They will be able to sign in again.')) return
     try {
-      const res = await fetch(`/api/admin/users/${id}/restore`, {
+      const res = await fetch(api(`/api/admin/users/${id}/restore`), {
         method: 'PUT',
         headers: { Authorization: `Bearer ${token}` },
       })
@@ -147,7 +148,7 @@ export default function Admin() {
     if (!token) return
     if (!window.confirm('Restore this book? It will reappear in the catalog.')) return
     try {
-      const res = await fetch(`/api/admin/books/${id}/restore`, {
+      const res = await fetch(api(`/api/admin/books/${id}/restore`), {
         method: 'PUT',
         headers: { Authorization: `Bearer ${token}` },
       })
@@ -176,7 +177,7 @@ export default function Admin() {
     })
 
     try {
-      const res = await fetch(`/api/admin/orphan-illustrations/${encodeURIComponent(id)}`, {
+      const res = await fetch(api(`/api/admin/orphan-illustrations/${encodeURIComponent(id)}`), {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       })
@@ -210,7 +211,7 @@ export default function Admin() {
     if (!token) return
     const next = !book.is_featured
     try {
-      const res = await fetch(`/api/admin/books/${book.id}/featured`, {
+      const res = await fetch(api(`/api/admin/books/${book.id}/featured`), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',

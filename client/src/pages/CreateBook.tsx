@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Sparkles, Wand2, Loader2, Plus, X } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { api } from '../lib/apiBase'
 import type { Character, CharacterRole } from '../types'
 
 interface ThemeOption {
@@ -92,7 +93,7 @@ export default function CreateBook() {
     try {
       const fd = new FormData()
       fd.append('image', file)
-      const res = await fetch('/api/uploads/style-reference', {
+      const res = await fetch(api('/api/uploads/style-reference'), {
         method: 'POST',
         body: fd,
       })
@@ -156,7 +157,7 @@ export default function CreateBook() {
         descriptor: descriptor?.trim() || undefined,
         relationship: relationship?.trim() || undefined,
       }))
-      const res = await fetch('/api/generate', {
+      const res = await fetch(api('/api/generate'), {
         method: 'POST',
         headers,
         body: JSON.stringify({
@@ -290,7 +291,7 @@ export default function CreateBook() {
             {styleReferenceUrl ? (
               <div className="flex gap-3 items-start p-3 rounded-2xl border-2 border-pink-200 dark:border-pink-800 bg-pink-50/40 dark:bg-pink-900/10">
                 <img
-                  src={`http://localhost:3001${styleReferenceUrl}`}
+                  src={api(styleReferenceUrl)}
                   alt="Style reference"
                   className="w-20 h-20 object-cover rounded-lg shadow-sm shrink-0"
                 />

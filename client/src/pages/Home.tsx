@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { Sparkles, Search, X, BookOpen, Eye } from 'lucide-react'
 import BookCard from '../components/BookCard'
+import { api } from '../lib/apiBase'
 import type { Book, Page } from '../types'
 
 function BookPreviewModal({ book, onClose }: { book: Book; onClose: () => void }) {
@@ -9,7 +10,7 @@ function BookPreviewModal({ book, onClose }: { book: Book; onClose: () => void }
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch(`/api/books/${book.id}`)
+    fetch(api(`/api/books/${book.id}`))
       .then(r => r.json())
       .then(data => {
         if (data.pages?.length) setFirstPage(data.pages[0])
@@ -103,9 +104,9 @@ export default function Home() {
 
   useEffect(() => {
     Promise.all([
-      fetch('/api/books').then(r => r.json()) as Promise<Book[]>,
-      fetch('/api/books/themes').then(r => r.json()) as Promise<string[]>,
-      fetch('/api/books/age-ranges').then(r => r.json()) as Promise<string[]>,
+      fetch(api('/api/books')).then(r => r.json()) as Promise<Book[]>,
+      fetch(api('/api/books/themes')).then(r => r.json()) as Promise<string[]>,
+      fetch(api('/api/books/age-ranges')).then(r => r.json()) as Promise<string[]>,
     ]).then(([booksData, themesData, ageData]) => {
       setBooks(booksData)
       setThemes(themesData)

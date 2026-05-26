@@ -1,0 +1,44 @@
+# Render Blueprint — StoryBook Storefront server + Postgres.
+#
+# This file is read by Render only after you connect this repo via the
+# Render dashboard ("New > Blueprint"). It does nothing until then.
+# See docs/deploy-spike-render.md for the full click-by-click.
+#
+# Free plan caveats (read these before clicking deploy):
+#   - Web service spins down after 15 min idle. Cold-start ~30s on wake.
+#   - Web service filesystem is ephemeral. Runtime-generated illustration
+#     PNGs are LOST on next deploy or restart. Committed demo-seed PNGs
+#     in server/public/illustrations/ ship inside the deploy bundle and
+#     survive. Long-term fix: blob storage (R2/S3/Cloudinary).
+#   - Free Postgres expires after 90 days; upgrade to a paid plan ($7/mo
+#     at time of writing) before that to keep your data.
+
+services:
+  - type: web
+    name: storybook-server
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: |
+      npm ci
+      cd server && npx prisma generate --schema=prisma/schema.postgresql.prisma
+      cd server && npx prisma db push --schema=prisma/schema.postgresql.prisma --skip-generate --accept-data-loss
+    startCommand: cd server && npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: storybook-postgres
+          property: connectionString
+
+databases:
+  - name: storybook-postgres
+    plan: free
+    databaseName: storybook
+    user: storybook_admin

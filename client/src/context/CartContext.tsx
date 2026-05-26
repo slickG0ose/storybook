@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
 import type { CartItem } from '../types'
+import { api } from '../lib/apiBase'
 
 interface CartContextValue {
   items: CartItem[];
@@ -34,7 +35,7 @@ export function CartProvider({ children }: CartProviderProps) {
 
   const fetchCart = useCallback(async () => {
     try {
-      const res = await fetch(`/api/cart/${sessionId}`)
+      const res = await fetch(api(`/api/cart/${sessionId}`))
       const data = await res.json() as { items: CartItem[]; total: number }
       setItems(data.items)
       setTotal(data.total)
@@ -48,7 +49,7 @@ export function CartProvider({ children }: CartProviderProps) {
   }, [fetchCart])
 
   const addToCart = async (bookId: string): Promise<void> => {
-    await fetch(`/api/cart/${sessionId}/items`, {
+    await fetch(api(`/api/cart/${sessionId}/items`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ bookId }),
@@ -57,7 +58,7 @@ export function CartProvider({ children }: CartProviderProps) {
   }
 
   const updateQuantity = async (bookId: string, quantity: number): Promise<void> => {
-    await fetch(`/api/cart/${sessionId}/items/${bookId}`, {
+    await fetch(api(`/api/cart/${sessionId}/items/${bookId}`), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ quantity }),
@@ -66,14 +67,14 @@ export function CartProvider({ children }: CartProviderProps) {
   }
 
   const removeFromCart = async (bookId: string): Promise<void> => {
-    await fetch(`/api/cart/${sessionId}/items/${bookId}`, {
+    await fetch(api(`/api/cart/${sessionId}/items/${bookId}`), {
       method: 'DELETE',
     })
     await fetchCart()
   }
 
   const clearCart = async (): Promise<void> => {
-    await fetch(`/api/cart/${sessionId}`, { method: 'DELETE' })
+    await fetch(api(`/api/cart/${sessionId}`), { method: 'DELETE' })
     await fetchCart()
   }
 

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { BookOpen, Sparkles, Send, Trash2, EyeOff } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { api } from '../lib/apiBase'
 import type { Book, BookWithPages } from '../types'
 
 type MyBook = Book & Partial<Pick<BookWithPages, 'pages'>>
@@ -15,7 +16,7 @@ export default function MyBooks() {
 
   const fetchBooks = useCallback(() => {
     if (!user) return
-    fetch('/api/books/mine', {
+    fetch(api('/api/books/mine'), {
       headers: { Authorization: `Bearer ${user.token}` },
     })
       .then(res => res.json())
@@ -28,7 +29,7 @@ export default function MyBooks() {
 
   const publishBook = async (bookId: string) => {
     if (!user) return
-    const res = await fetch(`/api/books/${bookId}/publish`, {
+    const res = await fetch(api(`/api/books/${bookId}/publish`), {
       method: 'PUT',
       headers: { Authorization: `Bearer ${user.token}` },
     })
@@ -43,7 +44,7 @@ export default function MyBooks() {
     if (!ok) return
     setUnpublishingId(bookId)
     try {
-      const res = await fetch(`/api/books/${bookId}/unpublish`, {
+      const res = await fetch(api(`/api/books/${bookId}/unpublish`), {
         method: 'PUT',
         headers: { Authorization: `Bearer ${user.token}` },
       })
@@ -62,7 +63,7 @@ export default function MyBooks() {
 
   const deleteBook = async (bookId: string) => {
     if (!user) return
-    const res = await fetch(`/api/books/${bookId}`, {
+    const res = await fetch(api(`/api/books/${bookId}`), {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${user.token}` },
     })

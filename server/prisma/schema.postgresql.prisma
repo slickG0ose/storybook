@@ -1,0 +1,135 @@
+// DO NOT EDIT MANUALLY.
+// Source of truth: server/prisma/schema.prisma (SQLite, used by local dev + CI).
+// Regenerate this file by running: npm run db:gen-postgres-schema
+// (from the server/ directory).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  name          String
+  password_hash String
+  token         String?
+  role          String    @default("user")
+  deleted_at    DateTime?
+  created_at    DateTime  @default(now())
+
+  books  Book[]
+  orders Order[]
+}
+
+model Book {
+  id              String   @id @default(uuid())
+  title           String
+  author          String
+  description     String
+  theme           String
+  age_range       String
+  cover_emoji     String
+  cover_color     String
+  cover_url       String?
+  price           Float
+  is_featured     Boolean  @default(false)
+  is_user_created Boolean  @default(false)
+  status          String   @default("published")
+  version         Int      @default(1)
+  characters_json String?
+  style_descriptor String?
+  style_reference_url String?
+  created_by      String?
+  deleted_at      DateTime?
+  created_at      DateTime @default(now())
+
+  creator    User?         @relation(fields: [created_by], references: [id])
+  pages      Page[]
+  versions   BookVersion[]
+  illustration_versions IllustrationVersion[]
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+}
+
+model IllustrationVersion {
+  id           Int      @id @default(autoincrement())
+  book_id      String
+  page_number  Int
+  version      Int
+  url          String
+  feedback     String?
+  created_at   DateTime @default(now())
+
+  book Book @relation(fields: [book_id], references: [id], onDelete: Cascade)
+
+  @@unique([book_id, page_number, version])
+}
+
+model BookVersion {
+  id              Int      @id @default(autoincrement())
+  book_id         String
+  version         Int
+  pages_json      String
+  description     String?
+  characters_json String?
+  created_at      DateTime @default(now())
+
+  book Book @relation(fields: [book_id], references: [id], onDelete: Cascade)
+
+  @@unique([book_id, version])
+}
+
+model Page {
+  id                       Int     @id @default(autoincrement())
+  book_id                  String
+  illustration_url         String?
+  page_number              Int
+  text                     String
+  illustration_description String
+
+  book Book @relation(fields: [book_id], references: [id], onDelete: Cascade)
+
+  @@unique([book_id, page_number])
+}
+
+model CartItem {
+  id         Int    @id @default(autoincrement())
+  session_id String
+  book_id    String
+  quantity   Int    @default(1)
+
+  book Book @relation(fields: [book_id], references: [id], onDelete: Cascade)
+
+  @@unique([session_id, book_id])
+}
+
+model Order {
+  id             String   @id @default(uuid())
+  session_id     String
+  user_id        String?
+  customer_name  String
+  customer_email String
+  total          Float
+  status         String   @default("confirmed")
+  created_at     DateTime @default(now())
+
+  user  User?       @relation(fields: [user_id], references: [id])
+  items OrderItem[]
+}
+
+model OrderItem {
+  id       Int    @id @default(autoincrement())
+  order_id String
+  book_id  String
+  title    String
+  quantity Int
+  price    Float
+
+  order Order @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  book  Book  @relation(fields: [book_id], references: [id])
+}

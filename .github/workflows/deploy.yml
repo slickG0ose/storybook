@@ -10,15 +10,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Placeholder until F5 (demo deploy) lands. F3's deploy stack research doc
-  # decides the actual target (Vercel client + Railway/Fly server, vs Vercel
-  # everything + Postgres). This stub keeps the workflow file present so
-  # required-status-check rules can reference it ahead of time without 404s.
+  # Placeholder. Actual deploys happen via:
+  #   - Render (server + Postgres) — triggered by Render's GitHub
+  #     integration on push to master once the repo is connected via
+  #     render.yaml. No workflow logic needed here.
+  #   - GitHub Pages (client) — see .github/workflows/deploy-pages.yml.
+  # This file exists to keep "Deploy" as a referenceable status check
+  # for branch protection. See docs/deploy-spike-render.md for setup.
   placeholder:
-    name: Placeholder (deploy target TBD via F3 / F5)
+    name: Placeholder (deploys driven by Render + deploy-pages.yml)
     runs-on: ubuntu-latest
     steps:
       - run: |
-          echo "Deploy target not yet configured."
-          echo "See docs/deploy-stack-research.md (F3) for the option being chosen,"
-          echo "and the F5 task in the foundation plan for the implementation."
+          echo "Server deploys via Render (render.yaml at repo root)."
+          echo "Client deploys via .github/workflows/deploy-pages.yml."
+          echo "See docs/deploy-spike-render.md."
