@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, ShoppingCart, ChevronLeft, ChevronRight, Send, Loader2, RefreshCw, Paintbrush, Image, BookOpen, FileText, History, RotateCcw, CheckCircle2, X, GitCompare } from 'lucide-react'
 import { useCart } from '../context/CartContext'
 import { useAuth } from '../context/AuthContext'
+import { api } from '../lib/apiBase'
 import type { BookWithPages, BookVersion, IllustrationVersion, Page } from '../types'
 import BookSpread from '../components/BookSpread'
 
@@ -85,7 +86,7 @@ export default function BookDetail() {
   const fetchBook = () => {
     const headers: Record<string, string> = {}
     if (user?.token) headers['Authorization'] = `Bearer ${user.token}`
-    fetch(`/api/books/${id}`, { headers })
+    fetch(api(`/api/books/${id}`), { headers })
       .then(r => r.json())
       .then((data: BookWithPages) => { setBook(data); setLoading(false) })
   }
@@ -96,7 +97,7 @@ export default function BookDetail() {
     setVersionsLoading(true)
     setVersionsError('')
     try {
-      const res = await fetch(`/api/books/${bookId}/versions`, {
+      const res = await fetch(api(`/api/books/${bookId}/versions`), {
         headers: { 'Authorization': `Bearer ${token}` },
       })
       if (!res.ok) {
@@ -183,7 +184,7 @@ export default function BookDetail() {
     try {
       const body: { feedback: string; newPageCount?: number } = { feedback: text }
       if (typeof newPageCount === 'number') body.newPageCount = newPageCount
-      const res = await fetch(`/api/books/${book.id}/revise`, {
+      const res = await fetch(api(`/api/books/${book.id}/revise`), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -223,7 +224,7 @@ export default function BookDetail() {
     setRestoringVersion(version)
     setRestoreError('')
     try {
-      const res = await fetch(`/api/books/${book.id}/versions/${version}/restore`, {
+      const res = await fetch(api(`/api/books/${book.id}/versions/${version}/restore`), {
         method: 'PUT',
         headers: { 'Authorization': `Bearer ${user.token}` },
       })
@@ -247,7 +248,7 @@ export default function BookDetail() {
 
   const handlePublish = async () => {
     if (!user) return
-    const res = await fetch(`/api/books/${book.id}/publish`, {
+    const res = await fetch(api(`/api/books/${book.id}/publish`), {
       method: 'PUT',
       headers: { 'Authorization': `Bearer ${user.token}` },
     })
@@ -259,7 +260,7 @@ export default function BookDetail() {
 
   const handleEditPrompt = async (pageNumber: number, description: string): Promise<void> => {
     if (!user) return
-    const res = await fetch(`/api/books/${book.id}/pages/${pageNumber}`, {
+    const res = await fetch(api(`/api/books/${book.id}/pages/${pageNumber}`), {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -283,7 +284,7 @@ export default function BookDetail() {
         body.pageNumber = pageNum
         if (illustrationFeedback.trim()) body.feedback = illustrationFeedback.trim()
       }
-      const res = await fetch(`/api/books/${book.id}/illustrate`, {
+      const res = await fetch(api(`/api/books/${book.id}/illustrate`), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -308,7 +309,7 @@ export default function BookDetail() {
 
   const loadVersions = async (pageNum: number) => {
     if (!user || !book) return
-    const res = await fetch(`/api/books/${book.id}/illustrations/${pageNum}`, {
+    const res = await fetch(api(`/api/books/${book.id}/illustrations/${pageNum}`), {
       headers: { 'Authorization': `Bearer ${user.token}` },
     })
     if (res.ok) {
@@ -320,7 +321,7 @@ export default function BookDetail() {
 
   const revertIllustration = async (pageNum: number, url: string) => {
     if (!user || !book) return
-    const res = await fetch(`/api/books/${book.id}/illustrations/${pageNum}/revert`, {
+    const res = await fetch(api(`/api/books/${book.id}/illustrations/${pageNum}/revert`), {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -548,7 +549,7 @@ export default function BookDetail() {
                 <div className="mb-6">
                   <div className="rounded-xl overflow-hidden shadow-md">
                     <img
-                      src={`http://localhost:3001${page.illustration_url}`}
+                      src={api(page.illustration_url)}
                       alt={page.illustration_description}
                       className="w-full h-auto"
                     />
@@ -591,7 +592,7 @@ export default function BookDetail() {
                                 className="relative w-16 h-16 rounded-lg overflow-hidden border-2 border-purple-500 ring-2 ring-purple-400 dark:ring-purple-500"
                                 aria-label={`Version ${v.version} (current)`}
                               >
-                                <img src={`http://localhost:3001${v.url}`} alt={`Version ${v.version}`} className="w-full h-full object-cover" />
+                                <img src={api(v.url)} alt={`Version ${v.version}`} className="w-full h-full object-cover" />
                                 <span className="absolute bottom-0 left-0 right-0 bg-purple-500 text-white text-[10px] font-bold text-center py-0.5">
                                   Current
                                 </span>
@@ -602,7 +603,7 @@ export default function BookDetail() {
                                 aria-label={`Revert to version ${v.version}`}
                                 className="w-16 h-16 rounded-lg overflow-hidden border-2 cursor-pointer border-gray-200 dark:border-gray-600 hover:border-purple-300 p-0"
                               >
-                                <img src={`http://localhost:3001${v.url}`} alt={`Version ${v.version}`} className="w-full h-full object-cover" />
+                                <img src={api(v.url)} alt={`Version ${v.version}`} className="w-full h-full object-cover" />
                               </button>
                             )
                             return (

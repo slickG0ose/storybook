@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ChevronLeft, ChevronRight, Image as ImageIcon, RefreshCw, Loader2, Paintbrush, Check, History } from 'lucide-react'
 import type { BookWithPages, IllustrationVersion, Page } from '../types'
+import { api } from '../lib/apiBase'
 
 function formatRelativeTime(iso: string): string {
   const then = new Date(iso).getTime()
@@ -142,7 +143,7 @@ export default function BookSpread({
                 >
                   {book.cover_url ? (
                     <img
-                      src={`http://localhost:3001${book.cover_url}`}
+                      src={api(book.cover_url)}
                       alt={book.title}
                       className="max-h-48 md:max-h-64 rounded-xl shadow-md mb-4"
                     />
@@ -384,7 +385,7 @@ function PageIllustration({
       <div className="flex-1 flex flex-col">
         <div className="flex-1 rounded-xl overflow-hidden shadow-md">
           <img
-            src={`http://localhost:3001${page.illustration_url}`}
+            src={api(page.illustration_url)}
             alt={page.illustration_description}
             className="w-full h-full object-cover"
           />
@@ -437,7 +438,7 @@ function PageIllustration({
                       className="relative w-16 h-16 rounded-lg overflow-hidden border-2 border-purple-500 ring-2 ring-purple-400 dark:ring-purple-500"
                       aria-label={`Version ${v.version} (current)`}
                     >
-                      <img src={`http://localhost:3001${v.url}`} alt={`Version ${v.version}`} className="w-full h-full object-cover" />
+                      <img src={api(v.url)} alt={`Version ${v.version}`} className="w-full h-full object-cover" />
                       <span className="absolute bottom-0 left-0 right-0 bg-purple-500 text-white text-[10px] font-bold text-center py-0.5">
                         Current
                       </span>
@@ -448,7 +449,7 @@ function PageIllustration({
                       className="w-16 h-16 rounded-lg overflow-hidden border-2 cursor-pointer border-gray-200 dark:border-gray-600 hover:border-purple-300 p-0"
                       aria-label={`Revert to version ${v.version}`}
                     >
-                      <img src={`http://localhost:3001${v.url}`} alt={`Version ${v.version}`} className="w-full h-full object-cover" />
+                      <img src={api(v.url)} alt={`Version ${v.version}`} className="w-full h-full object-cover" />
                     </button>
                   );
                   return (

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { ArrowLeft, CreditCard, Loader2 } from 'lucide-react'
 import { useCart } from '../context/CartContext'
+import { api } from '../lib/apiBase'
 
 export default function Checkout() {
   const { items, total, sessionId } = useCart()
@@ -27,7 +28,7 @@ export default function Checkout() {
     setSubmitting(true)
     setError('')
     try {
-      const res = await fetch('/api/orders', {
+      const res = await fetch(api('/api/orders'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId, customerName: name, customerEmail: email }),

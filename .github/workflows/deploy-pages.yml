@@ -1,0 +1,52 @@
+name: Deploy client to GitHub Pages
+
+# Manual-only trigger until Pages is enabled in repo settings
+# (Settings > Pages > Source: GitHub Actions) and VITE_API_BASE_URL is
+# set as a repo Action secret (the Render service URL).
+#
+# To enable auto-deploy on every push to master, uncomment the `push`
+# block below. See docs/deploy-spike-render.md for the prereqs.
+on:
+  workflow_dispatch:
+  # push:
+  #   branches: [master]
+  #   paths:
+  #     - 'client/**'
+  #     - 'shared/**'
+  #     - 'package-lock.json'
+  #     - '.github/workflows/deploy-pages.yml'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-deploy
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    name: Build client and deploy to Pages
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - name: Build client
+        working-directory: client
+        env:
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
+        run: npm run build
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: client/dist
+      - id: deployment
+        uses: actions/deploy-pages@v4

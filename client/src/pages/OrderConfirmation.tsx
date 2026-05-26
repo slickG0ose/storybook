@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { CheckCircle, BookOpen } from 'lucide-react'
+import { api } from '../lib/apiBase'
 import type { Order } from '../types'
 
 export default function OrderConfirmation() {
@@ -9,7 +10,7 @@ export default function OrderConfirmation() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch(`/api/orders/${id}`)
+    fetch(api(`/api/orders/${id}`))
       .then(r => r.json())
       .then((data: Order) => { setOrder(data); setLoading(false) })
   }, [id])
