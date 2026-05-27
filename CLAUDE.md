@@ -19,7 +19,7 @@ AI-powered children's book store. React + Express + Claude API. Working storefro
 
 ## Branching
 
-Trunk-based off `master`. Short-lived branches, squash-merge PRs. Prefixes follow conventional commits — the type before the slash drives changelog grouping and lets you scan `git log` at a glance.
+Trunk-based off `master`. Short-lived branches, squash-merge PRs. **Never `git commit` directly on `master`** — the local `.claude/hooks/guard-bash.sh` blocks it (exit 2), and GitHub branch protection rejects the push regardless. Prefixes follow conventional commits — the type before the slash drives changelog grouping and lets you scan `git log` at a glance.
 
 | Prefix | Use for |
 |--------|---------|

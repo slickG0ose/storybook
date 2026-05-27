@@ -5,6 +5,7 @@ dist/
 data.json
 .DS_Store
 .claude/settings.local.json
+.claude/hooks/read.log
 e2e/playwright-report/
 e2e/test-results/
 server/.backups/

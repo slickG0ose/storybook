@@ -7,6 +7,8 @@ Get the current branch ready to ship. Follow the project's done criteria in `CLA
 
 ## Steps
 
+0. **Verify feature branch.** Run `git rev-parse --abbrev-ref HEAD`. If on `master`/`main`/`develop`, stop and tell the user — `/ship` only works on feature branches (CLAUDE.md trunk-based + PR convention; remote rejects direct pushes; the local `guard-bash.sh` hook also blocks commits on protected branches). Offer to create one with `git switch -c <type>/<descriptor>`.
+
 1. **Status check** (run in parallel):
    - `git status` — what's staged, unstaged, untracked
    - `git diff master...HEAD --name-only` — what this branch changed vs. base
