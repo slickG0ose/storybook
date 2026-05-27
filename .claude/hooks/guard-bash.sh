@@ -45,14 +45,20 @@ if [[ "$NORM" =~ (^|[[:space:];&|\`])rm([[:space:]]+-[a-zA-Z]+)*[[:space:]]+[^[:
   block "Refuses to rm dev.db directly — use npm run db:reset."
 fi
 
+# Command-start boundary: real shell separators (NOT plain whitespace), so
+# `echo 'git commit ...'` inside a quoted string doesn't trip git-rule matches.
+# Anchors: start-of-string, ; & | backtick ( — followed by optional whitespace.
+# Rules using $CMD_START are safe against the echo-bypass false positive.
+CMD_START='(^|[;&|`(])[[:space:]]*'
+
 # 4) Force-push to a protected branch
-if [[ "$NORM" =~ git[[:space:]]+push[[:space:]]+.*(--force|--force-with-lease|-f([[:space:]]|$)) ]] \
+if [[ "$NORM" =~ ${CMD_START}git[[:space:]]+push[[:space:]]+.*(--force|--force-with-lease|-f([[:space:]]|$)) ]] \
    && [[ "$NORM" =~ [[:space:]](master|main|develop)([[:space:]]|$) ]]; then
   block "Refuses to force-push to master/main/develop."
 fi
 
 # 5) Hard reset while currently on a protected branch
-if [[ "$NORM" =~ (^|[[:space:];&|\`])git[[:space:]]+reset[[:space:]]+--hard ]]; then
+if [[ "$NORM" =~ ${CMD_START}git[[:space:]]+reset[[:space:]]+--hard ]]; then
   CURRENT_BRANCH=$(git -C "${CLAUDE_PROJECT_DIR:-.}" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
   case "$CURRENT_BRANCH" in
     master|main|develop)
@@ -64,6 +70,19 @@ fi
 # 6) .git directory removal
 if [[ "$NORM" =~ (^|[[:space:];&|\`])rm([[:space:]]+-[a-zA-Z]+)+[[:space:]]+[^[:space:]\;\&\|]*\.git([[:space:]/]|$|\;|\&|\|) ]]; then
   block "Refuses to remove the .git directory."
+fi
+
+# 7) Commit on a protected branch — CLAUDE.md is trunk-based but enforces
+#    short-lived feature branches + squash-merge PRs. Direct commits to
+#    master|main|develop are also rejected by GitHub branch protection on push;
+#    catching them here saves a rebase later.
+if [[ "$NORM" =~ ${CMD_START}git[[:space:]]+commit([[:space:]]|$) ]]; then
+  CURRENT_BRANCH=$(git -C "${CLAUDE_PROJECT_DIR:-.}" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+  case "$CURRENT_BRANCH" in
+    master|main|develop)
+      block "Refuses 'git commit' on protected branch '$CURRENT_BRANCH' — create a feature branch first per CLAUDE.md (git switch -c <type>/<descriptor>)."
+      ;;
+  esac
 fi
 
 exit 0
