@@ -5,7 +5,14 @@ set -euo pipefail
 
 INPUT="$(cat)"
 
-CMD=$(printf '%s' "$INPUT" | node -e '
+# Parse the tool_input.command field out of the hook JSON.
+# Safe-fail: if node is missing or the parse fails, CMD stays empty and every
+# regex below misses, so the script exits 0 (allow). The cost of a missed
+# parse is "the guard didn't fire"; the cost of a crash here would be a
+# spammy non-zero exit on every Bash tool call — worse UX than just allowing.
+CMD=""
+if command -v node >/dev/null 2>&1; then
+  CMD=$(printf '%s' "$INPUT" | node -e '
 let s = "";
 process.stdin.on("data", d => s += d);
 process.stdin.on("end", () => {
@@ -14,7 +21,8 @@ process.stdin.on("end", () => {
     process.stdout.write((j.tool_input && j.tool_input.command) || "");
   } catch (e) {}
 });
-')
+' 2>/dev/null || true)
+fi
 
 # Normalize whitespace for matching; keep $CMD intact for the error report.
 NORM=$(printf '%s' "$CMD" | tr -s '[:space:]' ' ')

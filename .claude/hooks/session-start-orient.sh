@@ -90,5 +90,5 @@ fi
     printf '%s\n' "$ISSUES" | sed 's/^/- /'
     echo
   fi
-  echo "_Source: \`${SOURCE:-unknown}\`. Skip with: comment out the Bash matcher for SessionStart in \`.claude/settings.json\`._"
+  echo "_Source: \`${SOURCE:-unknown}\`. Skip with: remove the \`hooks.SessionStart\` entry in \`.claude/settings.json\`._"
 }
