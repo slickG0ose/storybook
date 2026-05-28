@@ -42,29 +42,9 @@ npm run dev:client
 npm run dev:server
 ```
 
-## Local dev.db — preserving your books across iteration
+## Local dev.db
 
-The seed files are upsert-only — `npm run db:seed` and `npm run db:seed-demo` never delete anything you created. Your locally-generated books survive both. `db:reset` is the only destructive op (drops the DB, re-runs migrations), and it does **not** auto-run any seed.
-
-`npm run db:hydrate` chains `db:seed && db:seed-demo` — use it after pulling a branch that ships new fixtures, or as `db:reset && npm run db:hydrate` for the full nuke-and-pave flow.
-
-**Auto-snapshot on startup.** `server/src/db/snapshot.ts` copies `dev.db` to `server/.backups/dev-{timestamp}.db` every time `npm run dev` boots. Old backups self-prune after 7 days. So you usually already have a recent backup without doing anything.
-
-**Manual backup before risky ops** (planned `db:reset`, migration testing, etc.):
-
-```bash
-cp server/prisma/dev.db server/prisma/dev.db.local-backup
-```
-
-`*.db` is gitignored at the root, so any naming works (`.bak`, `.local-backup`, etc.).
-
-**Restore.** Stop the dev server first, then reverse the cp:
-
-```bash
-cp server/prisma/dev.db.local-backup server/prisma/dev.db
-```
-
-**Schema-drift rule of thumb.** A `cp` restore is safe iff no new folder appeared in `server/prisma/migrations/` since the backup was taken. If the migrations directory changed, `db:reset && npm run db:hydrate` from a clean state — your old book rows won't have the new columns.
+Prisma + SQLite. Snapshot/seed/restore conventions live in [docs/conventions/data.md](docs/conventions/data.md). `db:hydrate` is upsert-only and safe to run; `db:reset` is the only destructive op and requires user confirmation.
 
 ## Testing
 
