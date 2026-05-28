@@ -1,17 +1,19 @@
 #!/usr/bin/env node
 /**
  * Generate docs/conventions/harness-resolution.md — a stable, diff-friendly
- * snapshot of where every harness configuration item resolves from.
+ * snapshot of project-tier harness configuration.
  *
  * Resolution tiers, highest precedence first:
- *   1. Project          .claude/             (this repo)
- *   2. User             ~/.claude/           (per-machine, per-user)
+ *   1. Project          .claude/             (this repo — SNAPSHOTTED)
+ *   2. User             ~/.claude/           (per-machine — NOT snapshotted)
  *   3. Built-in         (opaque)             (Claude Code core + plugins)
  *
- * The "Built-in" tier is opaque from the filesystem — we cannot enumerate
- * Claude Code's bundled agents/skills/commands. We document only what we
- * can observe at the project + user tiers, and note which items the user
- * tier exposes that aren't shadowed by project.
+ * Why only project tier? The snapshot is meant to be byte-identical across
+ * CI and every contributor's machine, so `npm run audit:resolution &&
+ * git diff --exit-code` is a meaningful regression gate. Including the
+ * user tier (which varies per developer's ~/.claude/) would dirty the
+ * snapshot on every dev's machine. The built-in tier is opaque from the
+ * filesystem and can't be enumerated regardless.
  *
  * Usage:
  *   node scripts/audit-resolution.mjs
@@ -20,13 +22,11 @@
  */
 import { readdirSync, readFileSync, existsSync, writeFileSync, mkdirSync, statSync } from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const PROJECT_CLAUDE = path.join(REPO_ROOT, '.claude');
-const USER_CLAUDE = path.join(os.homedir(), '.claude');
 const OUT_PATH = path.join(REPO_ROOT, 'docs', 'conventions', 'harness-resolution.md');
 
 // --- frontmatter parser (inlined; the test helper is TS) ---
@@ -91,26 +91,26 @@ out.push('| User | `~/.claude/` | Per-machine, per-user. Wins over built-in. |')
 out.push('| Built-in | (opaque) | Claude Code core + active plugins. Not enumerable from filesystem. |');
 out.push('');
 
+// NOTE on tier coverage: the committed snapshot enumerates ONLY the
+// project tier (`.claude/`). User-tier (`~/.claude/`) and built-in tier
+// contents are intentionally omitted because they vary by developer
+// machine — including them here would make every developer's regen produce
+// a different snapshot, defeating the `git diff --exit-code` regression
+// check that lives in CI.
+
 // Agents
 out.push('## Agents');
 out.push('');
 const projAgents = listMd(path.join(PROJECT_CLAUDE, 'agents'));
-const userAgents = listMd(path.join(USER_CLAUDE, 'agents'));
 
-if (projAgents.length === 0 && userAgents.length === 0) {
-  out.push('_None at project or user tier. Built-in tier provides defaults (Plan, Explore, etc.)._');
+if (projAgents.length === 0) {
+  out.push('_None at project tier. User and built-in tiers provide defaults (Plan, Explore, ...). See "User & built-in tiers" note at the bottom._');
 } else {
   out.push('| Name | Tier | Description |');
   out.push('|------|------|-------------|');
   for (const f of projAgents) {
     const fm = parseFm(readFileSync(path.join(PROJECT_CLAUDE, 'agents', f), 'utf8'));
     out.push(`| ${fm.name ?? path.basename(f, '.md')} | project | ${fm.description ?? ''} |`);
-  }
-  for (const f of userAgents) {
-    const projShadow = projAgents.includes(f);
-    if (projShadow) continue; // shadowed by project — already listed
-    const fm = parseFm(readFileSync(path.join(USER_CLAUDE, 'agents', f), 'utf8'));
-    out.push(`| ${fm.name ?? path.basename(f, '.md')} | user | ${fm.description ?? ''} |`);
   }
 }
 out.push('');
@@ -119,7 +119,6 @@ out.push('');
 out.push('## Commands');
 out.push('');
 const projCmds = listMd(path.join(PROJECT_CLAUDE, 'commands'));
-const userCmds = listMd(path.join(USER_CLAUDE, 'commands'));
 
 out.push('| Name | Tier | Description |');
 out.push('|------|------|-------------|');
@@ -127,18 +126,12 @@ for (const f of projCmds) {
   const fm = parseFm(readFileSync(path.join(PROJECT_CLAUDE, 'commands', f), 'utf8'));
   out.push(`| /${path.basename(f, '.md')} | project | ${fm.description ?? ''} |`);
 }
-for (const f of userCmds) {
-  if (projCmds.includes(f)) continue;
-  const fm = parseFm(readFileSync(path.join(USER_CLAUDE, 'commands', f), 'utf8'));
-  out.push(`| /${path.basename(f, '.md')} | user | ${fm.description ?? ''} |`);
-}
 out.push('');
 
 // Skills
 out.push('## Skills');
 out.push('');
 const projSkills = listSkills(path.join(PROJECT_CLAUDE, 'skills'));
-const userSkills = listSkills(path.join(USER_CLAUDE, 'skills'));
 
 out.push('| Name | Tier | Mode | Description |');
 out.push('|------|------|------|-------------|');
@@ -146,14 +139,6 @@ for (const name of projSkills) {
   const fm = parseFm(readFileSync(path.join(PROJECT_CLAUDE, 'skills', name, 'SKILL.md'), 'utf8'));
   out.push(`| ${name} | project | ${fm.mode ?? ''} | ${fm.description ?? ''} |`);
 }
-for (const name of userSkills) {
-  if (projSkills.includes(name)) continue;
-  const fm = parseFm(readFileSync(path.join(USER_CLAUDE, 'skills', name, 'SKILL.md'), 'utf8'));
-  out.push(`| ${name} | user | ${fm.mode ?? ''} | ${fm.description ?? ''} |`);
-}
-out.push('');
-out.push('Built-in skills surfaced via plugins (per `settings.json` `enabledPlugins`) are not enumerable here.');
-out.push('See live availability in the `Skill` tool descriptions during a session.');
 out.push('');
 
 // Hooks
@@ -205,31 +190,19 @@ if (existsSync(settingsPath)) {
   out.push('');
 }
 
-// User-level summary
-out.push('## User tier (`~/.claude/`) — items NOT shadowed by project');
+// User & built-in tiers — explicitly NOT snapshotted
+out.push('## User & built-in tiers');
 out.push('');
-out.push('Anything below is visible from the user level because no project-tier file shadows it.');
+out.push('Contents at `~/.claude/` and the built-in tier are **not snapshotted** because they vary by developer machine. The committed snapshot covers only the project tier so the `npm run audit:resolution && git diff --exit-code` gate stays deterministic across CI and every contributor.');
 out.push('');
-const userOnly = {
-  agents: userAgents.filter((f) => !projAgents.includes(f)),
-  commands: userCmds.filter((f) => !projCmds.includes(f)),
-  skills: userSkills.filter((n) => !projSkills.includes(n)),
-};
-if (userOnly.agents.length === 0 && userOnly.commands.length === 0 && userOnly.skills.length === 0) {
-  out.push('_None._');
-} else {
-  if (userOnly.agents.length) out.push('- **Agents:** ' + userOnly.agents.map((f) => `\`${path.basename(f, '.md')}\``).join(', '));
-  if (userOnly.commands.length) out.push('- **Commands:** ' + userOnly.commands.map((f) => `\`/${path.basename(f, '.md')}\``).join(', '));
-  if (userOnly.skills.length) out.push('- **Skills:** ' + userOnly.skills.map((n) => `\`${n}\``).join(', '));
-}
+out.push('To inspect your own resolution chain locally:');
 out.push('');
-
-// Built-in (opaque)
-out.push('## Built-in tier (opaque)');
+out.push('```bash');
+out.push('ls ~/.claude/agents ~/.claude/commands ~/.claude/skills 2>/dev/null');
+out.push('cat ~/.claude/settings.json 2>/dev/null');
+out.push('```');
 out.push('');
-out.push('Claude Code core ships agents (Plan, Explore, claude, general-purpose, claude-code-guide, statusline-setup, ...),');
-out.push('skills (code-review, simplify, run, init, review, security-review, fewer-permission-prompts, loop, schedule, ...),');
-out.push('and tools that are not enumerable from disk. They are available unless shadowed by a project- or user-tier item of the same name.');
+out.push('Built-in tier (opaque): Claude Code core ships agents (Plan, Explore, claude, general-purpose, claude-code-guide, statusline-setup, ...), skills (code-review, simplify, run, init, review, security-review, fewer-permission-prompts, loop, schedule, ...), and tools that are not enumerable from disk. They are available unless shadowed by a project- or user-tier item of the same name.');
 out.push('');
 
 // --- write ---

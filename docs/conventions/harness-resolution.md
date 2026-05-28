@@ -37,7 +37,6 @@ Highest precedence first:
 | /start-task | project | Start a new task — pick a backlog item, create a properly-named branch + worktree, scaffold a scratchpad |
 | /status | project | Orient to the current state of work — git, PRs, backlog, suggested next actions. Use when starting a fresh session or switching context. |
 | /verify | project | Run tests, lint, and type checks for the zones changed on this branch. Mid-task sanity check — no commit, no PR. |
-| /test-evaluator | user | Audit test coverage for changed files or a target path. Identify behavior/branch/wire-shape gaps and suggest concrete test additions. Does NOT run tests or measure line coverage — this is a reasoning audit, not an `nyc`/`c8` report. |
 
 ## Skills
 
@@ -48,9 +47,6 @@ Highest precedence first:
 | mcp-analysis | project | agent | Analyze an MCP server's GitHub repository for security risks, malicious intent, and code quality. Produces a trust rating and recommends whether to use it or suggests safer alternatives. |
 | research | project | agent | Conduct systematic multi-phase research on a topic and produce a documented findings report |
 | swab | project | agent | Find and apply one small, safe code cleanup improvement with user approval (Boy Scout Rule) |
-
-Built-in skills surfaced via plugins (per `settings.json` `enabledPlugins`) are not enumerable here.
-See live availability in the `Skill` tool descriptions during a session.
 
 ## Hooks
 
@@ -84,15 +80,16 @@ See live availability in the `Skill` tool descriptions during a session.
 
 - ✓ `skill-creator@claude-plugins-official`
 
-## User tier (`~/.claude/`) — items NOT shadowed by project
+## User & built-in tiers
 
-Anything below is visible from the user level because no project-tier file shadows it.
+Contents at `~/.claude/` and the built-in tier are **not snapshotted** because they vary by developer machine. The committed snapshot covers only the project tier so the `npm run audit:resolution && git diff --exit-code` gate stays deterministic across CI and every contributor.
 
-- **Commands:** `/test-evaluator`
+To inspect your own resolution chain locally:
 
-## Built-in tier (opaque)
+```bash
+ls ~/.claude/agents ~/.claude/commands ~/.claude/skills 2>/dev/null
+cat ~/.claude/settings.json 2>/dev/null
+```
 
-Claude Code core ships agents (Plan, Explore, claude, general-purpose, claude-code-guide, statusline-setup, ...),
-skills (code-review, simplify, run, init, review, security-review, fewer-permission-prompts, loop, schedule, ...),
-and tools that are not enumerable from disk. They are available unless shadowed by a project- or user-tier item of the same name.
+Built-in tier (opaque): Claude Code core ships agents (Plan, Explore, claude, general-purpose, claude-code-guide, statusline-setup, ...), skills (code-review, simplify, run, init, review, security-review, fewer-permission-prompts, loop, schedule, ...), and tools that are not enumerable from disk. They are available unless shadowed by a project- or user-tier item of the same name.
 
