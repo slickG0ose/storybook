@@ -12,9 +12,13 @@
     "dev:client": "cd client && npm run dev",
     "dev:server": "cd server && npm run dev",
     "install:all": "npm install && cd client && npm install && cd ../server && npm install",
-    "setup:worktree": "node scripts/worktree-setup.mjs"
+    "setup:worktree": "node scripts/worktree-setup.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "audit:resolution": "node scripts/audit-resolution.mjs"
   },
   "devDependencies": {
-    "concurrently": "^9.1.0"
+    "concurrently": "^9.1.0",
+    "vitest": "^4.1.7"
   }
 }

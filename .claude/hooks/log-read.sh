@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# PreToolUse:Read logger — appends tab-delimited (timestamp, file_path) records to read.log
 set -euo pipefail
 
 LOG_FILE="$(dirname "$0")/read.log"
