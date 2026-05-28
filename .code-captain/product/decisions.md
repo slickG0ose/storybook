@@ -4,6 +4,59 @@ Append-only log. Newest entries on top. Each entry should answer: *what was deci
 
 ---
 
+## ADR-003 — Zod schemas as source of truth for client/server type sharing
+
+**Date:** 2026-05-18
+**Status:** Accepted
+**Scope:** OPS.3 — wire-shape contracts across all 5 server domains (orders, cart, books, admin, test). Shipped across PRs #22, #23, #24.
+
+### Decision
+
+Adopt Zod schemas (in a source-only `@storybook/shared` workspace package) as the single source of truth for every client/server wire contract. Server routes validate request bodies via a `validate()` Express middleware that consumes the schemas; client and server both import inferred TypeScript types from the same schemas.
+
+Layout:
+
+```
+shared/src/
+  orders.ts, cart.ts, books.ts, admin.ts, test.ts   ← Zod schemas per domain
+  index.ts                                           ← re-exports
+
+server/src/middleware/validate.ts                   ← Express middleware
+client/src/types.ts                                   ← re-exports wire shapes from @storybook/shared
+server/src/types.ts                                   ← re-exports wire shapes + adds DB/auth-only shapes
+```
+
+When OpenAPI's specific capabilities become valuable later (multi-language SDKs, vendor-facing docs, mock servers), generate the OpenAPI spec **from** the existing Zod schemas via `@asteasolutions/zod-to-openapi` or `zod-openapi`. Zod remains the source of truth in every future state — this is **not** "Zod now, OpenAPI rewrite later."
+
+### Why
+
+- **Runtime validation + compile-time inference from one declaration.** `z.object({...})` produces both an Express-validatable schema and a TS type via `z.infer<typeof Schema>`. No drift, no codegen step.
+- **OpenAPI's killer features only pay off with non-TS clients or external consumers** — multi-language SDK generation, Swagger UI, mock servers, partner docs. None are on the storefront's near-term roadmap. Adopting OpenAPI now is enterprise tax for capabilities we don't yet use.
+- **Refactor-safety.** TS rename-symbol propagates schema changes across client/server in one operation. OpenAPI-first generated TS types are less ergonomic and don't refactor with the source.
+- **Forward-compatible.** When a non-TS client (mobile, partner SDK) lands, the migration is "add `zod-to-openapi`," not "rewrite the contract layer."
+
+### Alternative considered: OpenAPI-first
+
+Define the API in `openapi.yaml`, generate TS types and a validation layer from the spec.
+
+Why rejected for the current phase:
+
+- **Enterprise tax without benefit.** OpenAPI is built for cross-language API contracts and external consumers. The storefront has neither today.
+- **Less ergonomic generated types.** Codegen produces verbose TS that doesn't compose well with the rest of the codebase. Zod's `z.infer<typeof Schema>` produces idiomatic types.
+- **Separate runtime layer.** Validation isn't bundled — you add `ajv` or similar. Zod combines both responsibilities cleanly.
+
+**Reconsider trigger:** a non-TS client lands on the roadmap, or external API consumers/partners need formal docs. At that point we generate OpenAPI *from* Zod — zero contract rewrite, just an additional output.
+
+### Consequences
+
+- **Zod schemas live in `@storybook/shared`** — a source-only workspace package with no build step. Both client and server link it via `"@storybook/shared": "*"`.
+- **Auth middleware order rule.** `requireAuth` / `adminGate` runs **before** `validate()` so 401/403 wins over 400. This is now load-bearing — any new protected route must keep this order.
+- **Server `types.ts` is split-shape.** `server/src/types.ts` re-exports wire shapes from `@storybook/shared` and *adds* DB-row + auth shapes that stay server-local. `client/src/types.ts` re-exports the same wire shapes only.
+- **Pre-existing type drift fixed during migration.** `is_featured` and `is_user_created` were `number` in legacy `server/types.ts`; both are now `boolean` (matching Prisma + Zod). Not a wire-shape change — a latent bug surfaced and corrected.
+- **OpenAPI generation is deferred indefinitely.** Add `@asteasolutions/zod-to-openapi` only when a concrete trigger lands. The Zod schemas are forward-compatible — no rework cost when that trigger fires.
+
+---
+
 ## ADR-002 — Character cast persisted as JSON column, not separate table
 
 **Date:** 2026-05-14
