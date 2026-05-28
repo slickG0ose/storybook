@@ -11,6 +11,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  harness-tests:
+    name: Harness tests (.claude/ schema + references + hook behavior)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm test
+      - name: Resolution snapshot is up to date
+        run: |
+          npm run audit:resolution
+          git diff --exit-code docs/conventions/harness-resolution.md
+
   server-tests:
     name: Server tests (vitest + supertest)
     runs-on: ubuntu-latest

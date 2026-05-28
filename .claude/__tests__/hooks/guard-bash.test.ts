@@ -1,7 +1,29 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { execSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { HOOKS_DIR, REPO_ROOT } from '../helpers/paths';
 import { runHook } from '../helpers/run-hook';
+
+/**
+ * Create a throwaway git repo with HEAD pointed at the given branch name.
+ * Used to test rules 5 and 7, which check `git rev-parse --abbrev-ref HEAD`
+ * inside $CLAUDE_PROJECT_DIR — so the test repo's branch IS the rule's input.
+ */
+function makeRepoOnBranch(branch: string): string {
+  const dir = mkdtempSync(path.join(tmpdir(), 'guard-bash-repo-'));
+  const run = (cmd: string) =>
+    execSync(cmd, { cwd: dir, stdio: 'pipe' });
+  run('git init -q');
+  run('git config user.email test@example.com');
+  run('git config user.name "Test User"');
+  writeFileSync(path.join(dir, 'README.md'), 'init\n');
+  run('git add README.md');
+  run('git commit -q --allow-empty-message -m init');
+  run(`git branch -m ${branch}`);
+  return dir;
+}
 
 const GUARD = path.join(HOOKS_DIR, 'guard-bash.sh');
 
@@ -59,10 +81,72 @@ describe('guard-bash.sh — rule 4: force-push to protected branch', () => {
 
 describe('guard-bash.sh — rule 5 + 7: protected-branch operations (current branch dependent)', () => {
   // We are on a feature branch (test/hr11-...) during the test run.
-  it('allows `git reset --hard` while on feature branch', () =>
+  it('allows `git reset --hard` while on feature branch (current repo)', () =>
     expectAllow('git reset --hard origin/master'));
-  it('allows `git commit` while on feature branch', () =>
+  it('allows `git commit` while on feature branch (current repo)', () =>
     expectAllow('git commit -m wip'));
+
+  // Positive cases — use a temp repo where HEAD is genuinely on a protected
+  // branch, so the rule's `git rev-parse` returns master/main/develop.
+  // Without these, a regression that broke the branch-detection portion
+  // would not be caught by any other test in this suite.
+  describe.each(['master', 'main', 'develop'])('on temp repo with HEAD=%s', (branch) => {
+    let repo: string;
+    beforeAll(() => {
+      repo = makeRepoOnBranch(branch);
+    });
+    afterAll(() => {
+      rmSync(repo, { recursive: true, force: true });
+    });
+
+    it(`rule 5: blocks 'git reset --hard' on ${branch}`, () => {
+      const r = runHook(
+        path.join(HOOKS_DIR, 'guard-bash.sh'),
+        { command: 'git reset --hard origin/main' },
+        { env: { CLAUDE_PROJECT_DIR: repo } },
+      );
+      expect(r.exitCode).toBe(2);
+      expect(r.stderr).toContain(branch);
+    });
+
+    it(`rule 7: blocks 'git commit' on ${branch}`, () => {
+      const r = runHook(
+        path.join(HOOKS_DIR, 'guard-bash.sh'),
+        { command: 'git commit -m foo' },
+        { env: { CLAUDE_PROJECT_DIR: repo } },
+      );
+      expect(r.exitCode).toBe(2);
+      expect(r.stderr).toContain(branch);
+    });
+  });
+
+  describe('on temp repo with HEAD=feature/foo (allow path)', () => {
+    let repo: string;
+    beforeAll(() => {
+      repo = makeRepoOnBranch('feature/foo');
+    });
+    afterAll(() => {
+      rmSync(repo, { recursive: true, force: true });
+    });
+
+    it('rule 5: allows git reset --hard on non-protected branch', () => {
+      const r = runHook(
+        path.join(HOOKS_DIR, 'guard-bash.sh'),
+        { command: 'git reset --hard origin/main' },
+        { env: { CLAUDE_PROJECT_DIR: repo } },
+      );
+      expect(r.exitCode).toBe(0);
+    });
+
+    it('rule 7: allows git commit on non-protected branch', () => {
+      const r = runHook(
+        path.join(HOOKS_DIR, 'guard-bash.sh'),
+        { command: 'git commit -m foo' },
+        { env: { CLAUDE_PROJECT_DIR: repo } },
+      );
+      expect(r.exitCode).toBe(0);
+    });
+  });
 });
 
 describe('guard-bash.sh — rule 6: .git directory removal', () => {
@@ -90,6 +174,36 @@ describe('guard-bash.sh — false-positive regressions', () => {
   it('allows test description in shell function containing blocked patterns', () => {
     const cmd = `run_test "rm of test file" "rm foo.test.ts"`;
     expectAllow(cmd);
+  });
+});
+
+describe('guard-bash.sh — newlines as command separators', () => {
+  // Multi-line scripts: each newline IS a real bash command boundary,
+  // so a blocked pattern on its own line MUST trigger the rule even when
+  // safe content sits on the preceding line.
+  it('blocks `rm data.json` on a subsequent line', () => {
+    expectBlock('echo step1\nrm data.json\necho step3', 'data.json');
+  });
+
+  it('blocks `git push --force origin master` on a subsequent line', () => {
+    expectBlock('echo prep\ngit push --force origin master', 'force-push');
+  });
+
+  it('allows multi-line script where no line contains a blocked pattern', () => {
+    expectAllow('echo step1\nls -la\necho done');
+  });
+});
+
+describe('guard-bash.sh — unclosed heredoc fail-open', () => {
+  // If a heredoc opens but never closes, the strip pass would silently
+  // drop everything after the opener. The fix is to fail open: when awk
+  // signals AWK_HEREDOC_UNCLOSED, match against the raw command instead.
+  it('blocks `rm data.json` that appears after an unclosed heredoc', () => {
+    expectBlock('cat <<EOF\nbody line\nrm data.json', 'data.json');
+  });
+
+  it('blocks `rm -rf .git` that appears after an unclosed heredoc', () => {
+    expectBlock('cat <<MARKER\nstuff\nrm -rf .git', '.git directory');
   });
 });
 

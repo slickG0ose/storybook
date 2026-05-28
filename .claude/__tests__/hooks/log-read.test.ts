@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, copyFileSync, readFileSync, existsSync, rmSync, writeFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
+import { mkdtempSync, copyFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { HOOKS_DIR } from '../helpers/paths';
@@ -61,8 +62,8 @@ describe('log-read.sh', () => {
   });
 
   it('does not crash on malformed JSON', () => {
-    // Bypass runHook and pipe raw bad input.
-    const { execSync } = require('node:child_process');
+    // Bypass runHook and pipe raw bad input — runHook always stringifies as
+    // valid JSON, so we use execSync directly to inject a malformed payload.
     expect(() => {
       execSync(`bash "${scriptCopy}"`, { input: 'not json', encoding: 'utf8' });
     }).not.toThrow();

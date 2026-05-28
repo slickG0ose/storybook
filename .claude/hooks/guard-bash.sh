@@ -30,7 +30,15 @@ fi
 # or inside a quoted log message) must not trigger a false positive.
 # Double-quoted strings stay intact: they can contain $(...) substitution
 # which IS executable and worth guarding.
-CLEANED=$(printf '%s' "$CMD" | awk '
+#
+# Supported heredoc shapes:
+#   <<EOF, <<'EOF', <<"EOF", <<-EOF, where EOF is [A-Za-z_][A-Za-z0-9_]*
+# If a heredoc opens but never closes (malformed or unsupported delimiter
+# shape with trailing whitespace, etc.), the awk pass would silently drop
+# everything after the opener — masking real guarded commands downstream.
+# To defend against that, we emit AWK_HEREDOC_UNCLOSED from awk END and
+# fall back to the raw $CMD when we see it.
+HEREDOC_STRIPPED=$(printf '%s' "$CMD" | awk '
   BEGIN { in_heredoc = 0; delim = "" }
   {
     if (in_heredoc) {
@@ -48,10 +56,26 @@ CLEANED=$(printf '%s' "$CMD" | awk '
       print replaced
     } else { print }
   }
-' | sed "s/'[^']*'/SQ_STRIPPED/g")
+  END {
+    if (in_heredoc) print "AWK_HEREDOC_UNCLOSED"
+  }
+')
 
-# Normalize whitespace for matching; keep $CMD intact for the error report.
-NORM=$(printf '%s' "$CLEANED" | tr -s '[:space:]' ' ')
+if printf '%s' "$HEREDOC_STRIPPED" | grep -q "AWK_HEREDOC_UNCLOSED"; then
+  # Heredoc never closed under our parser. Fail open on the strip — match
+  # against the raw command so we never let a guarded pattern slip past
+  # because of an unrecognized heredoc shape.
+  CLEANED="$CMD"
+else
+  CLEANED=$(printf '%s' "$HEREDOC_STRIPPED" | sed "s/'[^']*'/SQ_STRIPPED/g")
+fi
+
+# Normalize for matching; keep $CMD intact for the error report.
+# Newlines are real command separators in bash, so map them to `;` (which
+# CMD_START already treats as a boundary) before collapsing other whitespace.
+# Without this, `rm data.json` on a fresh line in a multi-line command would
+# show up in NORM with only space before it — not matching CMD_START.
+NORM=$(printf '%s' "$CLEANED" | tr '\n' ';' | tr -s '[:space:]' ' ')
 
 block() {
   local reason="$1"
