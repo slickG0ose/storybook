@@ -25,9 +25,9 @@ Run a single task from an approved task plan by dispatching the **developer** ag
 
 3. **Load the task body.** Read `.code-captain/specs/<slug>/tasks.md` and find the requested task by its `### Task N — <title>` heading. Read the full task body: Zone, Depends on, Parallel-safe with, Files, Signatures, Tests, Manual verify, Done when.
 
-4. **Verify prerequisites.** Inspect the task's `**Depends on:**` line:
+4. **Verify prerequisites.** Inspect the task's `**Depends on:**` line and parse **every** task number referenced — the planner writes both singular (`Task 2`) and plural forms (`Tasks 2 and 3`, `Tasks 1, 3, and 5`). Extract all integers from the line, then for each one grep the task plan for the corresponding `### Task N` heading and confirm `**Status:** Done` appears in its body.
    - `none` → proceed.
-   - `Task N` → grep the task plan for that task's heading and confirm `**Status:** Done` appears in its body. If not, refuse and tell the user which prerequisite task is incomplete.
+   - One or more numbers extracted → check each. If **any** are not Done, refuse and list every incomplete prerequisite (not just the first one) so the user knows the full gap.
 
 5. **Verify user-approval markers.** If the task body contains "USER CONFIRMATION REQUIRED" / "requires user approval" / similar, check that the user's most recent message in the conversation grants approval. If not, refuse and ask the user to confirm before re-running.
 
@@ -49,11 +49,15 @@ Run a single task from an approved task plan by dispatching the **developer** ag
    - Surprises / decisions made
    - Suggested next step
 
-9. **Suggest the next move.** Based on the hand-back:
-   - "Tests pass + no surprises" → suggest `/ship` to draft a PR
-   - "Tests pass + surprises noted" → remind the user that Check 6 (reviewer) will flag those if they're not addressed; ask whether to address them in this dispatch or open a follow-up
-   - "Tests failed" → tell the user the task is not done; the developer should have already noted what failed
-   - "Manual verify required but not done" → ask the user to verify in the browser; the developer's report says what to look at
+9. **Suggest the next move.** The developer's hand-back already ends with a `Suggested next:` line — that is the source of truth for what to do next, because the developer is the one who knows whether this was the last task or whether more remain. Relay it. Layer on the following only when it adds value beyond what the developer said:
+
+   - **If `Suggested next:` says "dispatch developer on Task N+1"** and you can see Task N+1 in `tasks.md`, offer the literal command (`/execute-task <slug> <N+1>`) so the user can copy-paste.
+   - **If the hand-back's "Surprises / decisions made" section has items**, remind the user that Check 6 (reviewer, HR6) will flag orphaned surfaced gaps pre-merge; ask whether to address them now or open a tracking issue.
+   - **If `Suggested next:` says "/ship to draft the PR"**, confirm that the plan's remaining tasks are all `Status: Done` (or explicitly out-of-PR-scope) before relaying — a "ship now" recommendation should match the actual state of the plan.
+   - **If tests failed**, tell the user the task is not done; the developer should have already noted what failed.
+   - **If manual verify is required but not done**, ask the user to verify in the browser using the steps in the task body. The developer's report says what to look at.
+
+   Do not invent a next step the developer didn't suggest. If the hand-back is ambiguous, ask the user rather than guessing.
 
 ## Constraints
 
