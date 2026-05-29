@@ -32,7 +32,10 @@ const SNAPSHOT_PATH = path.join(
 describe('docs/conventions/harness-resolution.md (resolution snapshot)', () => {
   it('matches what scripts/audit-resolution.mjs would produce now', () => {
     const committed = readFileSync(SNAPSHOT_PATH, 'utf8');
-    const fresh = execFileSync('node', [SCRIPT, '--print'], {
+    // process.execPath, not 'node', so we invoke the same Node runtime
+    // vitest is running under — PATH resolution can be unreliable on
+    // Windows / CI setups with multiple Node versions installed.
+    const fresh = execFileSync(process.execPath, [SCRIPT, '--print'], {
       encoding: 'utf8',
       cwd: REPO_ROOT,
     });

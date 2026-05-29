@@ -226,10 +226,10 @@ export const SNAPSHOT_PATH = OUT_PATH;
 //   `node scripts/audit-resolution.mjs --print`    → print the snapshot to stdout
 //
 // The --print mode is what the vitest test (.claude/__tests__/references/
-// resolution-snapshot.test.ts) consumes via spawnSync. We took this route
-// because vitest 4's transformer refuses to import a .mjs from a .ts test
-// file (SyntaxError before any user code runs). Subprocess invocation
-// sidesteps that entirely.
+// resolution-snapshot.test.ts) consumes via execFileSync. We took this
+// route because vitest 4's transformer refuses to import a .mjs from a
+// .ts test file (SyntaxError before any user code runs). Subprocess
+// invocation sidesteps that entirely.
 const isMain = import.meta.url === pathToFileURL(process.argv[1] ?? '').href;
 if (isMain) {
   if (process.argv.includes('--print')) {
