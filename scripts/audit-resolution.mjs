@@ -221,11 +221,22 @@ export function generateSnapshot() {
 export const SNAPSHOT_PATH = OUT_PATH;
 
 // --- CLI shim ---
-// Only writes to disk when invoked directly (`node scripts/audit-resolution.mjs`).
-// When imported (e.g. by the vitest test), this block is skipped.
+// Two modes:
+//   `node scripts/audit-resolution.mjs`            → write the snapshot to disk
+//   `node scripts/audit-resolution.mjs --print`    → print the snapshot to stdout
+//
+// The --print mode is what the vitest test (.claude/__tests__/references/
+// resolution-snapshot.test.ts) consumes via execFileSync. We took this
+// route because vitest 4's transformer refuses to import a .mjs from a
+// .ts test file (SyntaxError before any user code runs). Subprocess
+// invocation sidesteps that entirely.
 const isMain = import.meta.url === pathToFileURL(process.argv[1] ?? '').href;
 if (isMain) {
-  mkdirSync(path.dirname(OUT_PATH), { recursive: true });
-  writeFileSync(OUT_PATH, generateSnapshot());
-  console.log(`Wrote ${path.relative(REPO_ROOT, OUT_PATH)}`);
+  if (process.argv.includes('--print')) {
+    process.stdout.write(generateSnapshot());
+  } else {
+    mkdirSync(path.dirname(OUT_PATH), { recursive: true });
+    writeFileSync(OUT_PATH, generateSnapshot());
+    console.log(`Wrote ${path.relative(REPO_ROOT, OUT_PATH)}`);
+  }
 }
