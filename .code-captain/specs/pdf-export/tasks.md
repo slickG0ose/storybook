@@ -64,6 +64,8 @@ Carried over from the spec — re-stated here so the developer doesn't have to c
 
 ### Task 2 — Add Zod schemas to `shared/`
 
+**Status:** Done (2026-05-29)
+
 **Zone:** shared
 **Depends on:** none
 **Parallel-safe with:** Task 1.

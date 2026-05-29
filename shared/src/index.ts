@@ -8,3 +8,4 @@ export * from './cart';
 export * from './books';
 export * from './admin';
 export * from './test';
+export * from './pdf';
