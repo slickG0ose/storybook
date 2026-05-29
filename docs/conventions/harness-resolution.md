@@ -38,6 +38,7 @@ Highest precedence first:
 | /backlog | project | Browse open GitHub issues grouped by milestone. Read-only — use to pick the next task before /start-task. |
 | /create-adr | project | Append a new ADR to .code-captain/product/decisions.md — capture an architectural decision with rationale, alternatives, and consequences |
 | /edit-spec | project | Modify an existing feature spec at .code-captain/specs/<slug>/spec.md. Confirms intent and shows a diff before writing. |
+| /execute-task | project | Dispatch the developer agent to implement one task from .code-captain/specs/<slug>/tasks.md. Refuses to run if no tasks.md exists — forces the spec → plan → execute discipline. |
 | /plan-product | project | Scaffold or refresh .code-captain/product/ — mission, roadmap, decisions log. Idempotent: never overwrites existing content. |
 | /ship | project | Pre-flight a branch for PR — detect changed zones, run their tests, lint, draft commit + PR |
 | /start-task | project | Start a new task — pick a backlog item, create a properly-named branch + worktree, scaffold a scratchpad |
