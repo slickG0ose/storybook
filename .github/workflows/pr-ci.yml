@@ -23,10 +23,11 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: npm test
-      - name: Resolution snapshot is up to date
-        run: |
-          npm run audit:resolution
-          git diff --exit-code docs/conventions/harness-resolution.md
+      # NOTE: a previous job had a second "Resolution snapshot is up to date"
+      # step here that ran `npm run audit:resolution && git diff --exit-code`.
+      # The vitest suite now covers that check (see
+      # .claude/__tests__/references/resolution-snapshot.test.ts), so it
+      # fires during `npm test` above — locally too, before push.
 
   server-tests:
     name: Server tests (vitest + supertest)
