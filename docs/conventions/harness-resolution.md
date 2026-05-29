@@ -21,6 +21,7 @@ Highest precedence first:
 
 | Name | Tier | Description |
 |------|------|-------------|
+| architect | project | Use proactively for non-trivial requests — features touching more than ~3 files, data-shape changes, new external dependencies, ambiguous "should we…" decisions, or anything that touches a CLAUDE.md guardrail. Produces a spec at .code-captain/specs/<slug>/spec.md and surfaces ADR-worthy decisions for /create-adr. Never edits source code. |
 | booksmith | project | Use proactively for non-trivial changes under server/ in the StoryBook Storefront project — Express routes, Prisma schema/migrations, Anthropic SDK usage, server-side TypeScript types, and the supertest integration tests that live alongside them. Owner of the server zone per CLAUDE.md delegation rules. |
 | qa | project | Use proactively for new Playwright e2e specs under e2e/tests/, test infrastructure changes (vitest configs, playwright config, test setup files), and cross-zone test reviews. The booksmith and storefront agents own their own zone's unit tests; route to qa when work spans zones or specifically touches e2e or test configs. |
 | storefront | project | Use proactively for non-trivial changes under client/ in the StoryBook Storefront project — React 19 components and pages, Tailwind v4 styling (light + dark mode), React Router v7, React Context providers, Vite config, client-side TypeScript types, and the RTL unit tests that live alongside them. Owner of the client zone per CLAUDE.md delegation rules. |
