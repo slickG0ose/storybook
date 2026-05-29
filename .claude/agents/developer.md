@@ -69,7 +69,7 @@ Run the zone tests for what you changed:
 |---|---|
 | `server/` (incl. new migrations) | `cd server && npm test` |
 | `client/` | `cd client && npm test` |
-| `shared/` | `cd server && npm run build && cd ../client && npm run build` (no shared-package test suite; the build verifies the type chain) |
+| `shared/` | `cd server && npx tsc --noEmit && cd ../client && npm run build` (no shared-package test suite; the type-check + the client build together verify both sides of the type chain. Server has no `npm run build` script — use `tsc --noEmit` instead.) |
 | `e2e/` | `cd e2e && npm test` — only if you added/changed an e2e spec and the change is contained |
 | `.claude/` | `npm test` (from root — harness suite) |
 
@@ -91,7 +91,12 @@ Manual verify steps are why the developer agent exists in main-session-driven di
 
 ### Step 6 — Mark complete and hand back
 
-1. In `tasks.md`, find the task and **add `**Status:** Done` (YYYY-MM-DD)** as a new line near the top of the task body (above the `**Files to add or change:**` block — easy for a reader to scan).
+1. In `tasks.md`, find the task and add the literal markdown line below near the top of the task body (above the `**Files to add or change:**` block). Substitute today's date for `YYYY-MM-DD`:
+
+   ```markdown
+   **Status:** Done (YYYY-MM-DD)
+   ```
+
 2. Return to the main session with the hand-off block below. Do NOT commit, do NOT push, do NOT open a PR.
 
 ### Hand-back format
