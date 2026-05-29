@@ -5,7 +5,9 @@
 > This is a **diff-friendly snapshot** of where every harness item is resolved from.
 > Regenerate after harness changes and commit the diff.
 > 
-> Test: `npm run audit:resolution && git diff --exit-code docs/conventions/harness-resolution.md`
+> The vitest suite (`.claude/__tests__/references/resolution-snapshot.test.ts`)
+> re-derives this string and fails if it drifts from the committed file, so a
+> stale snapshot is caught by `npm test` before push.
 
 ## Resolution tiers
 
@@ -83,7 +85,7 @@ Highest precedence first:
 
 ## User & built-in tiers
 
-Contents at `~/.claude/` and the built-in tier are **not snapshotted** because they vary by developer machine. The committed snapshot covers only the project tier so the `npm run audit:resolution && git diff --exit-code` gate stays deterministic across CI and every contributor.
+Contents at `~/.claude/` and the built-in tier are **not snapshotted** because they vary by developer machine. The committed snapshot covers only the project tier so the regression gate stays deterministic across CI and every contributor.
 
 To inspect your own resolution chain locally:
 
