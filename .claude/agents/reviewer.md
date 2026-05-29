@@ -83,7 +83,9 @@ If `.code-captain/specs/<slug>/spec.md` exists for the feature being shipped (na
 
 ### Check 3 — Dark-mode parity (client/** changes only)
 
-For every changed `client/**/*.tsx` or `client/**/*.css` file:
+**Mechanical procedure:** invoke the `dark-mode-parity-check` skill with the list of changed `client/**/*.{tsx,css}` files. The skill enumerates added classNames, filters to visual classes, and reports any without a `dark:` partner. Use its findings as the basis of this check — don't re-derive the rule by hand.
+
+For reference, the rule the skill encodes:
 
 - Grep the diff for new `className=` strings that introduce visual surfaces (background, text colors, borders, hover/focus states).
 - For each new visual class, verify a `dark:` variant accompanies it in the same line or block.
@@ -104,7 +106,9 @@ Exceptions: classes that don't render visually (`flex`, `grid`, `p-4`, layout-on
 
 ### Check 4 — Wire-shape assertion (server route changes only)
 
-For every new or changed file under `server/src/routes/**/*.ts`:
+**Mechanical procedure:** invoke the `wire-shape-check` skill once per changed route file under `server/src/routes/**/*.ts`. The skill identifies response shapes from the handler (or its `validate({ response: ... })` schema), locates the matching test, and reports any handler whose response fields aren't all pinned by `toMatchObject`. Use its findings as the basis of this check.
+
+For reference, the rule the skill encodes:
 
 - Identify the response shape(s) the file returns (`res.json(...)`, `res.send(...)`).
 - Find the corresponding test file at `server/src/routes/__tests__/<route>.test.ts`.
