@@ -408,6 +408,40 @@ describe('Books API routes', () => {
         expect(page.illustration_url).toBeNull();
       }
     });
+
+    it('restores a legacy snapshot whose pages_json has no page_number keys', async () => {
+      // BookVersion rows written before page_number was added to the snapshot
+      // shape store pages as { text, illustrationDescription } only. The
+      // GET /:id/versions listing synthesizes page_number: i + 1; restore must
+      // do the same or it would call page.create with page_number: undefined
+      // and crash.
+      const token = await createUserAndGetToken(app);
+      const user = await prisma.user.findFirst({ where: { email: 'author@example.com' } });
+      await prisma.book.update({
+        where: { id: 'luna-star-garden' },
+        data: { status: 'draft', created_by: user!.id, version: 2 },
+      });
+      await prisma.bookVersion.create({
+        data: {
+          book_id: 'luna-star-garden',
+          version: 1,
+          // Note: NO page_number on the page objects — legacy shape.
+          pages_json: JSON.stringify([
+            { text: 'Legacy page 1', illustrationDescription: 'Legacy illust 1' },
+            { text: 'Legacy page 2', illustrationDescription: 'Legacy illust 2' },
+            { text: 'Legacy page 3', illustrationDescription: 'Legacy illust 3' },
+          ]),
+        },
+      });
+
+      const res = await request(app)
+        .put('/api/books/luna-star-garden/versions/1/restore')
+        .set('Authorization', `Bearer ${token}`);
+      expect(res.status).toBe(200);
+      expect(res.body.pages).toHaveLength(3);
+      expect(res.body.pages.map((p: { page_number: number }) => p.page_number)).toEqual([1, 2, 3]);
+      expect(res.body.pages[0].text).toBe('Legacy page 1');
+    });
   });
 
   describe('GET /api/books/:id/versions', () => {

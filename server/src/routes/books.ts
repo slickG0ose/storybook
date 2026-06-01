@@ -510,11 +510,17 @@ router.put(
         text: p.text,
         illustrationDescription: p.illustration_description,
       }));
-      const restoredPages = JSON.parse(snapshot.pages_json) as {
-        page_number: number;
-        text: string;
-        illustrationDescription: string;
-      }[];
+      // Normalize the same way GET /:id/versions does (line ~614): legacy
+      // BookVersion rows were written without page_number on each page, so
+      // synthesize 1-based positions for them. Without this, restoring a
+      // legacy snapshot would call tx.page.create with page_number: undefined.
+      const restoredPages = (
+        JSON.parse(snapshot.pages_json) as {
+          page_number?: number;
+          text: string;
+          illustrationDescription: string;
+        }[]
+      ).map((p, i) => ({ ...p, page_number: p.page_number ?? i + 1 }));
 
       // Same transactional + self-healing pattern as the revise flow: a
       // partial failure here used to leave a BookVersion row at book.version
