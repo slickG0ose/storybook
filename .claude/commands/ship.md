@@ -38,7 +38,24 @@ Get the current branch ready to ship. Follow the project's done criteria in `CLA
    - Surface anything that touches guardrails (Claude model swap, data.json shape, auth, deps)
    - Show the draft and ask for approval before committing
 
-6. **Draft PR** title and body:
+6. **Dispatch the reviewer agent** (pre-merge mode). All zone checks have passed and the diff is committed — now run the structural / convention checks before drafting the PR.
+
+   Use the `Agent` tool with `subagent_type: reviewer`. Dispatch prompt MUST include:
+
+   - Mode: `pre-merge`
+   - Base ref: `master...HEAD` (the reviewer reads `git diff master...HEAD`)
+   - The spec slug, if one applies (`.code-captain/specs/<slug>/spec.md` referenced by the branch's commits or by recent dispatches)
+   - A reminder to follow the reviewer's role definition at `.claude/agents/reviewer.md` strictly
+
+   The reviewer will return a findings report with severity per finding. Surface it verbatim to the user. Then:
+
+   - **No findings** → proceed to step 7
+   - **Low-severity findings only** → relay them and ask whether to proceed; defaulting to proceed is fine
+   - **Medium or higher findings** → stop the ship flow. Tell the user the reviewer flagged blockers, and ask whether to address now (re-edit, re-commit, re-run `/ship`) or override with explicit acknowledgement
+
+   The reviewer never fixes findings. That's deliberate — the gate's value is independent flagging.
+
+7. **Draft PR** title and body:
    - Title: under 70 chars. If `$ARGUMENTS` was provided, use that.
    - Body uses this template:
 
@@ -46,25 +63,43 @@ Get the current branch ready to ship. Follow the project's done criteria in `CLA
      ## Summary
      <1-3 bullets focused on the WHY, not the what>
 
-     ## Delegations
-     <Which agent did which slice of zone work. Be honest — if main did
-     zone work inline rather than delegating, list that and flag for
-     review. Format:
-       - booksmith: <server work>
-       - storefront: <client work>
-       - qa: <test work>
-       - main: <orchestration, cross-zone glue, 1-line fixes>
-     If only main touched the branch (docs / tooling / pure orchestration),
-     write "main only — no zone code touched">
+     ## Plan/spec link + agent ownership
+     <Both pieces of audit trail:
+
+     1. SPEC/PLAN — if the work flowed through the hybrid chain, link
+        the spec and tasks files:
+          - Spec:  `.code-captain/specs/<slug>/spec.md`
+          - Tasks: `.code-captain/specs/<slug>/tasks.md` (Task N of M)
+        If the work bypassed the chain (per CLAUDE.md size gate), say so
+        explicitly: "Bypassed chain — trivial per size gate (1-2 files,
+        single zone, no schema/deps)".
+
+     2. AGENT OWNERSHIP — which agent did which slice. Be honest:
+          - architect: <spec authoring> (if applicable)
+          - planner: <task decomposition> (if applicable)
+          - developer: <task implementations — list which tasks>
+          - reviewer: pre-merge gate via /ship
+          - qa: <e2e / test-infra work, if any>
+          - storefront / booksmith: <legacy zone owners — only if used; flag for HR10 archive>
+          - main: <orchestration, cross-zone glue, 1-line fixes>
+        If only main touched the branch (docs / tooling / pure orchestration),
+        write "main only — no zone code touched">
+
+     ## Reviewer findings
+     <Either "Reviewer: all six checks passed" OR a brief recap of any
+     findings + how they were addressed (fixed in-PR, follow-up issue
+     filed, explicit deferral with reasoning). This makes the surfaced-
+     gaps follow-through (Check 6) traceable in the PR itself.>
 
      ## Test plan
      <Bulleted markdown checklist of TODOs for reviewer to verify>
      ```
 
-   - The Delegations section is REQUIRED per CLAUDE.md — it's the audit trail for zone-ownership compliance. Do not omit it.
+   - The `## Plan/spec link + agent ownership` section is REQUIRED — it's the audit trail for the hybrid harness. Do not omit it. (Replaces the prior `## Delegations` section.)
+   - The `## Reviewer findings` section is REQUIRED — it traces what the reviewer caught and what was done about it.
    - Show the draft and confirm before opening the PR
 
-7. **Confirm and execute** — only after the user explicitly approves:
+8. **Confirm and execute** — only after the user explicitly approves:
    - Push the branch (`-u` if first push)
    - Open the PR via `gh pr create`
    - Return the PR URL

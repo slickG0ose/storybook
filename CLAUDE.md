@@ -10,12 +10,15 @@ AI-powered children's book store. React + Express + Claude API. Working storefro
 
 ## Layout
 
-| Directory | Stack | Owner agent | Zone rules |
-|-----------|-------|-------------|------------|
-| `client/` | React 19, Vite 8, Tailwind 4, TS | @storefront | `.claude/agents/storefront.md` |
-| `server/` | Express 4, TS, Anthropic SDK | @booksmith | `.claude/agents/booksmith.md` |
-| `e2e/` | Playwright 1.52, TS | @qa | `.claude/agents/qa.md` |
-| `docs/` | Backlog, research notes | — | — |
+| Directory | Stack | Conventions |
+|-----------|-------|-------------|
+| `client/` | React 19, Vite 8, Tailwind 4, TS | [docs/conventions/client.md](docs/conventions/client.md) |
+| `server/` | Express 4, TS, Anthropic SDK | [docs/conventions/server.md](docs/conventions/server.md) |
+| `shared/` | Zod schemas, source-only workspace package | [docs/conventions/server.md](docs/conventions/server.md) §wire-shapes |
+| `e2e/` | Playwright 1.52, TS | [docs/conventions/testing.md](docs/conventions/testing.md) |
+| `docs/` | Backlog archive, research notes, conventions | — |
+
+Stack details, patterns, and zone-specific conventions live in `docs/conventions/{server,client,testing,data}.md`. Agents read these on demand — they're the source of truth, not duplicated into agent prompts.
 
 ## Branching
 
@@ -56,24 +59,50 @@ cd e2e && npm run test:headed
 cd e2e && npm run test:ui
 ```
 
-## Delegation rules (opinionated)
+## How work flows (hybrid harness)
 
-For any non-trivial change in a zone, you MUST delegate to the owning agent via the Agent tool rather than editing directly:
+Non-trivial work flows through a four-role chain. Each role has one job; together they enforce spec → plan → execute → review before anything merges.
 
-- `client/**` → **@storefront**
-- `server/**` → **@booksmith**
-- Tests in any zone → **@qa**
+| Role | Dispatched via | Produces |
+|------|----------------|----------|
+| **architect** | `@architect` Agent call, or `/edit-spec` for revisions | `.code-captain/specs/<slug>/spec.md` |
+| **planner** | `@planner` Agent call | `.code-captain/specs/<slug>/tasks.md` (3–12 ordered tasks) |
+| **developer** | `/execute-task <slug> <task>` (preferred) or direct `@developer` Agent call | Code changes for one task, run tests, `Status: Done` marker |
+| **reviewer** | Dispatched automatically by `/ship` (read-only, pre-merge gate) | Findings report — never fixes |
 
-When work spans multiple zones, you MUST issue parallel Agent calls in a single message — do NOT do zone work serially in the main session. The main session's job is to orchestrate: read for context, plan, dispatch in parallel, then verify.
+The chain is enforced mechanically: `/execute-task` refuses to run without an approved `tasks.md`. Skipping the spec or plan to "just dispatch the developer with a prompt" sidesteps the discipline this exists to enforce.
 
-**Exceptions** (safe to do inline in main):
-- 1-line fixes
-- Pure orchestration (Reads, Glob, Grep, git inspection)
-- Renames or moves that mechanically span zones
+### Size gate — when the chain is required
 
-**ALWAYS record delegations in the PR body** so the audit trail is visible. `/ship` drafts this from the work you actually did.
+You **must** route through the architect → planner → developer chain when **any** of these are true:
 
-**Zone-specific conventions, stack details, and patterns live in each agent's `.md` file** — not duplicated here.
+- **>3 files** likely to change (envelope estimate, not exact)
+- **Data shape change** — Prisma schema, Zod wire shapes in `@storybook/shared`, seed data shape
+- **New dependency** — any new entry in any `package.json`
+- **Touches a guardrail** (see Guardrails section below)
+
+You **may bypass** the chain for:
+
+- **1–2 file edits** in a single zone → edit inline in main session
+- **Trivial cross-zone change** (rename, move, single import update) → edit inline
+- **Single-task feature, single zone, no schema/deps** → dispatch `@developer` directly with a freehand prompt; skip spec/plan
+
+When in doubt, lean toward the chain. The overhead is small (one architect dispatch, one planner dispatch) and the audit trail is preserved.
+
+### Reviewer agent and mechanical-check skills
+
+The reviewer runs six checks on every `/ship`. Two of them invoke project-local skills:
+
+- **Check 3 — dark-mode parity** → `dark-mode-parity-check` skill (greps added classNames for missing `dark:` partners)
+- **Check 4 — wire-shape assertion** → `wire-shape-check` skill (verifies every server route response field is pinned by `toMatchObject` in its test)
+
+The reviewer is read-only. Findings come back as a report; the user (or a follow-up developer dispatch) addresses them. Surfaced-gaps follow-through (Check 6) ensures developer-hand-back "Surprises" don't get orphaned.
+
+### Legacy zone-owner agents
+
+`@storefront`, `@booksmith`, `@qa` still exist as zone-specific specialists. They will be archived in a follow-up PR (HR10) once the new chain has shipped a complete feature end-to-end. Until then, prefer `@developer` for execution. `@qa` remains the right call for net-new Playwright e2e specs or test-infrastructure changes.
+
+**ALWAYS record plan/spec link + agent ownership in the PR body** — `/ship` drafts this from the work you actually did, so the audit trail stays visible.
 
 ## Done criteria
 
@@ -103,5 +132,8 @@ NEVER claim a feature complete until ALL of:
 - **Backlog (active):** https://github.com/slickG0ose/storybook/issues — grouped by milestone
 - **Backlog (archive):** `docs/backlog.md` — pre-migration, preserved for OPS conventions
 - **Research:** `docs/marketing-research.md`, `docs/print-publishing-research.md`
-- **Agent definitions:** `.claude/agents/{storefront,booksmith,qa}.md`
+- **Conventions:** `docs/conventions/{server,client,testing,data}.md` — stack details, patterns, when-adding-a-new-X recipes; **`docs/conventions/harness-resolution.md`** — auto-generated snapshot of how every `.claude/` item resolves
+- **Chain agents:** `.claude/agents/{architect,planner,developer,reviewer}.md`
+- **Legacy agents:** `.claude/agents/{storefront,booksmith,qa}.md` (slated for HR10 archival)
+- **Mechanical-check skills:** `.claude/skills/{wire-shape-check,dark-mode-parity-check}/SKILL.md`
 - **Codebase map:** `AGENTS.md` (entry point), `.code-captain/docs/{toc,architecture,tech-stack,code-style,objective}.md` (deep reference)

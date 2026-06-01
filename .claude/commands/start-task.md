@@ -44,16 +44,29 @@ Kick off a new task following the project's branching convention in `CLAUDE.md`.
    ```
    ### <branch-name> — <today's date>
 
-   **Backlog:** <ID> — <one-line task summary>
-   **Owner agent:** <storefront | booksmith | qa | multi-zone>
+   **Backlog:** <ID or GitHub issue #> — <one-line task summary>
+   **Spec:** <.code-captain/specs/<slug>/spec.md path, or "trivial — no spec">
 
    **Plan**
    - [ ] (placeholder)
    ```
 
-7. **Hand off:** based on the zone(s) the task touches, recommend which agent should own it per the delegation rules in `CLAUDE.md`:
-   - `client/**` → `storefront`
-   - `server/**` → `booksmith`
-   - Cross-zone, test infra, or e2e → `qa`
+7. **Apply the size gate, then route per the hybrid harness** (see `CLAUDE.md` "How work flows"). Inspect the task and decide which entry point the user should take next.
 
-   Ask the user whether to delegate now or scope further first. Do **not** start implementing — the goal of this command is setup.
+   First, classify the task as **trivial** or **non-trivial**. Non-trivial means **any** of:
+   - Will likely touch >3 files
+   - Changes a data shape (Prisma schema, Zod wire shape, seed)
+   - Adds a new dependency to any `package.json`
+   - Touches a guardrail (see CLAUDE.md Guardrails)
+
+   Then route:
+
+   | Task shape | Spec state | Recommend |
+   |---|---|---|
+   | **Trivial** (1–2 files, single zone, no schema/deps) | n/a | Edit inline in main, OR dispatch `@developer` directly with a freehand prompt |
+   | **Trivial cross-zone** (rename, move) | n/a | Edit inline in main |
+   | **Non-trivial** | No `.code-captain/specs/<slug>/spec.md` | Dispatch `@architect` (Agent tool, `subagent_type: architect`) to draft a fresh spec |
+   | **Non-trivial** | Spec exists, no `tasks.md` | Dispatch `@planner` (Agent tool, `subagent_type: planner`) to decompose |
+   | **Non-trivial** | Spec + `tasks.md` exist | Suggest `/execute-task <slug> <task-number>` for the first incomplete task |
+
+   Ask the user to confirm the route before dispatching. Do **not** start implementing — the goal of this command is setup + correct routing into the chain.

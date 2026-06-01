@@ -30,7 +30,9 @@ describe('CLAUDE.md → .claude/agents/ references', () => {
 
   it('every @<agent> mention in CLAUDE.md resolves to an existing agent file', () => {
     // Pattern: **@booksmith**, @qa, @storefront, etc. Plain @mentions.
-    const matches = claudeMd.matchAll(/(?<!\w)@([a-z][a-z0-9-]+)\b/g);
+    // Negative lookahead on "/" excludes npm scoped packages (`@storybook/shared`,
+    // `@anthropic-ai/sdk`), which are package references, not agent mentions.
+    const matches = claudeMd.matchAll(/(?<!\w)@([a-z][a-z0-9-]+)\b(?!\/)/g);
     const referenced = new Set<string>();
     for (const m of matches) referenced.add(m[1]);
 
