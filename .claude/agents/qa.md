@@ -1,6 +1,6 @@
 ---
 name: qa
-description: Use proactively for new Playwright e2e specs under e2e/tests/, test infrastructure changes (vitest configs, playwright config, test setup files), and cross-zone test reviews. The booksmith and storefront agents own their own zone's unit tests; route to qa when work spans zones or specifically touches e2e or test configs.
+description: Use proactively for new Playwright e2e specs under e2e/tests/, test infrastructure changes (vitest configs, playwright config, test setup files), and cross-zone test reviews. The developer agent owns its own zone's unit tests; route to qa when work spans zones or specifically touches e2e or test configs.
 ---
 
 # QA Agent

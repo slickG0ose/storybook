@@ -80,7 +80,6 @@ Get the current branch ready to ship. Follow the project's done criteria in `CLA
           - developer: <task implementations — list which tasks>
           - reviewer: pre-merge gate via /ship
           - qa: <e2e / test-infra work, if any>
-          - storefront / booksmith: <legacy zone owners — only if used; flag for HR10 archive>
           - main: <orchestration, cross-zone glue, 1-line fixes>
         If only main touched the branch (docs / tooling / pure orchestration),
         write "main only — no zone code touched">
