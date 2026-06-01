@@ -408,6 +408,40 @@ describe('Books API routes', () => {
         expect(page.illustration_url).toBeNull();
       }
     });
+
+    it('restores a legacy snapshot whose pages_json has no page_number keys', async () => {
+      // BookVersion rows written before page_number was added to the snapshot
+      // shape store pages as { text, illustrationDescription } only. The
+      // GET /:id/versions listing synthesizes page_number: i + 1; restore must
+      // do the same or it would call page.create with page_number: undefined
+      // and crash.
+      const token = await createUserAndGetToken(app);
+      const user = await prisma.user.findFirst({ where: { email: 'author@example.com' } });
+      await prisma.book.update({
+        where: { id: 'luna-star-garden' },
+        data: { status: 'draft', created_by: user!.id, version: 2 },
+      });
+      await prisma.bookVersion.create({
+        data: {
+          book_id: 'luna-star-garden',
+          version: 1,
+          // Note: NO page_number on the page objects — legacy shape.
+          pages_json: JSON.stringify([
+            { text: 'Legacy page 1', illustrationDescription: 'Legacy illust 1' },
+            { text: 'Legacy page 2', illustrationDescription: 'Legacy illust 2' },
+            { text: 'Legacy page 3', illustrationDescription: 'Legacy illust 3' },
+          ]),
+        },
+      });
+
+      const res = await request(app)
+        .put('/api/books/luna-star-garden/versions/1/restore')
+        .set('Authorization', `Bearer ${token}`);
+      expect(res.status).toBe(200);
+      expect(res.body.pages).toHaveLength(3);
+      expect(res.body.pages.map((p: { page_number: number }) => p.page_number)).toEqual([1, 2, 3]);
+      expect(res.body.pages[0].text).toBe('Legacy page 1');
+    });
   });
 
   describe('GET /api/books/:id/versions', () => {
@@ -555,6 +589,57 @@ describe('Books API routes', () => {
       expect(page1).toBeDefined();
       expect(page1.text).toBe('NEW page 1 text');
       expect(page1.illustration_url).toBeNull();
+    });
+
+    it('self-heals when a stale BookVersion row already exists at book.version', async () => {
+      // Reproduces the bug from the live site: a prior revise attempt created
+      // a BookVersion row at book.version but failed before bumping the book's
+      // version forward (no transaction). Retrying would hit a
+      // (book_id, version) unique-constraint error. The fix wraps the writes
+      // in a transaction AND computes snapshotVersion past any existing rows.
+      const token = await createUserAndGetToken(app);
+      const user = await prisma.user.findFirst({ where: { email: 'author@example.com' } });
+
+      await prisma.book.update({
+        where: { id: 'luna-star-garden' },
+        data: { status: 'draft', created_by: user!.id, version: 3 },
+      });
+
+      // Simulate the stuck state: a BookVersion already exists at v=3, exactly
+      // matching book.version. Without the fix, the next revise would crash.
+      await prisma.bookVersion.create({
+        data: {
+          book_id: 'luna-star-garden',
+          version: 3,
+          pages_json: '[]',
+          description: 'leftover snapshot from a partial revise',
+        },
+      });
+
+      mockClaudeReviseResponse([
+        { text: 'Page 1 text', illustrationDescription: 'Illustration 1' },
+        { text: 'Page 2 text', illustrationDescription: 'Illustration 2' },
+        { text: 'Page 3 text', illustrationDescription: 'Illustration 3' },
+        { text: 'Page 4 text', illustrationDescription: 'Illustration 4' },
+        { text: 'Page 5 text', illustrationDescription: 'Illustration 5' },
+      ]);
+
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/revise')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ feedback: 'retry after the stuck failure' });
+      expect(res.status).toBe(200);
+
+      // Snapshot skipped past the stale v=3 row → new snapshot at v=4,
+      // book.version bumped to v=5. Both old and new BookVersion rows coexist.
+      const snapshots = await prisma.bookVersion.findMany({
+        where: { book_id: 'luna-star-garden' },
+        orderBy: { version: 'asc' },
+      });
+      expect(snapshots.map((s) => s.version)).toEqual([3, 4]);
+
+      const after = await prisma.book.findUnique({ where: { id: 'luna-star-garden' } });
+      expect(after?.version).toBe(5);
     });
   });
 

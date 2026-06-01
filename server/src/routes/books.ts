@@ -385,63 +385,79 @@ Respond with ONLY valid JSON in this exact format (no markdown, no code fences):
         pages: { text: string; illustrationDescription: string }[];
       };
 
-      await prisma.bookVersion.create({
-        data: {
-          book_id: book.id,
-          version: book.version,
-          pages_json: JSON.stringify(currentPages),
-          description: book.description,
-          characters_json: book.characters_json,
-        },
-      });
-
-      const newVersion = book.version + 1;
       const finalPageCount = revised.pages.length;
 
-      // Update pages that exist in both old and new. If either the text or the
-      // illustration description changed for a page, also clear illustration_url:
-      // the old image no longer matches the revised content, so showing it would
-      // be a text/image mismatch (same reasoning as the version restore handler).
-      const overlap = Math.min(finalPageCount, currentPageCount);
-      for (let i = 0; i < overlap; i++) {
-        const oldPage = book.pages[i];
-        const newText = revised.pages[i].text;
-        const newDescription = revised.pages[i].illustrationDescription;
-        const contentChanged =
-          newText !== oldPage.text || newDescription !== oldPage.illustration_description;
-        await prisma.page.update({
-          where: { book_id_page_number: { book_id: book.id, page_number: i + 1 } },
+      // Wrap snapshot + page mutations + book.version bump in a single
+      // transaction so a partial failure can't leave a BookVersion row at
+      // book.version without bumping book.version forward — which would make
+      // the next revise hit a (book_id, version) unique-constraint conflict.
+      //
+      // snapshotVersion self-heals from books that ended up in that stuck
+      // state before this fix: it skips past any existing BookVersion rows
+      // for this book rather than colliding with them.
+      const updated = await prisma.$transaction(async (tx) => {
+        const maxExisting = await tx.bookVersion.aggregate({
+          where: { book_id: book.id },
+          _max: { version: true },
+        });
+        const snapshotVersion = Math.max(book.version, (maxExisting._max.version ?? 0) + 1);
+        const newVersion = snapshotVersion + 1;
+
+        await tx.bookVersion.create({
           data: {
-            text: newText,
-            illustration_description: newDescription,
-            ...(contentChanged ? { illustration_url: null } : {}),
+            book_id: book.id,
+            version: snapshotVersion,
+            pages_json: JSON.stringify(currentPages),
+            description: book.description,
+            characters_json: book.characters_json,
           },
         });
-      }
-      // Add new pages if the story grew
-      if (finalPageCount > currentPageCount) {
-        for (let i = currentPageCount; i < finalPageCount; i++) {
-          await prisma.page.create({
+
+        // Update pages that exist in both old and new. If either the text or the
+        // illustration description changed for a page, also clear illustration_url:
+        // the old image no longer matches the revised content, so showing it would
+        // be a text/image mismatch (same reasoning as the version restore handler).
+        const overlap = Math.min(finalPageCount, currentPageCount);
+        for (let i = 0; i < overlap; i++) {
+          const oldPage = book.pages[i];
+          const newText = revised.pages[i].text;
+          const newDescription = revised.pages[i].illustrationDescription;
+          const contentChanged =
+            newText !== oldPage.text || newDescription !== oldPage.illustration_description;
+          await tx.page.update({
+            where: { book_id_page_number: { book_id: book.id, page_number: i + 1 } },
             data: {
-              book_id: book.id,
-              page_number: i + 1,
-              text: revised.pages[i].text,
-              illustration_description: revised.pages[i].illustrationDescription,
+              text: newText,
+              illustration_description: newDescription,
+              ...(contentChanged ? { illustration_url: null } : {}),
             },
           });
         }
-      }
-      // Remove pages if the story shrank
-      if (finalPageCount < currentPageCount) {
-        await prisma.page.deleteMany({
-          where: { book_id: book.id, page_number: { gt: finalPageCount } },
-        });
-      }
+        // Add new pages if the story grew
+        if (finalPageCount > currentPageCount) {
+          for (let i = currentPageCount; i < finalPageCount; i++) {
+            await tx.page.create({
+              data: {
+                book_id: book.id,
+                page_number: i + 1,
+                text: revised.pages[i].text,
+                illustration_description: revised.pages[i].illustrationDescription,
+              },
+            });
+          }
+        }
+        // Remove pages if the story shrank
+        if (finalPageCount < currentPageCount) {
+          await tx.page.deleteMany({
+            where: { book_id: book.id, page_number: { gt: finalPageCount } },
+          });
+        }
 
-      const updated = await prisma.book.update({
-        where: { id: book.id },
-        data: { version: newVersion, description: revised.description },
-        include: { pages: { orderBy: { page_number: 'asc' } } },
+        return tx.book.update({
+          where: { id: book.id },
+          data: { version: newVersion, description: revised.description },
+          include: { pages: { orderBy: { page_number: 'asc' } } },
+        });
       });
 
       res.json(hydrateBook(updated));
@@ -494,49 +510,68 @@ router.put(
         text: p.text,
         illustrationDescription: p.illustration_description,
       }));
-      await prisma.bookVersion.create({
-        data: {
-          book_id: book.id,
-          version: book.version,
-          pages_json: JSON.stringify(currentPages),
-          description: book.description,
-          characters_json: book.characters_json,
-        },
-      });
+      // Normalize the same way GET /:id/versions does (line ~614): legacy
+      // BookVersion rows were written without page_number on each page, so
+      // synthesize 1-based positions for them. Without this, restoring a
+      // legacy snapshot would call tx.page.create with page_number: undefined.
+      const restoredPages = (
+        JSON.parse(snapshot.pages_json) as {
+          page_number?: number;
+          text: string;
+          illustrationDescription: string;
+        }[]
+      ).map((p, i) => ({ ...p, page_number: p.page_number ?? i + 1 }));
 
-      const restoredPages = JSON.parse(snapshot.pages_json) as {
-        page_number: number;
-        text: string;
-        illustrationDescription: string;
-      }[];
+      // Same transactional + self-healing pattern as the revise flow: a
+      // partial failure here used to leave a BookVersion row at book.version
+      // without bumping book.version, breaking subsequent restores/revises
+      // with a unique-constraint error.
+      const updated = await prisma.$transaction(async (tx) => {
+        const maxExisting = await tx.bookVersion.aggregate({
+          where: { book_id: book.id },
+          _max: { version: true },
+        });
+        const snapshotVersion = Math.max(book.version, (maxExisting._max.version ?? 0) + 1);
+        const newVersion = snapshotVersion + 1;
 
-      // Replace pages with the snapshot. illustration_url is intentionally
-      // reset to null on every restored page: the old image URLs no longer
-      // correspond to the restored text/description, so showing them would
-      // be misleading. The user can re-illustrate as needed.
-      await prisma.page.deleteMany({ where: { book_id: book.id } });
-      for (const p of restoredPages) {
-        await prisma.page.create({
+        await tx.bookVersion.create({
           data: {
             book_id: book.id,
-            page_number: p.page_number,
-            text: p.text,
-            illustration_description: p.illustrationDescription,
-            illustration_url: null,
+            version: snapshotVersion,
+            pages_json: JSON.stringify(currentPages),
+            description: book.description,
+            characters_json: book.characters_json,
           },
         });
-      }
 
-      const updated = await prisma.book.update({
-        where: { id: book.id },
-        data: {
-          version: book.version + 1,
-          // Only restore description/characters when the snapshot has them —
-          // versions created before the snapshot was expanded will be null.
-          ...(snapshot.description !== null ? { description: snapshot.description } : {}),
-          ...(snapshot.characters_json !== null ? { characters_json: snapshot.characters_json } : {}),
-        },
-        include: { pages: { orderBy: { page_number: 'asc' } } },
+        // Replace pages with the snapshot. illustration_url is intentionally
+        // reset to null on every restored page: the old image URLs no longer
+        // correspond to the restored text/description, so showing them would
+        // be misleading. The user can re-illustrate as needed.
+        await tx.page.deleteMany({ where: { book_id: book.id } });
+        for (const p of restoredPages) {
+          await tx.page.create({
+            data: {
+              book_id: book.id,
+              page_number: p.page_number,
+              text: p.text,
+              illustration_description: p.illustrationDescription,
+              illustration_url: null,
+            },
+          });
+        }
+
+        return tx.book.update({
+          where: { id: book.id },
+          data: {
+            version: newVersion,
+            // Only restore description/characters when the snapshot has them —
+            // versions created before the snapshot was expanded will be null.
+            ...(snapshot.description !== null ? { description: snapshot.description } : {}),
+            ...(snapshot.characters_json !== null ? { characters_json: snapshot.characters_json } : {}),
+          },
+          include: { pages: { orderBy: { page_number: 'asc' } } },
+        });
       });
 
       res.json(hydrateBook(updated));
