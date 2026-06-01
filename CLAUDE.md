@@ -100,7 +100,9 @@ The reviewer is read-only. Findings come back as a report; the user (or a follow
 
 ### Legacy zone-owner agents
 
-`@storefront`, `@booksmith`, `@qa` still exist as zone-specific specialists. They will be archived in a follow-up PR (HR10) once the new chain has shipped a complete feature end-to-end. Until then, prefer `@developer` for execution. `@qa` remains the right call for net-new Playwright e2e specs or test-infrastructure changes.
+The **storefront** and **booksmith** zone-specialist agents have been retired — their definitions now live in `.claude/agents/_archive/` for one stability window before deletion. The full-stack `@developer` agent replaces both, reading `docs/conventions/{server,client}.md` on demand for zone-specific patterns.
+
+`@qa` remains active. It owns net-new Playwright e2e specs and cross-zone test-infrastructure changes — work that doesn't fit `@developer`'s one-task-per-dispatch shape.
 
 **ALWAYS record plan/spec link + agent ownership in the PR body** — `/ship` drafts this from the work you actually did, so the audit trail stays visible.
 
@@ -133,7 +135,7 @@ NEVER claim a feature complete until ALL of:
 - **Backlog (archive):** `docs/backlog.md` — pre-migration, preserved for OPS conventions
 - **Research:** `docs/marketing-research.md`, `docs/print-publishing-research.md`
 - **Conventions:** `docs/conventions/{server,client,testing,data}.md` — stack details, patterns, when-adding-a-new-X recipes; **`docs/conventions/harness-resolution.md`** — auto-generated snapshot of how every `.claude/` item resolves
-- **Chain agents:** `.claude/agents/{architect,planner,developer,reviewer}.md`
-- **Legacy agents:** `.claude/agents/{storefront,booksmith,qa}.md` (slated for HR10 archival)
+- **Active agents:** `.claude/agents/{architect,planner,developer,reviewer,qa}.md` — chain + e2e specialist
+- **Archived agents:** `.claude/agents/_archive/{booksmith,storefront}.md` — retained one stability window; see `.claude/agents/_archive/README.md`
 - **Mechanical-check skills:** `.claude/skills/{wire-shape-check,dark-mode-parity-check}/SKILL.md`
 - **Codebase map:** `AGENTS.md` (entry point), `.code-captain/docs/{toc,architecture,tech-stack,code-style,objective}.md` (deep reference)
