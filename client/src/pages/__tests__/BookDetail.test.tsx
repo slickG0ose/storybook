@@ -115,14 +115,28 @@ vi.mock('../../context/AuthContext', () => ({
 }))
 
 // BookSpread imports its own deps; mock to keep the test focused on the
-// version-history flow rather than the spread renderer.
+// version-history flow rather than the spread renderer. The mock captures the
+// `theater` prop into a module-level variable so the BookDetail — theater mode
+// describe block below can observe the lifted URL state without mounting the
+// real spread renderer. A stub button invokes `onToggleTheater` so the round
+// trip URL -> state -> child callback -> URL can be exercised.
+let capturedTheaterProp: boolean | undefined
 vi.mock('../../components/BookSpread', () => ({
-  default: () => <div data-testid="book-spread" />,
+  default: (props: { theater: boolean; onToggleTheater: () => void }) => {
+    capturedTheaterProp = props.theater
+    return (
+      <div data-testid="book-spread">
+        <button onClick={props.onToggleTheater} aria-label="theater-toggle-stub">
+          theater={String(props.theater)}
+        </button>
+      </div>
+    )
+  },
 }))
 
-function renderBookDetail() {
+function renderBookDetail(opts: { search?: string } = {}) {
   return render(
-    <MemoryRouter initialEntries={['/book/book-1']}>
+    <MemoryRouter initialEntries={[`/book/book-1${opts.search ?? ''}`]}>
       <Routes>
         <Route path="/book/:id" element={<BookDetail />} />
       </Routes>
@@ -645,5 +659,90 @@ describe('BookDetail — Post-revise comparison modal', () => {
 
     // Banner is also cleared after closing the modal.
     expect(screen.queryByText(/see what changed/i)).not.toBeInTheDocument()
+  })
+})
+
+describe('BookDetail — theater mode', () => {
+  // NOTE: planner deliberately omitted a back-button-style navigation test
+  // (planned case #5) — exercising `MemoryRouter`'s history to assert that the
+  // browser Back button exits theater mode is too brittle at the RTL layer
+  // (the v7 router's history APIs aren't ergonomic to drive from a test).
+  // Manual verify step in Task 2's checklist (browser Back button exits
+  // theater mode) covers that acceptance criterion instead.
+
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    capturedTheaterProp = undefined
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('passes theater=false to BookSpread and applies max-w-4xl when URL has no theater param', async () => {
+    setupFetchMock({})
+    const { container } = renderBookDetail()
+
+    // Wait for the book to load so BookDetail renders the spread (and our mock
+    // captures the prop).
+    await waitFor(() => {
+      expect(screen.getByTestId('book-spread')).toBeInTheDocument()
+    })
+
+    expect(capturedTheaterProp).toBe(false)
+
+    // The page wrapper is the outermost <div> returned by BookDetail. With no
+    // ?theater=1 in the URL it should carry the narrow max-w-4xl class and
+    // NOT the wide theater max-width.
+    const pageWrapper = container.firstChild as HTMLElement
+    expect(pageWrapper.className).toContain('max-w-4xl')
+    expect(pageWrapper.className).not.toContain('max-w-[min(95vw,1700px)]')
+  })
+
+  it('passes theater=true to BookSpread and applies max-w-[min(95vw,1700px)] when URL has ?theater=1', async () => {
+    setupFetchMock({})
+    const { container } = renderBookDetail({ search: '?theater=1' })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('book-spread')).toBeInTheDocument()
+    })
+
+    expect(capturedTheaterProp).toBe(true)
+
+    const pageWrapper = container.firstChild as HTMLElement
+    expect(pageWrapper.className).toContain('max-w-[min(95vw,1700px)]')
+    expect(pageWrapper.className).not.toContain('max-w-4xl')
+  })
+
+  it('adds ?theater=1 to the URL when the toggle callback runs from a no-param start', async () => {
+    setupFetchMock({})
+    renderBookDetail()
+
+    // Wait for the stub button (which the mocked BookSpread renders) and
+    // confirm the starting state.
+    const stubBtn = await screen.findByRole('button', { name: /theater-toggle-stub/i })
+    expect(capturedTheaterProp).toBe(false)
+
+    // Click the stub — this invokes the lifted onToggleTheater callback which
+    // updates the URL and triggers a re-render with the new prop.
+    fireEvent.click(stubBtn)
+
+    await waitFor(() => {
+      expect(capturedTheaterProp).toBe(true)
+    })
+  })
+
+  it('removes ?theater=1 from the URL when the toggle callback runs while theater is on', async () => {
+    setupFetchMock({})
+    renderBookDetail({ search: '?theater=1' })
+
+    const stubBtn = await screen.findByRole('button', { name: /theater-toggle-stub/i })
+    expect(capturedTheaterProp).toBe(true)
+
+    fireEvent.click(stubBtn)
+
+    await waitFor(() => {
+      expect(capturedTheaterProp).toBe(false)
+    })
   })
 })

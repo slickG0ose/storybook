@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ChevronLeft, ChevronRight, Image as ImageIcon, RefreshCw, Loader2, Paintbrush, Check, History } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Image as ImageIcon, RefreshCw, Loader2, Paintbrush, Check, History, Maximize2, Minimize2 } from 'lucide-react'
 import type { BookWithPages, IllustrationVersion, Page } from '../types'
 import { api } from '../lib/apiBase'
 
@@ -32,6 +32,8 @@ interface BookSpreadProps {
   illustrationVersions?: IllustrationVersion[];
   showVersions?: boolean;
   onRevertIllustration?: (pageNumber: number, url: string) => Promise<void>;
+  theater: boolean;
+  onToggleTheater: () => void;
 }
 
 const DEFAULT_STYLE_DESCRIPTOR = 'Whimsical, colorful, warm, suitable for young children';
@@ -65,7 +67,12 @@ export default function BookSpread({
   illustrationVersions,
   showVersions,
   onRevertIllustration,
+  theater,
+  onToggleTheater,
 }: BookSpreadProps) {
+  const frameWidthClass = theater
+    ? 'max-w-[min(90vw,1600px)]'
+    : 'max-w-[900px]'
   const pages = book.pages || []
   const spreads: SpreadKind[] = [
     { kind: 'cover' },
@@ -121,9 +128,9 @@ export default function BookSpread({
     <div className="bg-amber-50 dark:bg-gray-900 rounded-3xl shadow-lg p-4 md:p-8 transition-colors mb-8">
       {/* Spine + book frame */}
       <div
-        className="relative mx-auto bg-amber-100 dark:bg-gray-800 rounded-2xl shadow-2xl border border-amber-200 dark:border-gray-700"
+        data-testid="book-spread-frame"
+        className={`relative mx-auto bg-amber-100 dark:bg-gray-800 rounded-2xl shadow-2xl border border-amber-200 dark:border-gray-700 transition-all duration-200 ease-in-out ${frameWidthClass}`}
         style={{
-          maxWidth: '900px',
           backgroundImage:
             'linear-gradient(to right, rgba(0,0,0,0.08) 0%, transparent 4%, transparent 49%, rgba(0,0,0,0.18) 50%, rgba(0,0,0,0.18) 50%, transparent 51%, transparent 96%, rgba(0,0,0,0.08) 100%)',
         }}
@@ -226,7 +233,7 @@ export default function BookSpread({
       </div>
 
       {/* Footer: position dots + revise CTA */}
-      <div className="flex flex-col md:flex-row items-center justify-between mt-4 gap-3 max-w-[900px] mx-auto">
+      <div className={`flex flex-col md:flex-row items-center justify-between mt-4 gap-3 mx-auto transition-all duration-200 ease-in-out ${frameWidthClass}`}>
         <div className="flex gap-1.5">
           {spreads.map((_, i) => (
             <button
@@ -251,11 +258,20 @@ export default function BookSpread({
             {showFeedback ? 'Cancel' : 'Suggest changes'}
           </button>
         )}
+        <button
+          type="button"
+          onClick={onToggleTheater}
+          aria-label={theater ? 'Exit theater mode' : 'Expand to theater mode'}
+          aria-pressed={theater}
+          className="hidden md:inline-flex items-center justify-center w-9 h-9 rounded-lg text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-gray-700 hover:bg-amber-200 dark:hover:bg-gray-600 cursor-pointer border-none"
+        >
+          {theater ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+        </button>
       </div>
 
       {/* Inline revision panel (only when the user opens it from the spread footer) */}
       {isOwner && isDraft && showFeedback && (
-        <div className="mt-4 bg-white dark:bg-gray-800 rounded-2xl p-5 max-w-[900px] mx-auto border-2 border-purple-200 dark:border-purple-800">
+        <div className={`mt-4 bg-white dark:bg-gray-800 rounded-2xl p-5 mx-auto border-2 border-purple-200 dark:border-purple-800 transition-all duration-200 ease-in-out ${frameWidthClass}`}>
           <p className="text-sm text-gray-600 dark:text-gray-300 mb-2">
             Describe what you'd like changed and the AI author will create a revised version.
           </p>

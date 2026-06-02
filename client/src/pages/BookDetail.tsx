@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, ShoppingCart, ChevronLeft, ChevronRight, Send, Loader2, RefreshCw, Paintbrush, Image, BookOpen, FileText, History, RotateCcw, CheckCircle2, X, GitCompare } from 'lucide-react'
 import { useCart } from '../context/CartContext'
 import { useAuth } from '../context/AuthContext'
@@ -60,6 +60,14 @@ function errorMessageFromResponse(
 
 export default function BookDetail() {
   const { id } = useParams<{ id: string }>()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const theater = searchParams.get('theater') === '1'
+  const toggleTheater = () => {
+    const next = new URLSearchParams(searchParams)
+    if (theater) next.delete('theater')
+    else next.set('theater', '1')
+    setSearchParams(next, { replace: false }) // back-button exits theater mode
+  }
   const { addToCart } = useCart()
   const { user } = useAuth()
   const [book, setBook] = useState<BookWithPages | null>(null)
@@ -337,7 +345,11 @@ export default function BookDetail() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
+    <div
+      className={`mx-auto px-4 py-8 transition-all duration-200 ease-in-out ${
+        theater ? 'max-w-[min(95vw,1700px)]' : 'max-w-4xl'
+      }`}
+    >
       <Link to={isOwner ? '/my-books' : '/'} className="inline-flex items-center gap-1 text-purple-600 dark:text-purple-400 hover:text-purple-800 dark:hover:text-purple-300 mb-6 no-underline font-semibold">
         <ArrowLeft size={18} /> {isOwner ? 'Back to My Books' : 'Back to catalog'}
       </Link>
@@ -531,6 +543,8 @@ export default function BookDetail() {
           illustrationVersions={illustrationVersions}
           showVersions={showVersions}
           onRevertIllustration={revertIllustration}
+          theater={theater}
+          onToggleTheater={toggleTheater}
         />
       )}
 
