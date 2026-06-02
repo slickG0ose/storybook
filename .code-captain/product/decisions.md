@@ -22,7 +22,7 @@ Theater mode (widen the book spread to fill the viewport) is a UI-only client fe
 
 4. **Inline revise panel stays vertically stacked when widened** — it grows to the same `max-w` as the spread but remains below it. **Why:** smallest diff vs. the current layout; side-docking would require a new grid container. **Trade-off:** at 90vw a stacked revise panel needs more scrolling than a side-docked one would.
 
-5. **Animate via Tailwind `transition-all duration-200 ease-in-out`** on all four widening containers. **Why:** matches the existing page-flip animation duration so the two don't visually fight; one utility class, no new dependency. **Trade-off:** animating `max-width` can be janky on some browsers — mitigated by the short 200ms duration.
+5. **Animate via Tailwind `transition-all duration-200 ease-in-out`** on all four widening containers. **Why:** matches the existing page-flip animation duration so the two don't visually fight; plain Tailwind utilities (`transition-all duration-200 ease-in-out`), no new dependency. **Trade-off:** animating `max-width` can be janky on some browsers — mitigated by the short 200ms duration.
 
 6. **Test the lifted prop via a prop-capturing mock.** `BookDetail.test.tsx`'s `BookSpread` mock was upgraded to capture the `theater` prop into a module-level variable and expose `onToggleTheater` as a stub button, so the parent's URL→prop wiring is assertable without rendering the real child. **Why:** isolates the URL-state logic under test from `BookSpread`'s internals. **Trade-off:** a module-level capture variable needs a `beforeEach` reset to avoid cross-test bleed; flagged for promotion to a testing-conventions note if the pattern recurs.
 
