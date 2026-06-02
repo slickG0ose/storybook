@@ -4,6 +4,42 @@ Append-only log. Newest entries on top. Each entry should answer: *what was deci
 
 ---
 
+## ADR-004 — Theater mode interaction & layout decisions
+
+**Date:** 2026-06-02
+**Status:** Accepted
+**Scope:** TS1 — theater-mode feature, shipped in PR #54. Spec at [.code-captain/specs/theater-mode/spec.md](../specs/theater-mode/spec.md).
+
+### Decision
+
+Theater mode (widen the book spread to fill the viewport) is a UI-only client feature governed by six coupled decisions, captured here as a set rather than as six separate ADRs — they're small, share one feature's context, and reading them together is how they make sense. Each names its trade-off honestly.
+
+1. **State lives in the URL (`?theater=1`), not React state or `localStorage`.** Derived via `useSearchParams`; `searchParams.get('theater') === '1'`. **Why:** bookmarkable, deep-link friendly, and the browser Back button exits theater mode for free (`setSearchParams(next, { replace: false })`) — no cross-tab state sync. **Trade-off:** URL pollution if more "view mode" params accumulate over time; strict `=== '1'` means `?theater=true` silently does nothing.
+
+2. **Layout swap in place, not an overlay/portal.** Theater mode widens the existing frame, footer, revise-panel, and page-wrapper rather than rendering a modal. **Why:** simpler component tree — no focus-trap, escape-key, or scroll-lock contracts to honor; no portal. **Trade-off:** less of a "modal" immersive feel than a true full-screen overlay would give.
+
+3. **Toggle hidden on `<md` (<768px) viewports** via `hidden md:inline-flex`; no alternative mobile affordance. **Why:** a ~90vw widen is meaningless on a 375px screen, so mobile keeps the default layout. **Trade-off:** the feature is desktop-only by design.
+
+4. **Inline revise panel stays vertically stacked when widened** — it grows to the same `max-w` as the spread but remains below it. **Why:** smallest diff vs. the current layout; side-docking would require a new grid container. **Trade-off:** at 90vw a stacked revise panel needs more scrolling than a side-docked one would.
+
+5. **Animate via Tailwind `transition-all duration-200 ease-in-out`** on all four widening containers. **Why:** matches the existing page-flip animation duration so the two don't visually fight; one utility class, no new dependency. **Trade-off:** animating `max-width` can be janky on some browsers — mitigated by the short 200ms duration.
+
+6. **Test the lifted prop via a prop-capturing mock.** `BookDetail.test.tsx`'s `BookSpread` mock was upgraded to capture the `theater` prop into a module-level variable and expose `onToggleTheater` as a stub button, so the parent's URL→prop wiring is assertable without rendering the real child. **Why:** isolates the URL-state logic under test from `BookSpread`'s internals. **Trade-off:** a module-level capture variable needs a `beforeEach` reset to avoid cross-test bleed; flagged for promotion to a testing-conventions note if the pattern recurs.
+
+### Alternative considered: full-screen overlay with local state
+
+A `position: fixed` overlay (or React portal) toggled by component state would give a stronger "theater" feel and decouple the widened view from the document flow.
+
+Rejected because it pulls in the full modal contract — focus management, escape-to-close, scroll-lock, and `aria-modal` semantics — for a feature whose value is simply "more horizontal room to read." Local/`localStorage` state would also forfeit the bookmark + Back-button behavior that decision 1 buys for free. If theater mode later needs to hide surrounding chrome entirely (nav, footer), revisit this — an overlay becomes the better tool and would warrant a superseding ADR.
+
+### Consequences
+
+- **`?theater=1` is now a load-bearing URL contract.** Any future "view mode" params should follow the same strict-equality, Back-button-friendly pattern; watch for URL-param accumulation (decision 1's trade-off) and consolidate if a third view param appears.
+- **Page-wrapper widens regardless of `viewMode`.** Per the spec's Resolved Question #1, the wrapper widens whenever `?theater=1` is present even in reader view; this is intentional (harmless horizontal-whitespace change) and avoids special-casing. Reviewer treats AC#7 as referring to reader-view *visual rendering*, not wrapper width.
+- **The prop-capture test pattern (decision 6) is a candidate testing convention.** If it recurs in other parent→child prop-wiring tests, promote it into `docs/conventions/testing.md` rather than re-deriving it per test file.
+
+---
+
 ## ADR-003 — Zod schemas as source of truth for client/server type sharing
 
 **Date:** 2026-05-18
