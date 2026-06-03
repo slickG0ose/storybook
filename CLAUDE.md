@@ -95,6 +95,7 @@ The reviewer runs six checks on every `/ship`. Two of them invoke project-local 
 
 - **Check 3 — dark-mode parity** → `dark-mode-parity-check` skill (greps added classNames for missing `dark:` partners)
 - **Check 4 — wire-shape assertion** → `wire-shape-check` skill (verifies every server route response field is pinned by `toMatchObject` in its test)
+- **Check 6 — surfaced-gaps follow-through (ADR-item slice)** → `adr-tracking-check` skill (verifies every ADR-worthy item in `spec.md`/`tasks.md` has one tracking action — ADR, linked issue, or `Deferred:` line)
 
 The reviewer is read-only. Findings come back as a report; the user (or a follow-up developer dispatch) addresses them. Surfaced-gaps follow-through (Check 6) ensures developer-hand-back "Surprises" don't get orphaned.
 
@@ -137,5 +138,5 @@ NEVER claim a feature complete until ALL of:
 - **Conventions:** `docs/conventions/{server,client,testing,data}.md` — stack details, patterns, when-adding-a-new-X recipes; **`docs/conventions/harness-resolution.md`** — auto-generated snapshot of how every `.claude/` item resolves
 - **Active agents:** `.claude/agents/{architect,planner,developer,reviewer,qa}.md` — chain + e2e specialist
 - **Archived agents:** `.claude/agents/_archive/{booksmith,storefront}.md` — retained one stability window; see `.claude/agents/_archive/README.md`
-- **Mechanical-check skills:** `.claude/skills/{wire-shape-check,dark-mode-parity-check}/SKILL.md`
+- **Mechanical-check skills:** `.claude/skills/{wire-shape-check,dark-mode-parity-check,adr-tracking-check}/SKILL.md`
 - **Codebase map:** `AGENTS.md` (entry point), `.code-captain/docs/{toc,architecture,tech-stack,code-style,objective}.md` (deep reference)

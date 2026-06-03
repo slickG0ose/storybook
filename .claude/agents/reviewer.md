@@ -142,14 +142,27 @@ If any of these appear in the diff WITHOUT an explicit "User approved: …" line
 
 When the developer agent's hand-back surfaces a real issue — a spec gap, a doc inconsistency, a tooling rough edge — the issue MUST land somewhere actionable. Either fixed in the same PR, or filed as a follow-up issue. Just "noting it in the PR body and moving on" is the failure mode this check exists to catch.
 
-**Where to look for surfaced gaps:**
+This check has three portions: the **ADR-item portion** (spec/tasks ADR-worthy decisions), which is mechanized by a skill, and two **manual portions** (the developer hand-back "Surprises / decisions made" scan and the commit-message scan), which the skill does NOT cover and which you run inline.
 
-- The PR body for a section literally titled "Surprises / decisions made" (this is the developer's hand-back format). Each bullet there is a surfaced gap candidate.
-- Commit messages on the branch for phrases: "surfaced", "flagged", "noted", "TODO", "follow-up", "needs <thing>", "gap", "discovered".
-- The architect's `spec.md` "ADR-worthy decisions" section if any item is unchecked.
-- The planner's `tasks.md` "Open questions" section if any item is still open.
+#### ADR-item portion (spec/tasks)
 
-**For each surfaced gap, verify ONE of:**
+**Mechanical procedure:** invoke the `adr-tracking-check` skill with the spec slug (or explicit `spec.md` + `tasks.md` paths) for the change under review. The skill enumerates every ADR-worthy item declared in those two files and, for each, verifies exactly one tracking action exists — a matching ADR in `.code-captain/product/decisions.md`, a linked follow-up issue, or an explicit `Deferred:` line — reporting any item with none as orphaned. Use its findings as the basis of this check — don't re-derive the rule by hand. The skill covers ONLY this spec/tasks ADR-item slice; the Surprises and commit-message scans below stay manual.
+
+For reference, the rule the skill encodes:
+
+- Enumerate ADR-worthy items: the `spec.md` `## ADR-worthy decisions` section, and any `tasks.md` section whose heading contains "ADR-worthy" or "Open questions" (case-insensitive).
+- For each item, verify exactly one tracking action: a matching ADR entry in `.code-captain/product/decisions.md` (matched on spec-slug reference in its title/`**Scope:**` line), a linked follow-up issue (`#NN` / `Follow-up: #NN`), or an explicit `Deferred:` line with reasoning.
+- An item with no tracking action is **orphaned**; an ambiguous ADR match is reported as `<possible match — confirm>` rather than asserted.
+
+#### Surprises-scan portion (manual)
+
+Scan the developer hand-back's "Surprises / decisions made" section — the PR body for a section literally titled "Surprises / decisions made" (this is the developer's hand-back format). Each bullet there is a surfaced gap candidate.
+
+#### Commit-message-scan portion (manual)
+
+Scan commit messages on the branch for surfaced-gap phrases: "surfaced", "flagged", "noted", "TODO", "follow-up", "needs <thing>", "gap", "discovered".
+
+**For each surfaced gap (from any portion), verify ONE of:**
 
 1. **Addressed in the diff** — the fix is committed in this PR (e.g., the agent prompt, spec, or tasks file is updated).
 2. **Tracked elsewhere** — a follow-up GitHub issue exists and is linked in the PR body (e.g., "Follow-up: #47").

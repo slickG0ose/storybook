@@ -4,6 +4,40 @@ Append-only log. Newest entries on top. Each entry should answer: *what was deci
 
 ---
 
+## ADR-005 — "Pre-merge follow-ups" task is conditionally emitted by the planner
+
+**Date:** 2026-06-03
+**Status:** Accepted
+**Scope:** ADR-tracking enforcement (skill + reviewer + planner). Spec at [.code-captain/specs/adr-tracking-enforcement/spec.md](../specs/adr-tracking-enforcement/spec.md); backlog issue #53.
+
+### Decision
+
+The planner emits a final **"Pre-merge follow-ups"** task (whose Done-when runs `adr-tracking-check <slug>` and requires zero orphaned ADR-worthy items) **only when the spec has a non-empty `## ADR-worthy decisions` section** — not on every plan.
+
+This is the load-bearing half of the #53 enforcement mechanism: the conditional task puts the ADR-tracking obligation into the developer's execution path (a real "Done when"), where before it lived only as the planner's punt-language and the reviewer's pre-merge backstop. The condition gates *whether the task appears at all*.
+
+### Why
+
+- **Adapt don't bloat.** An always-emitted task would add a no-op "nothing to track" step to every plan whose spec has zero ADR-worthy items — ceremony for the common small feature. The planner already reads the full spec at workflow step 1, so detecting a non-empty section is free.
+- **The obligation belongs in the developer's path, not just the reviewer's.** #53's root finding was that no task's Done-when referenced ADR items, so a developer had no reason to action them. The conditional task fixes exactly that, without taxing plans that don't need it.
+- **Defense in depth is preserved.** Even when the planner omits the task (e.g. forgets to check the section), reviewer Check 6 still catches orphaned items at `/ship`. The conditional task is the early gate; the reviewer is the backstop.
+
+### Alternative considered: always emit the task
+
+Unconditionally append the "Pre-merge follow-ups" task to every plan.
+
+**Pros:** no "did the planner check the spec section?" failure mode; uniform task lists. The skill on an empty item set is a clean no-op anyway, so the task would just report "nothing to track."
+
+**Why rejected:** it adds a no-op task to the (common) small feature whose spec flagged no ADR-worthy decisions — against the project's "adapt don't bloat" value. Reconsider if planners are observed skipping the conditional in practice; flipping to always-emit is a one-line planner-rule change.
+
+### Consequences
+
+- **Standing planner behavior.** `.claude/agents/planner.md` carries this as a decompose-step heuristic and shows the conditional task in its `tasks.md` template. Future planners follow it without re-deriving the rationale.
+- **The skill is the single source of the rule.** `adr-tracking-check` is invoked by both the conditional developer task (early) and reviewer Check 6 (backstop) — encode once, run at two points. This follows the established reviewer-check → skill extraction pattern (the 3rd instance, after `wire-shape-check`/Check 4 and `dark-mode-parity-check`/Check 3).
+- **This very spec dogfooded the rule.** `adr-tracking-enforcement` has a non-empty ADR-worthy section, so its own plan carried the Pre-merge follow-ups task (Task 5) — which produced this ADR.
+
+---
+
 ## ADR-004 — Theater mode interaction & layout decisions
 
 **Date:** 2026-06-02

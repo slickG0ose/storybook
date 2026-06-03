@@ -106,13 +106,29 @@ Carried over from the spec — re-stated here so the developer doesn't have to c
 
 <...>
 
+### Task N — Pre-merge follow-ups
+
+> Include this FINAL task **only when** the spec's `## ADR-worthy decisions` section is non-empty (see step-4 heuristics). Omit it entirely otherwise.
+
+**Zone:** docs (harness)
+**Depends on:** none (run last, after the feature tasks land)
+
+For each ADR-worthy item the spec flags, ensure exactly one tracking action exists — a matching ADR in `.code-captain/product/decisions.md`, a linked follow-up issue, or an explicit `Deferred:` line with reasoning.
+
+**Done when:**
+
+- `adr-tracking-check <slug>` reports **zero orphaned items**.
+- The tracking decision for each item is recorded (ADR written / issue linked / `Deferred:` line added).
+
+---
+
 ## Sequencing notes
 
 <Anything beyond the task numbers worth saying. Examples: "Tasks 3 and 4 can be parallelized — different zones, no shared file." or "Task 2 must complete and be committed before Task 3 runs migrations." or "Bundle Tasks 1+2 into one PR; 3 ships separately to keep the PDF library out of the migration PR.">
 
 ## Open questions
 
-<Things the developer should resolve before acting. Examples: "Should the watermark string be in env or hard-coded?" "Is the page-number font fallback OK?" The architect ideally has answered these; if not, escalate before starting.>
+<Things the developer should resolve before acting. Examples: "Should the watermark string be in env or hard-coded?" "Is the page-number font fallback OK?" The architect ideally has answered these; if not, escalate before starting. NOTE: ADR-worthy decisions from the spec are NOT open questions — they belong to the conditional "Pre-merge follow-ups" task (see step-4 heuristics), where `adr-tracking-check` enforces a tracking action for each.>
 ```
 
 ## Workflow (each dispatch)
@@ -133,6 +149,7 @@ Carried over from the spec — re-stated here so the developer doesn't have to c
    - **One zone per task** where possible (server task, then client task, then e2e task). Multi-zone tasks are allowed but should be explicit (a Zod schema in `shared/` that both client and server consume is multi-zone by nature).
    - **Wire-shape changes are their own task** OR clearly attached to the route's task. Never split a route handler from its wire-shape test.
    - **Migrations are their own task.** Schema change → migration → backfill → routes that use the new column → tests. Don't mix.
+   - **ADR-worthy decisions → a final "Pre-merge follow-ups" task — conditional.** If (and only if) the spec's `## ADR-worthy decisions` section is **non-empty**, append a final task titled "Pre-merge follow-ups" whose **Done when** runs `adr-tracking-check <slug>` and requires **zero orphaned items** (every ADR-worthy item has exactly one tracking action: a matching ADR in `decisions.md`, a linked follow-up issue, or an explicit `Deferred:` line). This puts the ADR obligation into the developer's execution path. You already read the full spec at step 1, so detecting a non-empty section is free. Do **not** emit this task when the section is empty — no no-op task on small plans ("adapt don't bloat").
    - **Dependencies before dependents.** If task 3 reads from a column task 2 creates, task 2 must come first.
    - **Manual verify steps go in the task that introduces the UI.** Don't defer to a final "test it all" step — verify each piece as it lands.
 
