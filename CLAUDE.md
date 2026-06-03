@@ -101,7 +101,7 @@ The reviewer is read-only. Findings come back as a report; the user (or a follow
 
 ### Legacy zone-owner agents
 
-The **storefront** and **booksmith** zone-specialist agents have been retired — their definitions now live in `.claude/agents/_archive/` for one stability window before deletion. The full-stack `@developer` agent replaces both, reading `docs/conventions/{server,client}.md` on demand for zone-specific patterns.
+The **storefront** and **booksmith** zone-specialist agents have been retired and removed (archived for a stability window after HR10, then deleted in #55). The full-stack `@developer` agent replaces both, reading `docs/conventions/{server,client}.md` on demand for zone-specific patterns.
 
 `@qa` remains active. It owns net-new Playwright e2e specs and cross-zone test-infrastructure changes — work that doesn't fit `@developer`'s one-task-per-dispatch shape.
 
@@ -137,6 +137,5 @@ NEVER claim a feature complete until ALL of:
 - **Research:** `docs/marketing-research.md`, `docs/print-publishing-research.md`
 - **Conventions:** `docs/conventions/{server,client,testing,data}.md` — stack details, patterns, when-adding-a-new-X recipes; **`docs/conventions/harness-resolution.md`** — auto-generated snapshot of how every `.claude/` item resolves
 - **Active agents:** `.claude/agents/{architect,planner,developer,reviewer,qa}.md` — chain + e2e specialist
-- **Archived agents:** `.claude/agents/_archive/{booksmith,storefront}.md` — retained one stability window; see `.claude/agents/_archive/README.md`
 - **Mechanical-check skills:** `.claude/skills/{wire-shape-check,dark-mode-parity-check,adr-tracking-check}/SKILL.md`
 - **Codebase map:** `AGENTS.md` (entry point), `.code-captain/docs/{toc,architecture,tech-stack,code-style,objective}.md` (deep reference)
