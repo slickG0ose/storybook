@@ -2,7 +2,7 @@ import { Router } from 'express';
 import Anthropic from '@anthropic-ai/sdk';
 import prisma from '../db/prisma';
 import { getAuthUser } from './auth';
-import { generateCover, generateIllustration } from '../services/illustrations';
+import { generateCover, generateIllustration, isImageGenConfigured } from '../services/illustrations';
 import { parseAiJson } from '../services/parseAiJson';
 import type { Request, Response } from 'express';
 import type { Character, CharacterRole } from '../types';
@@ -204,7 +204,7 @@ Make the story warm, engaging, and age-appropriate. Use vivid but simple languag
       include: { pages: { orderBy: { page_number: 'asc' } } },
     });
 
-    if ((previewMode === 'cover' || previewMode === 'full') && process.env.OPENAI_API_KEY) {
+    if ((previewMode === 'cover' || previewMode === 'full') && isImageGenConfigured()) {
       const coverUrl = await generateCover(
         book.id,
         story.title,
@@ -221,7 +221,7 @@ Make the story warm, engaging, and age-appropriate. Use vivid but simple languag
       }
     }
 
-    if (previewMode === 'full' && process.env.OPENAI_API_KEY) {
+    if (previewMode === 'full' && isImageGenConfigured()) {
       for (const page of book.pages) {
         const url = await generateIllustration(
           book.id,

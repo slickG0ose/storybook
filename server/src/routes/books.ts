@@ -27,7 +27,7 @@ import {
 } from '@storybook/shared';
 import prisma from '../db/prisma';
 import { getAuthUser } from './auth';
-import { generateIllustration, listIllustrationVersions } from '../services/illustrations';
+import { generateIllustration, listIllustrationVersions, isImageGenConfigured } from '../services/illustrations';
 import { parseAiJson } from '../services/parseAiJson';
 import { validate } from '../middleware/validate';
 
@@ -634,8 +634,8 @@ router.post(
   async (req: Request<{ id: string }>, res: Response) => {
     const user = res.locals.user as { id: string };
 
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(501).json({ error: 'Image generation not configured (OPENAI_API_KEY missing)' });
+    if (!isImageGenConfigured()) {
+      return res.status(501).json({ error: 'Image generation not configured' });
     }
 
     const book = await prisma.book.findFirst({

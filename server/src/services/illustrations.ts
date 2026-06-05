@@ -2,6 +2,7 @@ import { writeFile, mkdir, readdir, stat } from 'fs/promises';
 import { join } from 'path';
 import prisma from '../db/prisma';
 import type { Character } from '../types';
+import { FalImageGenerator } from './providers/fal';
 
 const ILLUSTRATIONS_DIR = join(import.meta.dirname, '../../public/illustrations');
 const IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1';
@@ -19,6 +20,17 @@ interface OpenAIImageItem {
   b64_json?: string;
 }
 
+// Provider abstraction for image generation. Implementations own only the
+// network call: they take a fully-assembled prompt and return raw image
+// bytes. Versioning, on-disk writes, and the illustrationVersion Prisma row
+// stay in the public service functions (generateIllustration/generateCover),
+// so persistence is provider-agnostic. Phase 1 ships OpenAI; Fal is added in
+// a later task.
+export interface ImageGenerator {
+  readonly name: 'openai' | 'fal';
+  generate(prompt: string): Promise<Buffer>;
+}
+
 // Cap a single image-generation request at 120s. Without this, a hung
 // response from OpenAI (or an intermediary like a corporate proxy that
 // drops the connection silently) leaves the route handler awaiting forever
@@ -26,60 +38,92 @@ interface OpenAIImageItem {
 // gpt-image-1 typically responds in 10-30s.
 const OPENAI_IMAGE_TIMEOUT_MS = 120_000;
 
-async function callOpenAIImage(apiKey: string, prompt: string): Promise<Buffer> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), OPENAI_IMAGE_TIMEOUT_MS);
+class OpenAIImageGenerator implements ImageGenerator {
+  readonly name = 'openai' as const;
 
-  let res: Response;
-  try {
-    res = await fetch('https://api.openai.com/v1/images/generations', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: IMAGE_MODEL,
-        prompt,
-        n: 1,
-        size: '1024x1024',
-      }),
-      signal: controller.signal,
-    });
-  } catch (err) {
-    if ((err as { name?: string }).name === 'AbortError') {
-      throw new Error(`OpenAI image request timed out after ${OPENAI_IMAGE_TIMEOUT_MS / 1000}s`);
+  async generate(prompt: string): Promise<Buffer> {
+    const apiKey = process.env.OPENAI_API_KEY!;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), OPENAI_IMAGE_TIMEOUT_MS);
+
+    let res: Response;
+    try {
+      res = await fetch('https://api.openai.com/v1/images/generations', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: IMAGE_MODEL,
+          prompt,
+          n: 1,
+          size: '1024x1024',
+        }),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      if ((err as { name?: string }).name === 'AbortError') {
+        throw new Error(`OpenAI image request timed out after ${OPENAI_IMAGE_TIMEOUT_MS / 1000}s`);
+      }
+      throw err;
+    } finally {
+      clearTimeout(timeout);
     }
-    throw err;
-  } finally {
-    clearTimeout(timeout);
-  }
 
-  if (!res.ok) {
-    const err = await res.text();
-    console.error(`OpenAI image error (${IMAGE_MODEL}):`, err);
-    const snippet = err.slice(0, 500);
-    throw new Error(`OpenAI image API returned ${res.status} ${res.statusText || ''}: ${snippet}`);
-  }
-
-  const data = await res.json() as { data: OpenAIImageItem[] };
-  const item = data.data[0];
-  if (!item) {
-    throw new Error('OpenAI image response had no data entries');
-  }
-
-  if (item.b64_json) {
-    return Buffer.from(item.b64_json, 'base64');
-  }
-  if (item.url) {
-    const imageRes = await fetch(item.url);
-    if (!imageRes.ok) {
-      throw new Error(`Failed to download generated image: ${imageRes.status} ${imageRes.statusText || ''}`);
+    if (!res.ok) {
+      const err = await res.text();
+      console.error(`OpenAI image error (${IMAGE_MODEL}):`, err);
+      const snippet = err.slice(0, 500);
+      throw new Error(`OpenAI image API returned ${res.status} ${res.statusText || ''}: ${snippet}`);
     }
-    return Buffer.from(await imageRes.arrayBuffer());
-  }
 
-  throw new Error('OpenAI image response had neither b64_json nor url');
+    const data = await res.json() as { data: OpenAIImageItem[] };
+    const item = data.data[0];
+    if (!item) {
+      throw new Error('OpenAI image response had no data entries');
+    }
+
+    if (item.b64_json) {
+      return Buffer.from(item.b64_json, 'base64');
+    }
+    if (item.url) {
+      const imageRes = await fetch(item.url);
+      if (!imageRes.ok) {
+        throw new Error(`Failed to download generated image: ${imageRes.status} ${imageRes.statusText || ''}`);
+      }
+      return Buffer.from(await imageRes.arrayBuffer());
+    }
+
+    throw new Error('OpenAI image response had neither b64_json nor url');
+  }
+}
+
+// Provider selection, resolved once per call from the environment. The
+// selector env var is IMAGE_PROVIDER and defaults to 'fal' (ADR decision 2).
+// 'openai' resolves to OpenAIImageGenerator; 'fal' (and the default) resolves
+// to FalImageGenerator (raw fetch to Flux Pro 1.1, see providers/fal.ts).
+export function getImageGenerator(): ImageGenerator {
+  const provider = process.env.IMAGE_PROVIDER || 'fal';
+  switch (provider) {
+    case 'openai':
+      return new OpenAIImageGenerator();
+    case 'fal':
+    default:
+      return new FalImageGenerator();
+  }
+}
+
+// Provider-aware replacement for the literal OPENAI_API_KEY route/service
+// gates. Returns true iff the SELECTED provider's key env var is present:
+//   provider 'openai' -> !!process.env.OPENAI_API_KEY
+//   provider 'fal'    -> !!process.env.FAL_KEY
+export function isImageGenConfigured(): boolean {
+  const provider = process.env.IMAGE_PROVIDER || 'fal';
+  if (provider === 'openai') {
+    return !!process.env.OPENAI_API_KEY;
+  }
+  return !!process.env.FAL_KEY;
 }
 
 export async function generateIllustration(
@@ -90,8 +134,7 @@ export async function generateIllustration(
   styleDescriptor?: string | null,
   characters?: Character[],
 ): Promise<string | null> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return null;
+  if (!isImageGenConfigured()) return null;
 
   const style = styleDescriptor?.trim() || 'Whimsical, colorful, warm, suitable for young children';
   const castPrefix = formatCastPrefix(characters);
@@ -100,7 +143,7 @@ export async function generateIllustration(
     prompt += ` Revision instructions: ${feedback}`;
   }
 
-  const buffer = await callOpenAIImage(apiKey, prompt);
+  const buffer = await getImageGenerator().generate(prompt);
 
   const dir = join(ILLUSTRATIONS_DIR, bookId);
   await mkdir(dir, { recursive: true });
@@ -208,14 +251,13 @@ export async function generateCover(
   styleDescriptor?: string | null,
   characters?: Character[],
 ): Promise<string | null> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return null;
+  if (!isImageGenConfigured()) return null;
 
   const style = styleDescriptor?.trim() || 'Whimsical, colorful, warm, suitable for young children';
   const castPrefix = formatCastPrefix(characters);
   const prompt = `${castPrefix}Children's book cover illustration for a story titled "${title}". Scene: ${description}. ${style}. Composition suitable for a book cover (centered subject, room at top for title). No text or words in the image.`;
 
-  const buffer = await callOpenAIImage(apiKey, prompt);
+  const buffer = await getImageGenerator().generate(prompt);
 
   const dir = join(ILLUSTRATIONS_DIR, bookId);
   await mkdir(dir, { recursive: true });
