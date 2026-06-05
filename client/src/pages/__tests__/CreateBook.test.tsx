@@ -27,8 +27,8 @@ describe('CreateBook — cost copy', () => {
 
     // The displayed figure is derived from the constant, not a hard-coded literal:
     // bumping pageCount by 1 adds exactly one PER_IMAGE_COST_USD.
-    const a = parseFloat(fullModeCostLabel(7).match(/\$([\d.]+)/)![1])
-    const b = parseFloat(fullModeCostLabel(8).match(/\$([\d.]+)/)![1])
+    const a = parseFloat(fullModeCostLabel(7).match(/\$([\d.]+)/)![1]!)
+    const b = parseFloat(fullModeCostLabel(8).match(/\$([\d.]+)/)![1]!)
     expect(b - a).toBeCloseTo(PER_IMAGE_COST_USD, 5)
   })
 
