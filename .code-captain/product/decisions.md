@@ -4,6 +4,36 @@ Append-only log. Newest entries on top. Each entry should answer: *what was deci
 
 ---
 
+## ADR-006 — Image-provider abstraction & Fal.ai migration (IV1 Phase 1)
+
+**Date:** 2026-06-05
+**Status:** Accepted
+**Scope:** `illustration-fal-migration` (IV1 Phase 1). Spec at [.code-captain/specs/illustration-fal-migration/spec.md](../specs/illustration-fal-migration/spec.md); backlog issue #22.
+
+### Decision
+
+Phase 1 of Illustration v2 migrates image generation from OpenAI `gpt-image-1` (~$0.17–0.45/image) to Fal.ai Flux Pro 1.1 (~$0.04/image, a ~5–8× cost reduction) behind a provider abstraction. Three coupled decisions, captured as a set rather than three separate ADRs — they share one feature's context and only make sense read together. Each names its trade-off honestly.
+
+1. **Raw `fetch`, not the `@fal-ai/client` SDK.** Both `OpenAIImageGenerator` and `FalImageGenerator` call their providers via raw `fetch`. **Why:** zero new `server/package.json` dependency (no guardrail trip); Flux Pro 1.1 has a synchronous `https://fal.run/<model-id>` endpoint that returns inline in ~5–10s, well under the existing 120s `AbortController` cap, so queue polling isn't needed; both providers then share the same timeout + `Buffer` shape and the existing `globalThis.fetch` test mock works for both. **Trade-off:** if Phase 3 (LoRA fine-tuning, genuinely async/multi-minute) lands we'd hand-roll queue polling the SDK gives for free — revisit the SDK then. We own auth-header + response-shape parsing.
+
+2. **Default provider = `fal`; fallback is env-only (no runtime auto-fallback).** `IMAGE_PROVIDER` (default `fal`) selects the generator; an operator reverts by setting `IMAGE_PROVIDER=openai`. A Fal error surfaces as the existing 500 envelope — there is **no** automatic retry against OpenAI. **Why:** default `fal` delivers the cost win this issue exists for; runtime auto-fallback would add double-billing and double-latency risk and would obscure which provider failed. **Trade-off:** a Fal outage requires a manual env flip + redeploy to fail over, rather than degrading automatically.
+
+3. **The `ImageGenerator` interface owns only the network call; versioning + Prisma persistence stay in the public service functions.** `generate(prompt): Promise<Buffer>` returns bytes only; `generateIllustration`/`generateCover` keep owning prompt assembly, on-disk versioning, and the `illustrationVersion` row write (page path only — `generateCover` writes no row, an asymmetry preserved from before). **Why:** keeps persistence DRY and provider-agnostic, and keeps the `books.test.ts` module-boundary mock (which assumes the public fn owns the row write) valid. **Trade-off:** a future provider that needs to influence persistence (e.g. returning a provider-hosted URL instead of bytes) would need the interface widened.
+
+### Alternative considered: `@fal-ai/client` SDK + runtime auto-fallback
+
+Adopt the SDK for uniform queue/auth handling, and have the service automatically retry against OpenAI when Fal errors.
+
+Rejected for Phase 1: the SDK is a new dependency (guardrail) and doesn't mock through `globalThis.fetch`, so it would force a different test strategy for near-zero Phase-1 benefit (Flux Pro 1.1 is synchronous). Runtime auto-fallback was rejected for the double-billing/latency and failure-masking reasons in decision 2. Revisit the SDK if/when Phase 3 LoRA training (genuinely async) is scheduled — that would warrant a superseding ADR.
+
+### Consequences
+
+- **`IMAGE_PROVIDER` is now load-bearing config.** The three former literal `process.env.OPENAI_API_KEY` route gates (`generate.ts` ×2, `books.ts` ×1) are replaced by a provider-aware `isImageGenConfigured()`; with `IMAGE_PROVIDER=fal` the system gates on `FAL_KEY`. Deploys must set both `IMAGE_PROVIDER` and the selected provider's key.
+- **OpenAI remains a first-class fallback, not dead code.** Setting `IMAGE_PROVIDER=openai` restores byte-identical prior behavior; the OpenAI regression test pins this.
+- **The provider boundary is the extension point for Phase 2/3.** Per-character refs (IP-Adapter, Phase 2) and LoRA (Phase 3) plug in as new generators or interface extensions; they must respect the "persistence stays in the public fn" boundary or explicitly supersede decision 3.
+
+---
+
 ## ADR-005 — "Pre-merge follow-ups" task is conditionally emitted by the planner
 
 **Date:** 2026-06-03

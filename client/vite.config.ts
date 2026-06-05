@@ -10,6 +10,11 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': 'http://localhost:3001',
+      // Static illustration assets are written by the Express server under its
+      // /public dir and referenced as server-relative paths (api() returns them
+      // as-is in dev). Without this, /illustrations/* would hit Vite and fall
+      // through to index.html, so generated images render broken in local dev.
+      '/illustrations': 'http://localhost:3001',
     },
   },
 })

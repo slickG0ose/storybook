@@ -134,7 +134,11 @@ Unchanged end-to-end, provider swapped underneath:
 
 ## ADR-worthy decisions
 
-- [ ] **Integration approach: raw `fetch` over `@fal-ai/client` SDK for Phase 1.** Hard-to-reverse-ish (sets the provider-call pattern); recommendation is raw `fetch`. Write as ADR after spec approval.
-- [ ] **Default provider = `fal`, fallback is env-only (no runtime auto-fallback).** Changes the system default behavior and the failure-handling contract; capture the chosen semantics as an ADR.
-- [ ] **`ImageGenerator` interface owns only the network call; versioning + Prisma persistence stay in the public service functions.** Architectural boundary that future providers (Phase 2/3) must respect; worth an ADR.
-- [ ] **No server-side cost-constant / spend-gate module introduced in Phase 1 ("F4b" does not exist).** Recording this as a deliberate deferral so the surfaced gap is tracked rather than silently dropped (reviewer Check 6). Either an ADR or a `Deferred:` line in tasks.md.
+- [x] **Integration approach: raw `fetch` over `@fal-ai/client` SDK for Phase 1.** Hard-to-reverse-ish (sets the provider-call pattern); recommendation is raw `fetch`.
+  **Tracked by [ADR-006]** (grouped, decision 1) in `.code-captain/product/decisions.md`.
+- [x] **Default provider = `fal`, fallback is env-only (no runtime auto-fallback).** Changes the system default behavior and the failure-handling contract.
+  **Tracked by [ADR-006]** (grouped, decision 2).
+- [x] **`ImageGenerator` interface owns only the network call; versioning + Prisma persistence stay in the public service functions.** Architectural boundary that future providers (Phase 2/3) must respect.
+  **Tracked by [ADR-006]** (grouped, decision 3).
+- [x] **No server-side cost-constant / spend-gate module introduced in Phase 1 ("F4b" does not exist).** Recording this as a deliberate deferral so the surfaced gap is tracked rather than silently dropped (reviewer Check 6).
+  **Deferred:** No server-side spend-gate exists today; Phase 1 corrects only the client-side cost *copy* (Task 6, centralized via `PER_IMAGE_COST_USD`). Building a real server-side cost-constant / spend-gate module is out of scope for IV1 and should be its own spec if/when scheduled (not currently on the backlog).

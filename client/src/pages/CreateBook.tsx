@@ -43,6 +43,23 @@ const STYLE_PRESETS: StylePreset[] = [
 const RELATIONSHIPS: string[] = ['best friend', 'sibling', 'parent', 'grandparent', 'pet', 'mentor', 'other']
 const MAX_CAST = 6
 
+// Per-image generation cost for the active image provider (Phase 1: Fal.ai Flux Pro 1.1 ≈ $0.04).
+// Single source of truth for every cost-copy site below — a future provider/price change is a one-line edit.
+// Phase 1 has no per-request UI provider picker, so this is a build-time constant, not wired to a server response.
+export const PER_IMAGE_COST_USD = 0.04
+
+const fmtUsd = (n: number): string => `$${n.toFixed(2)}`
+
+// Cost-copy builders — all derive from PER_IMAGE_COST_USD.
+export const quickModeCostLabel = (): string => `$0 — no image AI calls`
+export const coverModeCostLabel = (): string => `~${fmtUsd(PER_IMAGE_COST_USD)} — 1 image AI call`
+export const fullModeCostLabel = (pageCount: number): string => {
+  const imageCount = pageCount + 1 // cover + every page
+  return `~${fmtUsd(imageCount * PER_IMAGE_COST_USD)} — ${imageCount} image AI calls`
+}
+export const laterClickCostNote = (): string =>
+  `In all modes you can still generate or regenerate individual illustrations later from the book page. Each later click is ~${fmtUsd(PER_IMAGE_COST_USD)}.`
+
 type DraftCharacter = Character & { _id: number }
 
 let nextId = 1
@@ -487,7 +504,7 @@ export default function CreateBook() {
                   onClick={() => setPreviewMode('quick')}
                   label="No images (preview prompts)"
                   time="~15s"
-                  cost="$0 — no image AI calls"
+                  cost={quickModeCostLabel()}
                   description="Story + per-page illustration prompts. Zero image AI cost. Review the prompts first, then generate individual pages later."
                 />
                 <PreviewModeCard
@@ -495,7 +512,7 @@ export default function CreateBook() {
                   onClick={() => setPreviewMode('cover')}
                   label="Cover only"
                   time="~45s"
-                  cost="~$0.04 — 1 image AI call"
+                  cost={coverModeCostLabel()}
                   description="Story + 1 generated cover image. Inner pages stay as prompts — generate them later if you like the cover."
                 />
                 <PreviewModeCard
@@ -503,12 +520,12 @@ export default function CreateBook() {
                   onClick={() => setPreviewMode('full')}
                   label="All images"
                   time={`~${Math.max(2, Math.ceil((pageCount + 1) * 20 / 60))} min`}
-                  cost={`~$${((pageCount + 1) * 0.04).toFixed(2)} — ${pageCount + 1} image AI calls`}
+                  cost={fullModeCostLabel(pageCount)}
                   description={`Story + cover + every page illustrated up front (${pageCount} pages).`}
                 />
               </div>
               <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
-                In all modes you can still generate or regenerate individual illustrations later from the book page. Each later click is ~$0.04.
+                {laterClickCostNote()}
               </p>
             </div>
 

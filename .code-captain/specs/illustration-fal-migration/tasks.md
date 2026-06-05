@@ -1,8 +1,8 @@
 # Illustration provider migration — Fal.ai Flux Pro 1.1 (IV1 Phase 1) — task plan
 
 > Spec: [spec.md](spec.md)
-> Status: Draft
-> Last updated: 2026-06-04
+> Status: Complete — all 7 tasks Done (2026-06-05)
+> Last updated: 2026-06-05
 > Planner: Claude Opus 4.8 via @planner on 2026-06-04
 
 ## Overview
@@ -32,7 +32,7 @@ Carried over from the spec — re-stated so the developer doesn't context-switch
 **Zone:** server
 **Depends on:** none
 **Parallel-safe with:** none
-**Status:** not-started
+**Status:** Done (2026-06-05)
 
 **Files to add or change:**
 
@@ -80,7 +80,7 @@ class OpenAIImageGenerator implements ImageGenerator {
 **Zone:** server
 **Depends on:** Task 1
 **Parallel-safe with:** none
-**Status:** not-started
+**Status:** Done (2026-06-05)
 
 **Files to add or change:**
 
@@ -126,7 +126,7 @@ export function isImageGenConfigured(): boolean;
 **Zone:** server (docs/config)
 **Depends on:** Task 2 (so the var names match what the factory/check read)
 **Parallel-safe with:** Task 6
-**Status:** not-started
+**Status:** Done (2026-06-05) — inline (trivial config edit, main session)
 
 **Files to add or change:**
 
@@ -172,7 +172,7 @@ OPENAI_API_KEY=
 **Zone:** server
 **Depends on:** Task 2 (factory must exist to register Fal)
 **Parallel-safe with:** none
-**Status:** not-started
+**Status:** Done (2026-06-05)
 
 > **USER CONFIRMATION REQUIRED — new paid external API (CLAUDE.md guardrail).**
 > Fal.ai is a new paid provider. Before writing real Fal network calls and before committing the `FAL_KEY` placeholder in a way that implies activation, the developer MUST pause and get explicit user OK. Do not activate Fal silently. (The `.env.example` placeholder in Task 3 is empty and inert; this gate is about the live call path here.) Per ADR decision 1, use **raw `fetch`** — do NOT add `@fal-ai/client` (that is a separate dependency guardrail; escalate if tempted).
@@ -223,7 +223,7 @@ class FalImageGenerator implements ImageGenerator {
 **Zone:** server
 **Depends on:** Task 4
 **Parallel-safe with:** none
-**Status:** not-started
+**Status:** Done (2026-06-05)
 
 **Files to add or change:**
 
@@ -262,7 +262,7 @@ globalThis.fetch = vi.fn()
 **Zone:** client
 **Depends on:** none (independent of server tasks; copy reflects the active-provider per-image basis)
 **Parallel-safe with:** Task 3, and with server Tasks 1–5 (different zone, no shared file)
-**Status:** not-started
+**Status:** Done (2026-06-05) — browser manual-verify (light + dark) PENDING user
 
 **Files to add or change:**
 
@@ -301,7 +301,7 @@ const PER_IMAGE_COST_USD = 0.04;
 **Zone:** docs (harness)
 **Depends on:** none (run last, after the feature tasks land)
 **Parallel-safe with:** Task 6
-**Status:** not-started
+**Status:** Done (2026-06-05) — ADR-006 (grouped, decisions 1–3) + Deferred line (#4); adr-tracking-check reports zero orphaned items
 
 The spec's `## ADR-worthy decisions` section flags **four** items. Ensure each has exactly one tracking action — a matching ADR in `.code-captain/product/decisions.md`, a linked follow-up issue, or an explicit `Deferred:` line with reasoning:
 
@@ -328,12 +328,13 @@ The spec's `## ADR-worthy decisions` section flags **four** items. Ensure each h
 - **PR cuts (suggested):** Tasks 1+2 (refactor + gate swap + 501 test) as one PR; Tasks 4+5 (Fal generator + Fal test) as a second PR behind the confirmation gate; Task 3 can ride with either; Task 6 (client) as its own small PR; Task 7 closes out before the final merge. Mirrors the recent illustration-feature cadence (small, behavior-scoped commits).
 - **e2e:** The spec lists `e2e/tests/illustration-history.spec.ts` (confirmed present) as a regression check that illustrate/version-history flows still render regardless of provider. Because Phase 1 changes **no** wire shape and providers mock through `globalThis.fetch`, existing e2e specs should cover this without a net-new spec. Run `cd e2e && npm test` before the final merge; if a net-new provider-aware e2e spec is wanted, that is a **@qa hand-off**, not a `@developer` task. See Open questions.
 
-## Open questions
+## Implementation questions (resolved during execution)
 
-Resolve before dispatching the developer:
+These were "resolve before dispatching the developer" questions — all now closed by the work. They are implementation/sequencing questions, **not** ADR-worthy decisions (those live in the spec's `## ADR-worthy decisions` section and are tracked by Task 7 / ADR-006).
 
-- **Fal auth header + endpoint exact shape.** The spec says Flux Pro 1.1 has a synchronous REST endpoint and Fal returns `{ images: [{ url }] }`; confirm the exact request URL (`fal.run` vs direct POST) and auth header form (`Authorization: Key <FAL_KEY>`) against current Fal docs at implementation time. Architect's research doc is the reference; pin it in Task 4.
-- **Factory sequencing choice (option a vs b above).** Decide before dispatching Task 2 whether to ship Task 2 independently (factory resolves `openai` until Task 4) or bundle 2+4. Recommendation: option (a) so the confirmation gate on Task 4 can't block the gate-swap refactor from landing.
-- **e2e: existing coverage vs net-new @qa spec.** Confirm with the user whether the existing `illustration-history.spec.ts` is sufficient regression coverage (likely yes — no wire change) or whether a provider-aware e2e spec should be commissioned from @qa. Not a blocker for Tasks 1–6.
-
-> NOTE: The four ADR-worthy decisions from the spec are NOT open questions — they are tracked mechanically by Task 7 (`adr-tracking-check`), which requires a tracking action (ADR / issue / `Deferred:` line) for each.
+- **Fal auth header + endpoint exact shape.**
+  **Resolved (Task 4):** pinned against `fal.ai/models/fal-ai/flux-pro/v1.1/api` (2026-06-05) in a `fal.ts` code comment — `POST https://fal.run/<model-id>`, `Authorization: Key ${FAL_KEY}`, body `{ prompt, image_size: 'square_hd', num_images: 1, output_format: 'png' }`, response `{ images: [{ url }] }`.
+- **Factory sequencing choice (option a vs b above).**
+  **Resolved:** option (a) — Task 2 shipped the factory resolving `openai` until Task 4 registered Fal, so the confirmation gate on Task 4 never blocked the gate-swap refactor.
+- **e2e: existing coverage vs net-new @qa spec.**
+  **Resolved:** existing `e2e/tests/illustration-history.spec.ts` is sufficient — Phase 1 changes no wire shape and providers mock through `globalThis.fetch`. No net-new @qa spec commissioned. Run `cd e2e && npm test` before the final merge as the regression check.

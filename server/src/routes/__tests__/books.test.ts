@@ -645,10 +645,16 @@ describe('Books API routes', () => {
 
   describe('POST /api/books/:id/illustrate', () => {
     let originalApiKey: string | undefined;
+    let originalProvider: string | undefined;
 
     beforeEach(() => {
       mockGenerateIllustration.mockReset();
       originalApiKey = process.env.OPENAI_API_KEY;
+      originalProvider = process.env.IMAGE_PROVIDER;
+      // Pin the provider to openai so isImageGenConfigured() gates on
+      // OPENAI_API_KEY — this suite exercises the OpenAI path. (The service
+      // default is now 'fal', which would otherwise gate on FAL_KEY.)
+      process.env.IMAGE_PROVIDER = 'openai';
       process.env.OPENAI_API_KEY = 'sk-test';
     });
 
@@ -657,6 +663,11 @@ describe('Books API routes', () => {
         delete process.env.OPENAI_API_KEY;
       } else {
         process.env.OPENAI_API_KEY = originalApiKey;
+      }
+      if (originalProvider === undefined) {
+        delete process.env.IMAGE_PROVIDER;
+      } else {
+        process.env.IMAGE_PROVIDER = originalProvider;
       }
     });
 
@@ -679,7 +690,9 @@ describe('Books API routes', () => {
       expect(res.status).toBe(401);
     });
 
-    it('returns 501 when OPENAI_API_KEY is not configured', async () => {
+    it('returns 501 when image generation is not configured', async () => {
+      // Provider is pinned to openai by the suite beforeEach, so clearing the
+      // OpenAI key makes isImageGenConfigured() return false.
       delete process.env.OPENAI_API_KEY;
       const token = await setupOwnedDraft();
 
@@ -688,7 +701,7 @@ describe('Books API routes', () => {
         .set('Authorization', `Bearer ${token}`)
         .send({});
       expect(res.status).toBe(501);
-      expect(res.body.error).toMatch(/OPENAI_API_KEY/);
+      expect(res.body.error).toMatch(/Image generation not configured/);
     });
 
     it("returns 404 when the book doesn't exist", async () => {
