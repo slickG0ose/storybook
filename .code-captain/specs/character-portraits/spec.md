@@ -214,11 +214,19 @@ Covered in "Fal model selection." Kontext recommended; `flux-general` IP-Adapter
 
 ## ADR-worthy decisions
 
-- [ ] **Schema fork: embedded `characters_json` + `portrait_url` (recommended) vs. promoted `Character` table.** Recommend embedded — keeps ADR-002 intact, one field, no migration. Promote in Phase 3 as a deliberate ADR-002 supersession. (Supplements/cites ADR-002.)
-- [ ] **Portrait version-history storage: overload `IllustrationVersion.page_number` with a portrait-slot sentinel (recommended) vs. dedicated `CharacterPortrait` table.** Recommend sentinel-overload (zero new table, reuses cascade + unique-version machinery); table is the legible fallback.
-- [ ] **Widen `ImageGenerator.generate` to `generate(prompt, opts?: { referenceImages? })`.** Extends/supersedes **ADR-006 decision 3** ("interface owns only the network call"). New ADR required; cite ADR-006.
-- [ ] **Fal model for character references: `fal-ai/flux-pro/kontext` (+ `/multi`) (recommended) vs. literal IP-Adapter `fal-ai/flux-general/image-to-image`.** Recommend Kontext — flat $0.04, same response shape, purpose-built for character preservation, no HF-path config. Pinned from Fal docs 2026-06-05.
-- [ ] **Reference-image plumbing: data-URI/upload (recommended for local-dev robustness) vs. public URL.** Recommend data-URI so Fal needn't reach `localhost`.
-- [ ] **Approve-cast gate is a client-side soft nudge, not server-enforced; no persisted `cast_approved` field.** Consistent with F4b no-server-gate posture.
-- [ ] **"Required character" = primary + antagonist only; supporting characters get optional portraits.** Product/cost decision; cite research open-question #5.
-- [ ] **Portrait route addressing: `:characterIndex` (recommended) vs. `:role`.** `:role` can't disambiguate multiple same-role characters.
+- [x] **Schema fork: embedded `characters_json` + `portrait_url` (recommended) vs. promoted `Character` table.** Recommend embedded — keeps ADR-002 intact, one field, no migration. Promote in Phase 3 as a deliberate ADR-002 supersession. (Supplements/cites ADR-002.)
+  **Tracked by [ADR-007]** (grouped, decision 1; supplements ADR-002).
+- [x] **Portrait version-history storage: overload `IllustrationVersion.page_number` with a portrait-slot sentinel (recommended) vs. dedicated `CharacterPortrait` table.** Recommend sentinel-overload (zero new table, reuses cascade + unique-version machinery); table is the legible fallback.
+  **Tracked by [ADR-007]** (grouped, decision 2).
+- [x] **Widen `ImageGenerator.generate` to `generate(prompt, opts?: { referenceImages? })`.** Extends/supersedes **ADR-006 decision 3** ("interface owns only the network call"). New ADR required; cite ADR-006.
+  **Tracked by [ADR-007]** (grouped, decision 3; supersedes ADR-006 decision 3).
+- [x] **Fal model for character references: `fal-ai/flux-pro/kontext` (+ `/multi`) (recommended) vs. literal IP-Adapter `fal-ai/flux-general/image-to-image`.** Recommend Kontext — flat $0.04, same response shape, purpose-built for character preservation, no HF-path config. Pinned from Fal docs 2026-06-05.
+  **Tracked by [ADR-007]** (grouped, decision 4).
+- [x] **Reference-image plumbing: data-URI/upload (recommended for local-dev robustness) vs. public URL.** Recommend data-URI so Fal needn't reach `localhost`.
+  **Tracked by [ADR-007]** (grouped, decision 5).
+- [x] **Approve-cast gate is a client-side soft nudge, not server-enforced; no persisted `cast_approved` field.** Consistent with F4b no-server-gate posture.
+  **Tracked by [ADR-007]** (grouped, decision 6).
+- [x] **"Required character" = primary + antagonist only; supporting characters get optional portraits.** Product/cost decision; cite research open-question #5.
+  **Tracked by [ADR-007]** (grouped, decision 7).
+- [x] **Portrait route addressing: `:characterIndex` (recommended) vs. `:role`.** `:role` can't disambiguate multiple same-role characters.
+  **Tracked by [ADR-007]** (grouped, decision 8).

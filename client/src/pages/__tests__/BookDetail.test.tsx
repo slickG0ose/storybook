@@ -662,6 +662,168 @@ describe('BookDetail — Post-revise comparison modal', () => {
   })
 })
 
+describe('BookDetail — Cast panel + approve-cast soft gate', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const portraitUrl = '/uploads/illustrations/book-1/portrait-1000.png'
+
+  // A draft book whose required cast (primary + antagonist) has NO portraits yet.
+  const castBook: BookWithPages = {
+    ...baseBook,
+    characters: [
+      { role: 'primary', name: 'Pip the Fox', descriptor: 'a curious red fox', portrait_url: null },
+      { role: 'antagonist', name: 'Grim the Crow', descriptor: 'a grumpy crow', portrait_url: null },
+      { role: 'supporting', name: 'Mossy', descriptor: 'a wise old turtle', portrait_url: null },
+    ],
+  }
+
+  // Same cast but every required character has a portrait — cast is "approved".
+  const approvedCastBook: BookWithPages = {
+    ...baseBook,
+    characters: [
+      { role: 'primary', name: 'Pip the Fox', descriptor: 'a curious red fox', portrait_url: portraitUrl },
+      { role: 'antagonist', name: 'Grim the Crow', descriptor: 'a grumpy crow', portrait_url: portraitUrl },
+      { role: 'supporting', name: 'Mossy', descriptor: 'a wise old turtle', portrait_url: null },
+    ],
+  }
+
+  // Mock fetch: GET book + GET versions + POST portrait (returns a hydrated book
+  // with the generated portrait patched onto the addressed character).
+  function setupCastMock(opts: { book: BookWithPages; portraitResult?: BookWithPages }) {
+    const calls: FetchCall[] = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      calls.push({ url, init })
+      const method = init?.method ?? 'GET'
+
+      if (url === '/api/books/book-1' && method === 'GET') {
+        return Promise.resolve(
+          new Response(JSON.stringify(opts.book), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        )
+      }
+      if (url === '/api/books/book-1/versions' && method === 'GET') {
+        return Promise.resolve(
+          new Response(JSON.stringify(versionsResponse), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        )
+      }
+      if (/^\/api\/books\/book-1\/characters\/\d+\/portrait$/.test(url) && method === 'POST') {
+        return Promise.resolve(
+          new Response(JSON.stringify(opts.portraitResult ?? opts.book), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        )
+      }
+
+      return Promise.resolve(
+        new Response(JSON.stringify({ error: `unmocked ${method} ${url}` }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+    })
+    return { calls }
+  }
+
+  it('renders a row per character with name and role, and a thumbnail only when portrait_url is set', async () => {
+    setupCastMock({ book: approvedCastBook })
+    renderBookDetail()
+
+    await waitFor(() => {
+      expect(screen.getByText('Cast portraits')).toBeInTheDocument()
+    })
+
+    // One row per character — names render. (Names also appear in the header
+    // Cast pills, so each name is present at least once via getAllByText.)
+    expect(screen.getAllByText('Pip the Fox').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Grim the Crow').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Mossy').length).toBeGreaterThan(0)
+    // Role chips in the Cast panel.
+    expect(screen.getByText('primary')).toBeInTheDocument()
+    expect(screen.getByText('antagonist')).toBeInTheDocument()
+
+    // Required characters (primary + antagonist) have portrait thumbnails.
+    expect(screen.getByAltText('Portrait of Pip the Fox')).toBeInTheDocument()
+    expect(screen.getByAltText('Portrait of Grim the Crow')).toBeInTheDocument()
+    // The supporting character has no portrait_url -> no thumbnail, placeholder instead.
+    expect(screen.queryByAltText('Portrait of Mossy')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('No portrait for Mossy yet')).toBeInTheDocument()
+  })
+
+  it('clicking Generate portrait calls the portrait endpoint and renders the returned portrait', async () => {
+    const { calls } = setupCastMock({ book: castBook, portraitResult: approvedCastBook })
+    renderBookDetail()
+
+    await waitFor(() => {
+      expect(screen.getByText('Cast portraits')).toBeInTheDocument()
+    })
+
+    // Initially no thumbnail for Pip (primary, index 0).
+    expect(screen.queryByAltText('Portrait of Pip the Fox')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /generate portrait for pip the fox/i }))
+
+    // The POST hits the index-0 portrait route with auth.
+    await waitFor(() => {
+      const portraitCall = calls.find(c => c.url === '/api/books/book-1/characters/0/portrait')
+      expect(portraitCall).toBeDefined()
+      expect(portraitCall?.init?.method).toBe('POST')
+      const headers = portraitCall?.init?.headers as Record<string, string> | undefined
+      expect(headers?.Authorization).toBe('Bearer test-token')
+    })
+
+    // The returned hydrated book repaints the thumbnail.
+    await waitFor(() => {
+      expect(screen.getByAltText('Portrait of Pip the Fox')).toBeInTheDocument()
+    })
+  })
+
+  it('disables Illustrate All until required characters have portraits', async () => {
+    setupCastMock({ book: castBook })
+    renderBookDetail()
+
+    const illustrateBtn = await screen.findByRole('button', { name: /illustrate all/i })
+    expect(illustrateBtn).toBeDisabled()
+    // The nudge copy is shown.
+    expect(screen.getByText(/approve cast to illustrate with consistent characters/i)).toBeInTheDocument()
+  })
+
+  it('enables Illustrate All when required characters all have portraits (cast approved)', async () => {
+    setupCastMock({ book: approvedCastBook })
+    renderBookDetail()
+
+    const illustrateBtn = await screen.findByRole('button', { name: /illustrate all/i })
+    expect(illustrateBtn).toBeEnabled()
+    expect(screen.getByText(/cast approved/i)).toBeInTheDocument()
+  })
+
+  it('re-enables Illustrate All via the "Skip portraits" affordance', async () => {
+    setupCastMock({ book: castBook })
+    renderBookDetail()
+
+    const illustrateBtn = await screen.findByRole('button', { name: /illustrate all/i })
+    expect(illustrateBtn).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('button', { name: /skip portraits — illustrate anyway/i }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /illustrate all/i })).toBeEnabled()
+    })
+  })
+})
+
 describe('BookDetail — theater mode', () => {
   // NOTE: planner deliberately omitted a back-button-style navigation test
   // (planned case #5) — exercising `MemoryRouter`'s history to assert that the

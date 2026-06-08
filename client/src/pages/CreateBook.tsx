@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Sparkles, Wand2, Loader2, Plus, X } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/apiBase'
+import { PER_IMAGE_COST_USD, fmtUsd, portraitStepCostNote } from '../lib/cost'
 import type { Character, CharacterRole } from '../types'
 
 interface ThemeOption {
@@ -43,12 +44,10 @@ const STYLE_PRESETS: StylePreset[] = [
 const RELATIONSHIPS: string[] = ['best friend', 'sibling', 'parent', 'grandparent', 'pet', 'mentor', 'other']
 const MAX_CAST = 6
 
-// Per-image generation cost for the active image provider (Phase 1: Fal.ai Flux Pro 1.1 ≈ $0.04).
-// Single source of truth for every cost-copy site below — a future provider/price change is a one-line edit.
-// Phase 1 has no per-request UI provider picker, so this is a build-time constant, not wired to a server response.
-export const PER_IMAGE_COST_USD = 0.04
-
-const fmtUsd = (n: number): string => `$${n.toFixed(2)}`
+// PER_IMAGE_COST_USD + fmtUsd now live in ../lib/cost (single source of truth,
+// shared with the BookDetail Cast panel). Re-exported here so existing importers
+// of the constant from this page keep resolving.
+export { PER_IMAGE_COST_USD }
 
 // Cost-copy builders — all derive from PER_IMAGE_COST_USD.
 export const quickModeCostLabel = (): string => `$0 — no image AI calls`
@@ -526,6 +525,10 @@ export default function CreateBook() {
               </div>
               <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
                 {laterClickCostNote()}
+              </p>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                After your book is created, you can generate a portrait per cast member for
+                consistent characters across pages. {portraitStepCostNote(1 + antagonists.length)}
               </p>
             </div>
 

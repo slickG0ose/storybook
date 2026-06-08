@@ -1,7 +1,7 @@
 # Per-character portrait sheet + FLUX Kontext character references (IV2 Phase 2) — task plan
 
 > Spec: [spec.md](spec.md)
-> Status: Draft
+> Status: Complete — all 9 tasks Done (2026-06-05)
 > Last updated: 2026-06-05
 > Planner: Claude Opus 4.8 (1M context) via @planner on 2026-06-05
 
@@ -35,7 +35,7 @@ Carried over from the spec — re-stated so the developer doesn't context-switch
 **Zone:** shared (+ seed-shape note)
 **Depends on:** none
 **Parallel-safe with:** Task 8
-**Status:** not-started
+**Status:** Done (2026-06-05)
 
 > **USER CONFIRMATION REQUIRED — data-shape change (CLAUDE.md guardrail).**
 > `CharacterSchema` is embedded in every hydrated Book response (OPS.3 / ADR-003), and this adds a key to the seeded `characters_json` shape. Before changing the shared schema, the developer MUST pause and get explicit user OK. `.nullable().optional()` keeps legacy blobs valid and there is NO Prisma migration — but the shape change still trips the guardrail. Confirm with the user, then proceed.
@@ -94,7 +94,7 @@ export const CharacterPortraitVersionListResponseSchema = z.array(IllustrationVe
 **Zone:** server
 **Depends on:** none (interface widening is independent of the shared schema)
 **Parallel-safe with:** Task 1, Task 8
-**Status:** not-started
+**Status:** Done (2026-06-05)
 
 **Files to add or change:**
 
@@ -137,7 +137,7 @@ export interface ImageGenerator {
 **Zone:** server
 **Depends on:** Task 2
 **Parallel-safe with:** none
-**Status:** not-started
+**Status:** Done (2026-06-05)
 
 **Files to add or change:**
 
@@ -177,10 +177,11 @@ export interface ImageGenerator {
 
 ### Task 4 — Service: `generateCharacterPortrait()` + portrait-slot version helper — **paid-API-increase note**
 
+**Status:** Done (2026-06-05)
+
 **Zone:** server
 **Depends on:** Task 2 (widened interface), Task 1 (for the `portrait_url` shape it ultimately feeds, though the patch into `characters_json` happens in the route)
 **Parallel-safe with:** none
-**Status:** not-started
 
 > **Paid-API note (CLAUDE.md guardrail — more paid Fal calls).**
 > Portrait generation + per-character iteration is a new paid-API **cost dimension** (same vendor Fal, same $0.04/image — portraits run on Flux Pro 1.1). Not a new-vendor approval, but the developer MUST surface this cost-increase note to the user before wiring the live portrait-generation call path. (Cost copy lands client-side in Task 8.)
@@ -239,10 +240,11 @@ export async function generateCharacterPortrait(
 
 ### Task 5 — Server routes: `POST .../portrait` (gen/regen) + `GET .../portraits` (history) + wire-shape assertions
 
+**Status:** Done (2026-06-05)
+
 **Zone:** server
 **Depends on:** Task 1 (schemas), Task 4 (service fn)
 **Parallel-safe with:** none
-**Status:** not-started
 
 **Files to add or change:**
 
@@ -291,7 +293,7 @@ export async function generateCharacterPortrait(
 **Zone:** server
 **Depends on:** Task 3 (Kontext branch), Task 5 (portraits exist + `portrait_url` populated)
 **Parallel-safe with:** none
-**Status:** not-started
+**Status:** Done (2026-06-05)
 
 **Files to add or change:**
 
@@ -335,7 +337,7 @@ export async function generateCharacterPortrait(
 **Zone:** client
 **Depends on:** Task 5 (routes), Task 1 (`portrait_url` on the wire)
 **Parallel-safe with:** Task 8 (different file in same zone — coordinate, low conflict)
-**Status:** not-started
+**Status:** Done (2026-06-05) — manual-verify PENDING (browser, light + dark)
 
 **Files to add or change:**
 
@@ -373,10 +375,11 @@ export async function generateCharacterPortrait(
 
 ### Task 8 — Client portrait-step cost copy in `CreateBook.tsx` (reuse `PER_IMAGE_COST_USD`)
 
+**Status:** Done (2026-06-05)
+
 **Zone:** client
 **Depends on:** none (copy only; reuses the existing constant)
 **Parallel-safe with:** server Tasks 1–6, and Task 7 (different file)
-**Status:** not-started
 
 **Files to add or change:**
 
@@ -413,6 +416,7 @@ export const portraitStepCostNote = (requiredCharCount: number): string =>
 **Zone:** docs (harness)
 **Depends on:** none (run last, after the feature tasks land)
 **Parallel-safe with:** Task 8
+**Status:** Done (2026-06-05) — ADR-007 (grouped, decisions 1–8; supersedes ADR-006 dec 3, supplements ADR-002); adr-tracking-check reports zero orphaned items
 
 The spec's `## ADR-worthy decisions` section flags **eight** items. Ensure each has exactly one tracking action — a matching ADR in `.code-captain/product/decisions.md`, a linked follow-up issue, or an explicit `Deferred:` line with reasoning. Note two items modify existing ADRs and likely warrant **real ADRs**, not Deferred lines:
 
@@ -440,10 +444,13 @@ The spec's `## ADR-worthy decisions` section flags **eight** items. Ensure each 
 - **PR cuts (suggested, mirroring the IV1 cadence — small, behavior-scoped):** Task 1 (shared shape, gated) as its own small PR so the wire change is isolated and reviewable. Tasks 2+3+4 (interface + provider branch + portrait service) as one server PR behind the paid-API note. Tasks 5+6 (routes + reference threading) as a second server PR. Task 7 (Cast panel) as a client PR. Task 8 can ride with Task 7 or ship alone. Task 9 closes out before final merge.
 - **e2e:** The Cast-panel + bulk-illustrate flow is a net-new user-facing flow that crosses zones and exercises new routes — a candidate for a net-new Playwright spec. Per the harness, net-new e2e specs are a **@qa hand-off**, not a `@developer` task. See Open questions — decide whether to commission a `@qa` portrait-flow spec or rely on Task 7's RTL coverage + existing illustration-history e2e for Phase 2.
 
-## Open questions
+## Implementation questions (resolved during execution)
 
-Resolve before dispatching the developer. NOTE: the eight ADR-worthy decisions are NOT open questions — they are tracked by Task 9 (`adr-tracking-check`). These are implementation/sequencing questions:
+These were "resolve before dispatching the developer" questions — all now closed by the work. They are implementation/sequencing questions, **not** ADR-worthy decisions (those live in the spec's `## ADR-worthy decisions` section and are tracked by Task 9 / ADR-007).
 
-- **Cost-copy module location (Task 7 ↔ Task 8):** Task 7's Cast panel needs `fmtUsd(PER_IMAGE_COST_USD)`, currently exported from `CreateBook.tsx` (lines 46–61). Import it cross-page from `CreateBook.tsx`, or extract the cost-copy helpers into a small shared `client/src/lib/cost.ts` module both pages import? The spec floats "or a shared cost-copy module." Extraction is cleaner but adds a file; decide before Task 7/8 so they don't duplicate the constant. (Leaning: extract — avoids a page importing from another page.)
-- **Cast-panel e2e: @qa hand-off or not?** The portrait generate → approve → consistent-illustrate flow is net-new and cross-zone. Decide whether to commission a `@qa` Playwright spec (`e2e/tests/character-portraits.spec.ts`) or rely on Task 7's RTL tests + existing illustration-history e2e. (Leaning: @qa hand-off for the happy-path flow, given the new routes and the soft-gate interaction; not a `@developer` task.)
-- **`/illustrate` per-page reference heuristic (Task 6):** Phase 2 has no per-page character-mapping UI, so the heuristic is "pass all required-character portraits as references to every page." Confirm: pass ALL required portraits to every page (Kontext-multi when 2+), or only the primary's portrait (Kontext-single)? The spec allows either ("or, if Kontext-single is chosen, the primary's portrait"). Decide before Task 6 so the model-selection branch in Task 3 is exercised correctly. (Leaning: all required portraits → kontext/multi when 2+, single when 1.)
+- **Cost-copy module location (Task 7 ↔ Task 8).**
+  **Resolved:** extracted `PER_IMAGE_COST_USD` + `fmtUsd` + `portraitStepCostNote` to `client/src/lib/cost.ts` (Task 8); both `CreateBook.tsx` and the Cast panel import from there — no page-to-page import.
+- **Cast-panel e2e: @qa hand-off or not?**
+  **Resolved:** `@qa` hand-off for the happy-path flow, scoped so it does not depend on live Fal calls (CI has no `FAL_KEY`, so portrait generation gates to 501 there). Dispatched after the feature lands; Task 7's RTL tests cover the component logic in the meantime.
+- **`/illustrate` per-page reference heuristic (Task 6).**
+  **Resolved:** pass ALL required-character (primary+antagonist) portraits that exist as references to every page → `kontext/multi` when 2+, `kontext` single when 1, prompt-only fallback when 0 (Task 6, via the shared `collectRequiredPortraitRefs` helper).

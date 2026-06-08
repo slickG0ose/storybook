@@ -2,7 +2,12 @@ import { Router } from 'express';
 import Anthropic from '@anthropic-ai/sdk';
 import prisma from '../db/prisma';
 import { getAuthUser } from './auth';
-import { generateCover, generateIllustration, isImageGenConfigured } from '../services/illustrations';
+import {
+  generateCover,
+  generateIllustration,
+  collectRequiredPortraitRefs,
+  isImageGenConfigured,
+} from '../services/illustrations';
 import { parseAiJson } from '../services/parseAiJson';
 import type { Request, Response } from 'express';
 import type { Character, CharacterRole } from '../types';
@@ -204,6 +209,14 @@ Make the story warm, engaging, and age-appropriate. Use vivid but simple languag
       include: { pages: { orderBy: { page_number: 'asc' } } },
     });
 
+    // IV2 Phase 2: at creation time portraits don't exist yet (they're generated
+    // later on the draft Cast panel), so this is empty here and the cover/page
+    // generation stays on the byte-identical prompt-only path. Threaded for
+    // consistency with /illustrate and so a re-illustrate after portraits exist
+    // would pick them up. collectRequiredPortraitRefs returns [] -> undefined.
+    const portraitRefs = collectRequiredPortraitRefs(characters);
+    const referenceImages = portraitRefs.length > 0 ? portraitRefs : undefined;
+
     if ((previewMode === 'cover' || previewMode === 'full') && isImageGenConfigured()) {
       const coverUrl = await generateCover(
         book.id,
@@ -211,6 +224,7 @@ Make the story warm, engaging, and age-appropriate. Use vivid but simple languag
         story.coverDescription || story.description,
         styleDescriptor,
         characters,
+        referenceImages,
       );
       if (coverUrl) {
         book = await prisma.book.update({
@@ -230,6 +244,7 @@ Make the story warm, engaging, and age-appropriate. Use vivid but simple languag
           undefined,
           styleDescriptor,
           characters,
+          referenceImages,
         );
         if (url) {
           await prisma.page.update({ where: { id: page.id }, data: { illustration_url: url } });

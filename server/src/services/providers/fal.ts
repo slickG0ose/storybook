@@ -1,4 +1,15 @@
-import type { ImageGenerator } from '../illustrations';
+import { readFile } from 'fs/promises';
+import { join } from 'path';
+import type { ImageGenerator, ImageGenOptions } from '../illustrations';
+
+// Reference portraits are written by the service to
+// server/public/illustrations/<bookId>/portrait-<slot>.png and carried on the
+// wire as web paths ('/illustrations/<bookId>/portrait-<slot>.png'). To resolve
+// a web path back to bytes we strip the leading '/illustrations/' segment and
+// join against the same on-disk base the service writes to. Mirrors
+// ILLUSTRATIONS_DIR in illustrations.ts (../../public/illustrations from this
+// file's dir, which sits one level deeper under services/providers/).
+const ILLUSTRATIONS_DIR = join(import.meta.dirname, '../../../public/illustrations');
 
 // Cap a single Fal image-generation request at 120s — parity with the OpenAI
 // path (OPENAI_IMAGE_TIMEOUT_MS in illustrations.ts). Flux Pro 1.1's
@@ -26,22 +37,65 @@ interface FalRunResponse {
  * in the public service functions (generateIllustration/generateCover).
  *
  * Endpoint / auth / params pinned against the Fal docs at implementation time
- * (2026-06-05, https://fal.ai/models/fal-ai/flux-pro/v1.1/api):
+ * (2026-06-05):
  *   - Synchronous run URL:  POST https://fal.run/<model-id>
  *   - Auth header:          Authorization: Key <FAL_KEY>   (Fal convention)
- *   - Request body fields:  { prompt, image_size: 'square_hd', num_images: 1,
- *                             output_format: 'png' }
- *     image_size 'square_hd' is the square preset (parity with OpenAI's
- *     1024x1024); output_format 'png' matches the OpenAI path's PNG bytes.
- *   - Response shape:       { images: [{ url, content_type, width, height }], ... }
- *     We parse images[0].url, then fetch that URL and return the bytes.
+ *
+ * Model selection (IV2 Phase 2 — pinned from Fal docs 2026-06-05):
+ *   - no references   -> fal-ai/flux-pro/v1.1 (prompt-only, default, UNCHANGED)
+ *                        body { prompt, image_size: 'square_hd', num_images: 1,
+ *                               output_format: 'png' }
+ *   - 1 reference     -> fal-ai/flux-pro/kontext        body { prompt, image_url }
+ *   - 2+ references   -> fal-ai/flux-pro/kontext/multi   body { prompt, image_urls: string[] }
+ *
+ * All three return the SAME response shape — { images: [{ url, ... }], ... } —
+ * so the response-parsing + download legs below are shared. Kontext is flat
+ * $0.04/image (same as Flux Pro 1.1). image_size 'square_hd' is the square
+ * preset (parity with OpenAI's 1024x1024); output_format 'png' matches the
+ * OpenAI path's PNG bytes.
+ *
+ * Reference plumbing (option b, data-URI): each referenceImages entry is an
+ * on-disk illustration web path ('/illustrations/<bookId>/portrait-<slot>.png');
+ * we read the bytes and inline them as a data:image/png;base64,... URI so Fal
+ * needn't reach localhost in dev.
+ *
+ * FAL_IMAGE_MODEL env override: applies ONLY to the prompt-only (no-reference)
+ * path; the reference-bearing path always selects Kontext regardless, since the
+ * override default (Flux Pro 1.1) cannot take an input image.
  */
 export class FalImageGenerator implements ImageGenerator {
   readonly name = 'fal' as const;
 
-  async generate(prompt: string): Promise<Buffer> {
+  async generate(prompt: string, opts?: ImageGenOptions): Promise<Buffer> {
     const apiKey = process.env.FAL_KEY!;
-    const modelId = process.env.FAL_IMAGE_MODEL || 'fal-ai/flux-pro/v1.1';
+    const references = opts?.referenceImages ?? [];
+
+    // Branch on reference presence. undefined and [] are treated identically
+    // (prompt-only). The no-reference branch is byte-identical to IV1.
+    let modelId: string;
+    let body: Record<string, unknown>;
+    if (references.length === 0) {
+      modelId = process.env.FAL_IMAGE_MODEL || 'fal-ai/flux-pro/v1.1';
+      body = {
+        prompt,
+        image_size: 'square_hd',
+        num_images: 1,
+        output_format: 'png',
+      };
+    } else if (references.length === 1) {
+      modelId = 'fal-ai/flux-pro/kontext';
+      body = {
+        prompt,
+        image_url: await toDataUri(references[0]),
+      };
+    } else {
+      modelId = 'fal-ai/flux-pro/kontext/multi';
+      body = {
+        prompt,
+        image_urls: await Promise.all(references.map(toDataUri)),
+      };
+    }
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), FAL_IMAGE_TIMEOUT_MS);
 
@@ -53,12 +107,7 @@ export class FalImageGenerator implements ImageGenerator {
           'Authorization': `Key ${apiKey}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          prompt,
-          image_size: 'square_hd',
-          num_images: 1,
-          output_format: 'png',
-        }),
+        body: JSON.stringify(body),
         signal: controller.signal,
       });
     } catch (err) {
@@ -92,4 +141,25 @@ export class FalImageGenerator implements ImageGenerator {
     }
     return Buffer.from(await imageRes.arrayBuffer());
   }
+}
+
+// Resolve a reference web path ('/illustrations/<bookId>/<file>.png') to a
+// base64 data URI Fal can consume inline. Reads from the same on-disk base the
+// service writes illustrations to. Throws a clear error if the file is missing
+// so the caller surfaces a misconfigured/absent portrait rather than silently
+// sending a malformed request to Fal.
+async function toDataUri(referencePath: string): Promise<string> {
+  // Strip the '/illustrations/' web prefix to get the path relative to the
+  // illustrations base. Tolerate an absent leading slash defensively.
+  const rel = referencePath.replace(/^\/?illustrations\//, '');
+  const absPath = join(ILLUSTRATIONS_DIR, rel);
+
+  let bytes: Buffer;
+  try {
+    bytes = await readFile(absPath);
+  } catch {
+    throw new Error(`Reference image not found on disk: ${referencePath} (resolved to ${absPath})`);
+  }
+
+  return `data:image/png;base64,${bytes.toString('base64')}`;
 }

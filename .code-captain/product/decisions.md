@@ -4,6 +4,48 @@ Append-only log. Newest entries on top. Each entry should answer: *what was deci
 
 ---
 
+## ADR-007 — Per-character portraits + FLUX Kontext consistency (IV2 Phase 2)
+
+**Date:** 2026-06-05
+**Status:** Accepted
+**Scope:** `character-portraits` (IV2 Phase 2). Spec at [.code-captain/specs/character-portraits/spec.md](../specs/character-portraits/spec.md); backlog issue #23. **Supersedes ADR-006 decision 3** (the `ImageGenerator` interface boundary) and **supplements ADR-002** (JSON-on-Book cast).
+
+### Decision
+
+Phase 2 of Illustration v2 adds one canonical portrait per character, a per-character iterate loop, and feeds approved portraits as reference images into page generation for cross-page character consistency. Eight coupled decisions, captured as a set (per the ADR-004/006 grouped precedent) — they share one feature's context and only make sense together. Each names its trade-off.
+
+1. **Storage: extend the embedded `characters_json` with `portrait_url`, not a promoted Character table.** Add `portrait_url?: string | null` to `CharacterSchema`. **Why:** ADR-002 chose JSON-on-`Book` deliberately (no query pressure, cast always loaded with its book); Phase 2 adds zero query pressure and exactly one field. **Crucially this is NOT a Prisma migration** — `characters_json` is already a `String?` column, so only the JSON shape + the shared Zod wire shape + seed shape change. **Trade-off:** a real table would be a more natural home for per-character data; deferred to Phase 3 (LoRA, #24) as a deliberate ADR-002 supersession, not a side effect of adding a URL. (Supplements ADR-002.)
+
+2. **Portrait version history reuses `IllustrationVersion` via a `page_number` sentinel slot, not a dedicated table.** `page_number = PORTRAIT_SLOT_BASE (1000) + characterIndex`; real pages are 1..MAX_PAGES (15), so no collision. The existing `@@unique([book_id, page_number, version])` gives per-character version numbering for free. **Why:** zero new table, reuses the cascade + unique-version machinery that already does exactly this for pages. **Trade-off:** overloading `page_number` is subtle — the legible fallback is a dedicated `CharacterPortrait` table if the sentinel proves error-prone.
+
+3. **Widen the `ImageGenerator` interface to `generate(prompt, opts?: { referenceImages?: string[] })`.** **This supersedes ADR-006 decision 3** ("the interface owns ONLY the network call"). The optional second arg keeps the no-reference path byte-identical, so IV1's regression tests pass unchanged. **Why:** IP-Adapter-style consistency requires passing reference images to the provider — exactly the "future provider needs the interface widened" case ADR-006 dec 3 anticipated. **Trade-off:** the interface now carries an input concern beyond a bare prompt; kept minimal (one optional field) to limit the blast radius.
+
+4. **Reference mechanism: FLUX Kontext (`fal-ai/flux-pro/kontext` + `/multi`), not the literal IP-Adapter (`fal-ai/flux-general/image-to-image`).** Portraits are generated prompt-only on Flux Pro 1.1 (no reference yet); *page* generation with references routes to Kontext (single ref → `kontext`, 2+ → `kontext/multi`). **Why:** Kontext is purpose-built for cross-scene character preservation, holds the flat **$0.04/image** the cost model assumes, returns the **same `{ images: [{ url }] }`** shape the existing parser handles, and needs no HuggingFace path/encoder config. The literal `flux-general` IP-Adapter prices per-megapixel (~$0.075/MP — reopens the cost shock IV2 closes) and needs HF config. **Trade-off:** Kontext may give slightly less identity-lock than tuned IP-Adapter; swapping is a one-file provider change (the wire/UI design is mechanism-agnostic via `referenceImages: string[]`). Pinned from Fal docs 2026-06-05.
+
+5. **Reference-image plumbing: inline base64 data-URI, not a public URL.** The generator resolves on-disk portrait paths to bytes and inlines them in the request. **Why:** Fal needn't reach `localhost` — works in local dev (where the demo runs) without a tunnel. **Trade-off:** larger request bodies (~1024² PNGs per reference).
+
+6. **Approve-cast is a client-side soft nudge, not server-enforced; no persisted `cast_approved` field.** The client disables bulk-illustrate until required characters have portraits OR the user clicks "Skip portraits — illustrate anyway"; the server never 403s a portrait-less book (it falls back to prompt-only). **Why:** consistent with the F4b no-server-gate posture (ADR-006); approval is a one-time workflow nudge, not durable state worth a migration; the presence of `portrait_url` is itself the readiness signal. **Trade-off:** approval state doesn't survive across devices/sessions beyond what `portrait_url` presence implies.
+
+7. **"Required character" = primary + antagonist only; supporting characters get optional portraits.** The gate and the per-page reference set use primary + antagonist. **Why:** these are the identity-critical recurring figures; forcing portraits for every walk-on supporting character multiplies cost for marginal consistency benefit, and IP-Adapter generalizes unevenly to non-primary subjects (research open-question #5). **Trade-off:** a prominent supporting character won't be consistency-locked unless the user opts in.
+
+8. **Portrait routes address characters by `:characterIndex` (array index into hydrated `characters`), not `:role`.** **Why:** `:role` can't disambiguate two same-role characters (e.g. two supporting) and names aren't guaranteed unique. **Trade-off:** index is positional — reordering the cast would repoint indices, but the cast is a fixed JSON array per book, so this is stable in practice.
+
+### Alternatives considered
+
+- **Promote characters to a Prisma table** (rejected for Phase 2): reverses ADR-002 for zero query benefit, with a large blast radius (`hydrateBook`, `generate.ts` write, `BookVersion` snapshot/restore, a backfill migration). Held as the Phase 3 upgrade path when LoRA + per-page character mapping actually need it.
+- **Literal IP-Adapter (`flux-general`)** (rejected): per-megapixel pricing + HF-path config; held as a swap-in if maximum likeness is later needed.
+- **Dedicated `CharacterPortrait` history table** (held as fallback): cleaner than the sentinel slot but duplicates `IllustrationVersion` machinery.
+- **Always-Kontext** (rejected): Kontext is image-to-image and needs an input image; the first portrait has no reference, so branching on `referenceImages?.length` is unavoidable (and preserves IV1's prompt-only regression test).
+
+### Consequences
+
+- **`CharacterSchema.portrait_url` ships on every hydrated Book response** — a wire-shape change (OPS.3/ADR-003); pinned by a Check-4 `toMatchObject` assertion. Legacy blobs without the key still validate (`.nullable().optional()`).
+- **No Prisma migration; there IS a seed-shape change** (`portrait_url` key) — `db:hydrate` must load cleanly with the key present or absent.
+- **IV1 regression boundary preserved:** the no-reference `generate(prompt)` path is byte-identical; `IMAGE_PROVIDER=openai` still works (OpenAI uses the `/v1/images/edits` endpoint when references are present).
+- **Phase 3 (#24, LoRA)** is the point to revisit decision 1 (promote to a table) and decision 4 (the `@fal-ai/client` SDK for genuinely-async fine-tuning), each as a superseding ADR.
+
+---
+
 ## ADR-006 — Image-provider abstraction & Fal.ai migration (IV1 Phase 1)
 
 **Date:** 2026-06-05

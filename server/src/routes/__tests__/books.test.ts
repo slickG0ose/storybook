@@ -22,6 +22,8 @@ vi.mock('@anthropic-ai/sdk', () => {
 // re-importing it inside the factory — the GET /illustrations/:pageNumber
 // suite uses real DB rows and shouldn't be affected.
 const mockGenerateIllustration = vi.fn();
+const mockGenerateCharacterPortrait = vi.fn();
+const mockListCharacterPortraitVersions = vi.fn();
 vi.mock('../../services/illustrations', async () => {
   const actual = await vi.importActual<typeof import('../../services/illustrations')>(
     '../../services/illustrations',
@@ -29,6 +31,9 @@ vi.mock('../../services/illustrations', async () => {
   return {
     ...actual,
     generateIllustration: (...args: unknown[]) => mockGenerateIllustration(...args),
+    generateCharacterPortrait: (...args: unknown[]) => mockGenerateCharacterPortrait(...args),
+    listCharacterPortraitVersions: (...args: unknown[]) =>
+      mockListCharacterPortraitVersions(...args),
   };
 });
 
@@ -773,6 +778,89 @@ describe('Books API routes', () => {
       expect(mockGenerateIllustration.mock.calls[0][1]).toBe(2);
     });
 
+    // IV2 Phase 2 — reference plumbing through /illustrate.
+    // generateIllustration's signature is
+    //   (bookId, pageNumber, description, feedback, styleDescriptor, characters, referenceImages)
+    // so referenceImages is the 7th positional arg → mock.calls[n][6].
+    const REF_IMAGES_ARG = 6;
+
+    it('threads required-cast portrait refs as referenceImages when portraits exist', async () => {
+      const token = await setupOwnedDraft();
+      // Primary + antagonist have portraits; a supporting character with a
+      // portrait must NOT be forced as a reference (spec: required = primary +
+      // antagonist only).
+      const primaryPortrait = '/illustrations/luna-star-garden/portrait-1000.png';
+      const antagonistPortrait = '/illustrations/luna-star-garden/portrait-1001.png';
+      await prisma.book.update({
+        where: { id: 'luna-star-garden' },
+        data: {
+          characters_json: JSON.stringify([
+            { role: 'primary', name: 'Luna', portrait_url: primaryPortrait },
+            { role: 'antagonist', name: 'Shadow', portrait_url: antagonistPortrait },
+            { role: 'supporting', name: 'Pip', portrait_url: '/illustrations/luna-star-garden/portrait-1002.png' },
+          ]),
+        },
+      });
+
+      mockGenerateIllustration.mockResolvedValue('/illustrations/luna-star-garden/page.png');
+
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/illustrate')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ pageNumber: 2 });
+
+      expect(res.status).toBe(200);
+      expect(mockGenerateIllustration).toHaveBeenCalledTimes(1);
+      const refs = mockGenerateIllustration.mock.calls[0][REF_IMAGES_ARG] as string[];
+      expect(refs).toEqual([primaryPortrait, antagonistPortrait]);
+      // The supporting character's portrait is intentionally excluded.
+      expect(refs).not.toContain('/illustrations/luna-star-garden/portrait-1002.png');
+    });
+
+    it('passes only the primary portrait when antagonist has none (single ref)', async () => {
+      const token = await setupOwnedDraft();
+      const primaryPortrait = '/illustrations/luna-star-garden/portrait-1000.png';
+      await prisma.book.update({
+        where: { id: 'luna-star-garden' },
+        data: {
+          characters_json: JSON.stringify([
+            { role: 'primary', name: 'Luna', portrait_url: primaryPortrait },
+            { role: 'antagonist', name: 'Shadow', portrait_url: null },
+          ]),
+        },
+      });
+
+      mockGenerateIllustration.mockResolvedValue('/illustrations/luna-star-garden/page.png');
+
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/illustrate')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ pageNumber: 3 });
+
+      expect(res.status).toBe(200);
+      const refs = mockGenerateIllustration.mock.calls[0][REF_IMAGES_ARG] as string[];
+      expect(refs).toEqual([primaryPortrait]);
+    });
+
+    it('illustrates a portrait-less book with NO references (byte-identical IV1 fallback, no 403)', async () => {
+      const token = await setupOwnedDraft();
+      // luna-star-garden's seeded characters_json carries no portrait_url keys —
+      // the regression-safe path: the route must illustrate normally and pass
+      // NO referenceImages (undefined), never 403.
+      mockGenerateIllustration.mockResolvedValue('/illustrations/luna-star-garden/page.png');
+
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/illustrate')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ pageNumber: 1 });
+
+      expect(res.status).toBe(200);
+      expect(mockGenerateIllustration).toHaveBeenCalledTimes(1);
+      // No references threaded → undefined, so the provider stays on the
+      // prompt-only (Flux Pro 1.1 / gpt-image-1 generations) path.
+      expect(mockGenerateIllustration.mock.calls[0][REF_IMAGES_ARG]).toBeUndefined();
+    });
+
     it('returns 500 with a non-empty JSON error body when generation throws', async () => {
       // This is the regression pin for the reported bug: server must respond
       // with a parseable JSON envelope, NOT 200 + silent success and NOT a
@@ -869,6 +957,215 @@ describe('Books API routes', () => {
       expect(res.body[0].feedback).toBeNull();
       expect(res.body[1].version).toBe(2);
       expect(res.body[1].feedback).toBe('make the moon bigger');
+    });
+  });
+
+  describe('POST /api/books/:id/characters/:characterIndex/portrait', () => {
+    let originalApiKey: string | undefined;
+    let originalProvider: string | undefined;
+
+    beforeEach(() => {
+      mockGenerateCharacterPortrait.mockReset();
+      originalApiKey = process.env.OPENAI_API_KEY;
+      originalProvider = process.env.IMAGE_PROVIDER;
+      // Pin to the openai provider so isImageGenConfigured() gates on
+      // OPENAI_API_KEY (the service default is 'fal' → FAL_KEY).
+      process.env.IMAGE_PROVIDER = 'openai';
+      process.env.OPENAI_API_KEY = 'sk-test';
+    });
+
+    afterEach(() => {
+      if (originalApiKey === undefined) {
+        delete process.env.OPENAI_API_KEY;
+      } else {
+        process.env.OPENAI_API_KEY = originalApiKey;
+      }
+      if (originalProvider === undefined) {
+        delete process.env.IMAGE_PROVIDER;
+      } else {
+        process.env.IMAGE_PROVIDER = originalProvider;
+      }
+    });
+
+    // Claim luna-star-garden as the authed user's draft with a two-character
+    // cast so the route's owner-gate and index-range checks have data to work on.
+    async function setupOwnedDraftWithCast(): Promise<string> {
+      const token = await createUserAndGetToken(app);
+      const user = await prisma.user.findFirst({ where: { email: 'author@example.com' } });
+      await prisma.book.update({
+        where: { id: 'luna-star-garden' },
+        data: {
+          status: 'draft',
+          created_by: user!.id,
+          characters_json: JSON.stringify([
+            { role: 'primary', name: 'Luna', descriptor: 'a curious girl' },
+            { role: 'antagonist', name: 'Shadow', descriptor: 'a sly fox' },
+          ]),
+        },
+      });
+      return token;
+    }
+
+    it('returns 401 without auth', async () => {
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/characters/0/portrait')
+        .send({});
+      expect(res.status).toBe(401);
+    });
+
+    it('returns 501 when image generation is not configured', async () => {
+      delete process.env.OPENAI_API_KEY;
+      const token = await setupOwnedDraftWithCast();
+
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/characters/0/portrait')
+        .set('Authorization', `Bearer ${token}`)
+        .send({});
+      expect(res.status).toBe(501);
+      expect(res.body.error).toMatch(/Image generation not configured/);
+    });
+
+    it('returns 404 for another user\'s book', async () => {
+      const token = await createUserAndGetToken(app);
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/characters/0/portrait')
+        .set('Authorization', `Bearer ${token}`)
+        .send({});
+      expect(res.status).toBe(404);
+    });
+
+    it('returns 404 when the character index is out of range', async () => {
+      const token = await setupOwnedDraftWithCast();
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/characters/5/portrait')
+        .set('Authorization', `Bearer ${token}`)
+        .send({});
+      expect(res.status).toBe(404);
+      expect(res.body.error).toMatch(/Character not found/);
+    });
+
+    it('generates a portrait and returns the hydrated book with portrait_url set', async () => {
+      const token = await setupOwnedDraftWithCast();
+
+      const portraitUrl = '/illustrations/luna-star-garden/portrait-1000.png';
+      mockGenerateCharacterPortrait.mockResolvedValueOnce(portraitUrl);
+
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/characters/0/portrait')
+        .set('Authorization', `Bearer ${token}`)
+        .send({});
+
+      expect(res.status).toBe(200);
+
+      // Wire-shape assertion (Check 4): pin the full character shape that ships
+      // on every hydrated book response, including the new portrait_url field.
+      expect(res.body).toMatchObject({
+        id: 'luna-star-garden',
+        characters: expect.any(Array),
+      });
+      expect(res.body.characters[0]).toMatchObject({
+        role: expect.any(String),
+        name: expect.any(String),
+        portrait_url: portraitUrl,
+      });
+
+      // The mutated character carries the new URL; the other character is
+      // untouched (no portrait_url).
+      expect(res.body.characters[1].portrait_url).toBeUndefined();
+
+      // Service called with (bookId, index, name, descriptor, feedback, style).
+      expect(mockGenerateCharacterPortrait).toHaveBeenCalledTimes(1);
+      const callArgs = mockGenerateCharacterPortrait.mock.calls[0];
+      expect(callArgs[0]).toBe('luna-star-garden');
+      expect(callArgs[1]).toBe(0);
+      expect(callArgs[2]).toBe('Luna');
+
+      // The patch persisted to characters_json.
+      const row = await prisma.book.findUnique({ where: { id: 'luna-star-garden' } });
+      const cast = JSON.parse(row!.characters_json!) as { name: string; portrait_url?: string }[];
+      expect(cast[0].portrait_url).toBe(portraitUrl);
+      expect(cast[1].portrait_url).toBeUndefined();
+    });
+
+    it('regenerate with feedback repoints portrait_url to the new version url', async () => {
+      const token = await setupOwnedDraftWithCast();
+
+      const v2Url = '/illustrations/luna-star-garden/portrait-1000-v2.png';
+      mockGenerateCharacterPortrait.mockResolvedValueOnce(v2Url);
+
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/characters/0/portrait')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ feedback: 'make her hair red' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.characters[0].portrait_url).toBe(v2Url);
+      // Feedback was forwarded to the service (5th positional arg).
+      expect(mockGenerateCharacterPortrait.mock.calls[0][4]).toBe('make her hair red');
+    });
+  });
+
+  describe('GET /api/books/:id/characters/:characterIndex/portraits', () => {
+    beforeEach(() => {
+      mockListCharacterPortraitVersions.mockReset();
+    });
+
+    it('returns 401 without auth', async () => {
+      const res = await request(app).get('/api/books/luna-star-garden/characters/0/portraits');
+      expect(res.status).toBe(401);
+    });
+
+    it('returns 404 for another user\'s book', async () => {
+      const token = await createUserAndGetToken(app);
+      const res = await request(app)
+        .get('/api/books/luna-star-garden/characters/0/portraits')
+        .set('Authorization', `Bearer ${token}`);
+      expect(res.status).toBe(404);
+    });
+
+    it('returns the portrait version list shape', async () => {
+      const token = await createUserAndGetToken(app);
+      const user = await prisma.user.findFirst({ where: { email: 'author@example.com' } });
+      await prisma.book.update({
+        where: { id: 'luna-star-garden' },
+        data: { created_by: user!.id },
+      });
+
+      mockListCharacterPortraitVersions.mockResolvedValueOnce([
+        {
+          url: '/illustrations/luna-star-garden/portrait-1000.png',
+          version: 1,
+          created_at: new Date().toISOString(),
+          feedback: null,
+        },
+        {
+          url: '/illustrations/luna-star-garden/portrait-1000-v2.png',
+          version: 2,
+          created_at: new Date().toISOString(),
+          feedback: 'make her hair red',
+        },
+      ]);
+
+      const res = await request(app)
+        .get('/api/books/luna-star-garden/characters/0/portraits')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(2);
+      // Wire-shape assertion (Check 4): pin every field of the version shape.
+      expect(res.body[0]).toMatchObject({
+        url: expect.any(String),
+        version: expect.any(Number),
+        created_at: expect.any(String),
+        feedback: null,
+      });
+      expect(res.body[1]).toMatchObject({
+        url: expect.any(String),
+        version: 2,
+        created_at: expect.any(String),
+        feedback: 'make her hair red',
+      });
+      expect(mockListCharacterPortraitVersions).toHaveBeenCalledWith('luna-star-garden', 0);
     });
   });
 

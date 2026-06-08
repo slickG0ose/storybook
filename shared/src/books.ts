@@ -13,6 +13,10 @@ export const CharacterSchema = z.object({
   name: z.string(),
   descriptor: z.string().optional(),
   relationship: z.string().optional(),
+  // Canonical per-character portrait (IV2 Phase 2). `.nullable().optional()` so
+  // (a) legacy characters_json blobs without the key still validate, and (b) the
+  // hydrated wire shape can carry an explicit null (portrait not yet generated).
+  portrait_url: z.string().nullable().optional(),
 });
 export type Character = z.infer<typeof CharacterSchema>;
 
@@ -216,3 +220,33 @@ export type BookIllustrationRevertRequest = z.infer<typeof BookIllustrationRever
 
 export const BookIllustrationRevertResponseSchema = BookWithPagesSchema.nullable();
 export type BookIllustrationRevertResponse = z.infer<typeof BookIllustrationRevertResponseSchema>;
+
+// ---------------------------------------------------------------------------
+// POST /api/books/:id/characters/:characterIndex/portrait — generate or
+// regenerate one character's canonical portrait (IV2 Phase 2). Returns the full
+// hydrated book so the client re-renders the cast with the new portrait_url.
+// `feedback` mirrors BookIllustrateRequestSchema's regenerate-with-feedback.
+// ---------------------------------------------------------------------------
+export const CharacterPortraitGenerateRequestSchema = z.object({
+  feedback: z.string().optional(),
+});
+export type CharacterPortraitGenerateRequest = z.infer<typeof CharacterPortraitGenerateRequestSchema>;
+
+// Nullable mirrors the /illustrate response — the post-mutation findUnique can
+// theoretically return null if the row is deleted concurrently.
+export const CharacterPortraitGenerateResponseSchema = BookWithPagesSchema.nullable();
+export type CharacterPortraitGenerateResponse = z.infer<typeof CharacterPortraitGenerateResponseSchema>;
+
+// ---------------------------------------------------------------------------
+// GET /api/books/:id/characters/:characterIndex/portraits — portrait version
+// history for one character. Rows live in the IllustrationVersion table under a
+// reserved portrait-slot page_number sentinel, so the wire shape IS the existing
+// IllustrationVersionSchema ({ url, version, created_at, feedback }).
+// ---------------------------------------------------------------------------
+export const CharacterPortraitVersionSchema = IllustrationVersionSchema;
+export type CharacterPortraitVersion = z.infer<typeof CharacterPortraitVersionSchema>;
+
+export const CharacterPortraitVersionListResponseSchema = z.array(CharacterPortraitVersionSchema);
+export type CharacterPortraitVersionListResponse = z.infer<
+  typeof CharacterPortraitVersionListResponseSchema
+>;
