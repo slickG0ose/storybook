@@ -42,6 +42,12 @@ services:
         sync: false
       - key: OPENAI_API_KEY
         sync: false
+      # Default image provider is Fal (IMAGE_PROVIDER||'fal'); the Fal provider
+      # reads FAL_KEY. Without it set in the Render dashboard, illustration and
+      # IV2 character-portrait generation 501s. sync:false = set the value
+      # manually in Render (Environment tab), same as the keys above.
+      - key: FAL_KEY
+        sync: false
       - key: DATABASE_URL
         fromDatabase:
           name: storybook-postgres
