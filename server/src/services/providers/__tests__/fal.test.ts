@@ -118,4 +118,45 @@ describe('FalImageGenerator', () => {
       /Failed to download generated image: 404/,
     );
   });
+
+  // IV2 Task 2 regression boundary: the widened generate(prompt, opts?) signature
+  // must leave the no-reference path byte-identical. The Kontext model branching
+  // is a later task; here we prove that all three "no reference" call forms —
+  // no opts, empty opts, empty referenceImages array — produce an IDENTICAL Fal
+  // request (same model URL, same body). If a later change accidentally branches
+  // on empty references, this fails.
+  it('produces an identical request for generate(prompt), {}, and { referenceImages: [] }', async () => {
+    const mockRun = () => vi.fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ images: [{ url: 'https://fal.example/img.png' }] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(new Response(Buffer.from(FAKE_PNG_B64, 'base64'), { status: 200 }));
+
+    const captureRunRequest = async (opts?: { referenceImages?: string[] }) => {
+      const fetchMock = mockRun();
+      globalThis.fetch = fetchMock as unknown as typeof fetch;
+      await new FalImageGenerator().generate('a purple cat under the moon', opts);
+      const [url, init] = fetchMock.mock.calls[0];
+      return { url, method: init.method, body: init.body as string };
+    };
+
+    const none = await captureRunRequest(undefined);
+    const emptyOpts = await captureRunRequest({});
+    const emptyRefs = await captureRunRequest({ referenceImages: [] });
+
+    // Same model endpoint (Flux Pro 1.1, NOT Kontext) for all three.
+    expect(none.url).toBe('https://fal.run/fal-ai/flux-pro/v1.1');
+    expect(emptyOpts.url).toBe(none.url);
+    expect(emptyRefs.url).toBe(none.url);
+
+    // Byte-identical request bodies — no reference fields leak in.
+    expect(emptyOpts.body).toBe(none.body);
+    expect(emptyRefs.body).toBe(none.body);
+    const body = JSON.parse(none.body);
+    expect(body).not.toHaveProperty('image_url');
+    expect(body).not.toHaveProperty('image_urls');
+  });
 });

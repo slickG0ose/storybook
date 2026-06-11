@@ -1,11 +1,19 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, ShoppingCart, ChevronLeft, ChevronRight, Send, Loader2, RefreshCw, Paintbrush, Image, BookOpen, FileText, History, RotateCcw, CheckCircle2, X, GitCompare } from 'lucide-react'
+import { ArrowLeft, ShoppingCart, ChevronLeft, ChevronRight, Send, Loader2, RefreshCw, Paintbrush, Image, BookOpen, FileText, History, RotateCcw, CheckCircle2, X, GitCompare, Users } from 'lucide-react'
 import { useCart } from '../context/CartContext'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/apiBase'
+import { PER_IMAGE_COST_USD, fmtUsd, portraitStepCostNote } from '../lib/cost'
 import type { BookWithPages, BookVersion, IllustrationVersion, Page } from '../types'
 import BookSpread from '../components/BookSpread'
+
+// A character "requires" a portrait (for the approve-cast soft gate) when its
+// role is primary or antagonist — these are the identity-critical, recurring
+// figures (spec "Required character" decision). Supporting characters get an
+// optional Generate affordance but never block approval.
+const isRequiredRole = (role: string): boolean =>
+  role === 'primary' || role === 'antagonist'
 
 function formatRelativeTime(iso: string): string {
   const then = new Date(iso).getTime()
@@ -69,7 +77,7 @@ export default function BookDetail() {
     setSearchParams(next, { replace: false }) // back-button exits theater mode
   }
   const { addToCart } = useCart()
-  const { user } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const [book, setBook] = useState<BookWithPages | null>(null)
   const [currentPage, setCurrentPage] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -90,16 +98,36 @@ export default function BookDetail() {
   const [restoreError, setRestoreError] = useState('')
   const [lastRevisedVersion, setLastRevisedVersion] = useState<number | null>(null)
   const [showDiffModal, setShowDiffModal] = useState(false)
+  // Cast panel (IV2 Phase 2): per-character portrait feedback text, the index
+  // currently generating, and a per-character error. Approve-cast is a local UI
+  // flag only — NOT a persisted field (spec: no `cast_approved` column).
+  const [portraitFeedback, setPortraitFeedback] = useState<Record<number, string>>({})
+  const [generatingPortrait, setGeneratingPortrait] = useState<number | null>(null)
+  const [portraitError, setPortraitError] = useState<Record<number, string>>({})
+  const [skipPortraits, setSkipPortraits] = useState(false)
 
   const fetchBook = () => {
     const headers: Record<string, string> = {}
     if (user?.token) headers['Authorization'] = `Bearer ${user.token}`
     fetch(api(`/api/books/${id}`), { headers })
-      .then(r => r.json())
-      .then((data: BookWithPages) => { setBook(data); setLoading(false) })
+      // Match the res.ok discipline the mutation fetches use: a non-2xx
+      // response (e.g. 404 for a draft requested before auth resolves) must
+      // resolve to `null`, never the error body. Otherwise the error object
+      // is stored as `book`, slips past the `!book` guard, and crashes the
+      // render at `book.price.toFixed` (#59).
+      .then(r => (r.ok ? r.json() as Promise<BookWithPages> : null))
+      .then(data => { setBook(data); setLoading(false) })
+      .catch(() => { setBook(null); setLoading(false) })
   }
 
-  useEffect(() => { fetchBook() }, [id, user])
+  // Wait for auth to settle before the first fetch. Drafts 404 for anonymous
+  // requests, so fetching while the stored session is still resolving would
+  // 404 an owned draft. Re-runs when `user` populates so the authed refetch
+  // succeeds.
+  useEffect(() => {
+    if (authLoading) return
+    fetchBook()
+  }, [id, user, authLoading])
 
   const fetchVersions = useCallback(async (bookId: string, token: string) => {
     setVersionsLoading(true)
@@ -137,6 +165,18 @@ export default function BookDetail() {
   const page = pages[currentPage]
   const isOwner = user && book.created_by === user.id
   const isDraft = book.status === 'draft'
+
+  // Approve-cast soft gate (IV2 Phase 2). Required characters (primary +
+  // antagonist) must all have a portrait_url before the bulk Illustrate All
+  // button is enabled — OR the user explicitly skips. This is encouraging, not
+  // blocking: the skip path always re-enables illustration (the server falls
+  // back to prompt-only when portraits are absent). An empty required set (e.g.
+  // legacy books with no characters) counts as satisfied so illustration is
+  // never gated away from books that predate the Cast panel.
+  const cast = book.characters ?? []
+  const requiredCharacters = cast.filter(c => isRequiredRole(c.role))
+  const castApproved = requiredCharacters.every(c => !!c.portrait_url)
+  const canBulkIllustrate = castApproved || skipPortraits
 
   // After a revise, the most-recent BookVersion row is the prior version's
   // snapshot — i.e. the state BEFORE the revise. versions[0] is newest first.
@@ -315,6 +355,45 @@ export default function BookDetail() {
     }
   }
 
+  const handleGeneratePortrait = async (characterIndex: number) => {
+    if (!user || !book) return
+    setGeneratingPortrait(characterIndex)
+    setPortraitError(prev => ({ ...prev, [characterIndex]: '' }))
+    try {
+      const fb = (portraitFeedback[characterIndex] ?? '').trim()
+      const body: { feedback?: string } = {}
+      if (fb) body.feedback = fb
+      const res = await fetch(
+        api(`/api/books/${book.id}/characters/${characterIndex}/portrait`),
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${user.token}`,
+          },
+          body: JSON.stringify(body),
+        }
+      )
+      const parsed = await safeReadJson<BookWithPages>(res)
+      if (!res.ok) {
+        throw new Error(errorMessageFromResponse(parsed, res, 'Portrait generation failed'))
+      }
+      if (parsed === null || (typeof parsed === 'object' && 'error' in parsed)) {
+        throw new Error(errorMessageFromResponse(parsed, res, 'Portrait generation failed'))
+      }
+      // Response is the hydrated book with the new portrait_url on characters[index].
+      setBook(parsed)
+      setPortraitFeedback(prev => ({ ...prev, [characterIndex]: '' }))
+    } catch (err) {
+      setPortraitError(prev => ({
+        ...prev,
+        [characterIndex]: err instanceof Error ? err.message : 'Portrait generation failed',
+      }))
+    } finally {
+      setGeneratingPortrait(null)
+    }
+  }
+
   const loadVersions = async (pageNum: number) => {
     if (!user || !book) return
     const res = await fetch(api(`/api/books/${book.id}/illustrations/${pageNum}`), {
@@ -461,8 +540,12 @@ export default function BookDetail() {
                       if (remaining > 1 && !window.confirm(`Generate ${remaining} illustration${remaining === 1 ? '' : 's'}? Estimated cost: $${estimate}.`)) return
                       void handleIllustrate()
                     }}
-                    disabled={illustrating || pages.every(p => p.illustration_url)}
-                    title={`Generates ${pages.filter(p => !p.illustration_url).length} image(s) at ~$0.04 each`}
+                    disabled={illustrating || pages.every(p => p.illustration_url) || !canBulkIllustrate}
+                    title={
+                      !canBulkIllustrate
+                        ? 'Approve cast to illustrate with consistent characters, or skip portraits.'
+                        : `Generates ${pages.filter(p => !p.illustration_url).length} image(s) at ~$0.04 each`
+                    }
                     className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold bg-purple-500 hover:bg-purple-600 text-white transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-default"
                   >
                     {illustrating ? <Loader2 size={16} className="animate-spin" /> : <Paintbrush size={16} />}
@@ -471,7 +554,18 @@ export default function BookDetail() {
                 </>
               )}
               {illustrateError && (
-                <span className="text-sm text-red-500">{illustrateError}</span>
+                <span className="text-sm text-red-500 dark:text-red-400">{illustrateError}</span>
+              )}
+              {isDraft && isOwner && !canBulkIllustrate && (
+                <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-300">
+                  <span>Approve cast to illustrate with consistent characters.</span>
+                  <button
+                    onClick={() => setSkipPortraits(true)}
+                    className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/60 cursor-pointer border-none"
+                  >
+                    Skip portraits — illustrate anyway
+                  </button>
+                </div>
               )}
               {!isDraft && (
                 <>
@@ -493,6 +587,119 @@ export default function BookDetail() {
           </div>
         </div>
       </div>
+
+      {/* Cast panel — draft + owner only. Generate/iterate per-character
+          portraits so page illustration can reference a consistent cast. */}
+      {isOwner && isDraft && cast.length > 0 && (
+        <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-lg p-8 transition-colors mb-8">
+          <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 font-display mb-2">
+            <Users size={22} className="inline mr-2 text-purple-500 dark:text-purple-400" />
+            Cast portraits
+          </h2>
+          <p className="text-gray-500 dark:text-gray-400 mb-1">
+            Generate a portrait for each character so they stay visually consistent across every page.
+          </p>
+          <p className="text-sm text-gray-400 dark:text-gray-500 mb-6">
+            {portraitStepCostNote(requiredCharacters.length)}
+          </p>
+
+          <div className="space-y-4">
+            {cast.map((character, index) => {
+              const required = isRequiredRole(character.role)
+              const generating = generatingPortrait === index
+              const err = portraitError[index]
+              const roleTone =
+                character.role === 'primary'
+                  ? 'bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300'
+                  : character.role === 'antagonist'
+                  ? 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300'
+                  : 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300'
+              return (
+                <div
+                  key={index}
+                  className="flex flex-col sm:flex-row gap-4 p-4 rounded-2xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/30"
+                >
+                  {/* Thumbnail or placeholder */}
+                  {character.portrait_url ? (
+                    <img
+                      src={api(character.portrait_url)}
+                      alt={`Portrait of ${character.name}`}
+                      className="w-24 h-24 rounded-xl object-cover shrink-0 border border-gray-200 dark:border-gray-600"
+                    />
+                  ) : (
+                    <div
+                      className="w-24 h-24 rounded-xl shrink-0 flex items-center justify-center bg-gray-100 dark:bg-gray-800 border border-dashed border-gray-300 dark:border-gray-600 text-gray-400 dark:text-gray-500"
+                      aria-label={`No portrait for ${character.name} yet`}
+                    >
+                      <Image size={28} />
+                    </div>
+                  )}
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
+                      <span className="font-bold text-gray-800 dark:text-gray-100">{character.name}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-semibold capitalize ${roleTone}`}>
+                        {character.role}
+                      </span>
+                      {required && (
+                        <span className="text-[10px] uppercase font-bold tracking-wide text-gray-400 dark:text-gray-500">
+                          Required
+                        </span>
+                      )}
+                    </div>
+                    {(character.descriptor || character.relationship) && (
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
+                        {character.descriptor || character.relationship}
+                      </p>
+                    )}
+
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <input
+                        type="text"
+                        value={portraitFeedback[index] ?? ''}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                          setPortraitFeedback(prev => ({ ...prev, [index]: e.target.value }))
+                        }
+                        placeholder="e.g., curlier hair, friendlier smile, blue coat..."
+                        disabled={generating}
+                        className="flex-1 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 text-sm focus:border-purple-400 focus:outline-none placeholder-gray-400 dark:placeholder-gray-500 disabled:opacity-50"
+                      />
+                      <button
+                        onClick={() => void handleGeneratePortrait(index)}
+                        disabled={generating}
+                        aria-label={`${character.portrait_url ? 'Regenerate' : 'Generate'} portrait for ${character.name}`}
+                        className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 hover:bg-purple-200 dark:hover:bg-purple-900/50 cursor-pointer border-none disabled:opacity-40 whitespace-nowrap"
+                      >
+                        {generating ? <Loader2 size={14} className="animate-spin" /> : <Paintbrush size={14} />}
+                        {generating
+                          ? 'Generating...'
+                          : `${character.portrait_url ? 'Regenerate' : 'Generate portrait'} (${fmtUsd(PER_IMAGE_COST_USD)})`}
+                      </button>
+                    </div>
+                    {err && (
+                      <p className="text-sm text-red-500 dark:text-red-400 mt-2">{err}</p>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {requiredCharacters.length > 0 && (
+            <p className="text-sm mt-5 font-semibold flex items-center gap-1.5">
+              {castApproved ? (
+                <span className="inline-flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                  <CheckCircle2 size={16} /> Cast approved — required characters all have portraits.
+                </span>
+              ) : (
+                <span className="text-amber-700 dark:text-amber-300">
+                  Generate a portrait for each required character (primary &amp; antagonist) to approve the cast.
+                </span>
+              )}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* View mode toggle */}
       {pages.length > 0 && (

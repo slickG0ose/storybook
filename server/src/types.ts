@@ -28,11 +28,25 @@ export type {
   BookWithPages,
   CartItem,
   Character,
+  CharacterPortraitGenerateRequest,
+  CharacterPortraitGenerateResponse,
+  CharacterPortraitVersion,
+  CharacterPortraitVersionListResponse,
   CharacterRole,
   IllustrationVersion,
   Order,
   OrderItem,
   Page,
+} from '@storybook/shared';
+
+// Value re-exports for the portrait-endpoint Zod schemas so the routes (Task 5)
+// can `import { ... } from '../types'` rather than reaching into @storybook/shared
+// directly. Wire shapes live in shared; this is a thin re-export only.
+export {
+  CharacterPortraitGenerateRequestSchema,
+  CharacterPortraitGenerateResponseSchema,
+  CharacterPortraitVersionListResponseSchema,
+  CharacterPortraitVersionSchema,
 } from '@storybook/shared';
 
 // ---------------------------------------------------------------------------

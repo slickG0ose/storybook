@@ -19,15 +19,26 @@ import {
   IllustrationVersionListResponseSchema,
   BookIllustrationRevertRequestSchema,
   BookIllustrationRevertResponseSchema,
+  CharacterPortraitGenerateRequestSchema,
+  CharacterPortraitGenerateResponseSchema,
+  CharacterPortraitVersionListResponseSchema,
   type BookUpdatePageRequest,
   type BookReviseRequest,
   type BookIllustrateRequest,
   type BookIllustrationRevertRequest,
+  type CharacterPortraitGenerateRequest,
   type Character,
 } from '@storybook/shared';
 import prisma from '../db/prisma';
 import { getAuthUser } from './auth';
-import { generateIllustration, listIllustrationVersions, isImageGenConfigured } from '../services/illustrations';
+import {
+  generateIllustration,
+  generateCharacterPortrait,
+  listCharacterPortraitVersions,
+  listIllustrationVersions,
+  collectRequiredPortraitRefs,
+  isImageGenConfigured,
+} from '../services/illustrations';
 import { parseAiJson } from '../services/parseAiJson';
 import { validate } from '../middleware/validate';
 
@@ -659,6 +670,15 @@ router.post(
 
     const hydratedBook = hydrateBook(book);
 
+    // IV2 Phase 2: collect the required cast's portrait references (primary +
+    // antagonist with a portrait_url) and pass them to every page so characters
+    // stay consistent. Phase 2 has no per-page character mapping — the same refs
+    // ride every page. When no required character has a portrait yet, refs is
+    // empty and we pass `undefined`, which keeps generateIllustration on the
+    // byte-identical prompt-only path (no 403, no regression vs. IV1/today).
+    const portraitRefs = collectRequiredPortraitRefs(hydratedBook.characters);
+    const referenceImages = portraitRefs.length > 0 ? portraitRefs : undefined;
+
     try {
       for (const page of pagesToIllustrate) {
         const url = await generateIllustration(
@@ -668,6 +688,7 @@ router.post(
           pageNumber ? feedback : undefined,
           book.style_descriptor,
           hydratedBook.characters,
+          referenceImages,
         );
 
         if (url) {
@@ -689,6 +710,109 @@ router.post(
       const message = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: 'Failed to generate illustrations. ' + message });
     }
+  },
+);
+
+// Generate (or regenerate) one character's canonical portrait (IV2 Phase 2).
+// Mirrors /illustrate: requireAuth -> validate -> handler, owner-gated, 501 when
+// image gen is unconfigured. The character is addressed by :characterIndex (its
+// position in the hydrated `characters` array) rather than :role, because names
+// and roles aren't guaranteed unique (spec ADR sub-decision). On success the
+// handler patches characters_json[index].portrait_url to the new URL and returns
+// the full hydrated book so the client re-renders the cast.
+router.post(
+  '/:id/characters/:characterIndex/portrait',
+  requireAuth,
+  validate({
+    name: 'POST /api/books/:id/characters/:characterIndex/portrait',
+    request: CharacterPortraitGenerateRequestSchema,
+    response: CharacterPortraitGenerateResponseSchema,
+  }),
+  async (req: Request<{ id: string; characterIndex: string }>, res: Response) => {
+    const user = res.locals.user as { id: string };
+
+    if (!isImageGenConfigured()) {
+      return res.status(501).json({ error: 'Image generation not configured' });
+    }
+
+    const book = await prisma.book.findFirst({ where: { id: req.params.id, deleted_at: null } });
+    if (!book || book.created_by !== user.id) {
+      return res.status(404).json({ error: 'Book not found' });
+    }
+
+    const characterIndex = parseInt(req.params.characterIndex, 10);
+    if (!Number.isInteger(characterIndex) || characterIndex < 0) {
+      return res.status(400).json({ error: 'invalid character index' });
+    }
+
+    const hydrated = hydrateBook(book);
+    const character = hydrated.characters[characterIndex];
+    if (!character) {
+      return res.status(404).json({ error: 'Character not found' });
+    }
+
+    const { feedback } = req.body as CharacterPortraitGenerateRequest;
+
+    try {
+      const url = await generateCharacterPortrait(
+        book.id,
+        characterIndex,
+        character.name,
+        character.descriptor,
+        feedback,
+        book.style_descriptor,
+      );
+
+      if (url) {
+        // Patch only this character's portrait_url; leave every other character
+        // and every other book field untouched. Re-read the cast from the same
+        // JSON we hydrated so we round-trip the blob faithfully.
+        const characters = [...hydrated.characters];
+        characters[characterIndex] = { ...characters[characterIndex], portrait_url: url };
+        await prisma.book.update({
+          where: { id: book.id },
+          data: { characters_json: JSON.stringify(characters) },
+        });
+      }
+
+      const updated = await prisma.book.findUnique({
+        where: { id: book.id },
+        include: { pages: { orderBy: { page_number: 'asc' } } },
+      });
+
+      res.json(updated ? hydrateBook(updated) : null);
+    } catch (err: unknown) {
+      console.error('Portrait generation error:', err);
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: 'Failed to generate portrait. ' + message });
+    }
+  },
+);
+
+// List one character's portrait version history. Owner-gated; reads the
+// IllustrationVersion rows stored under that character's reserved portrait slot.
+router.get(
+  '/:id/characters/:characterIndex/portraits',
+  requireAuth,
+  validate({
+    name: 'GET /api/books/:id/characters/:characterIndex/portraits',
+    response: CharacterPortraitVersionListResponseSchema,
+  }),
+  async (req: Request<{ id: string; characterIndex: string }>, res: Response) => {
+    const user = res.locals.user as { id: string };
+
+    const book = await prisma.book.findFirst({ where: { id: req.params.id, deleted_at: null } });
+    if (!book || book.created_by !== user.id) {
+      return res.status(404).json({ error: 'Book not found' });
+    }
+
+    const characterIndex = parseInt(req.params.characterIndex, 10);
+    if (!Number.isInteger(characterIndex) || characterIndex < 0) {
+      return res.status(400).json({ error: 'invalid character index' });
+    }
+
+    const versions = await listCharacterPortraitVersions(book.id, characterIndex);
+    res.json(versions);
   },
 );
 

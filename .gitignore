@@ -21,3 +21,6 @@ server/public/*
 server/public/illustrations/*
 !server/public/illustrations/b2fa23cf-3156-4b89-83e7-82d98c32c8b7/
 server/test-results/
+
+# Playwright MCP scratch (screenshots, snapshots, console logs)
+.playwright-mcp/
