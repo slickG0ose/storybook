@@ -48,6 +48,13 @@ jobs:
           # If you switch to a custom domain or org root, set this to /.
           VITE_BASE_PATH: /storybook/
         run: npm run build
+      # SPA fallback: GitHub Pages has no client-side-router rewrite, so a
+      # direct visit or refresh on a deep route (e.g. /storybook/book/<id>)
+      # serves 404.html. Making 404.html a copy of index.html lets the bundle
+      # boot and the React Router handle the path. Assets resolve because the
+      # build emits absolute /storybook/ URLs.
+      - name: SPA fallback (404.html = index.html)
+        run: cp client/dist/index.html client/dist/404.html
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
