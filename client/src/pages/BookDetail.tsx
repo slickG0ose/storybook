@@ -77,7 +77,7 @@ export default function BookDetail() {
     setSearchParams(next, { replace: false }) // back-button exits theater mode
   }
   const { addToCart } = useCart()
-  const { user } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const [book, setBook] = useState<BookWithPages | null>(null)
   const [currentPage, setCurrentPage] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -110,11 +110,24 @@ export default function BookDetail() {
     const headers: Record<string, string> = {}
     if (user?.token) headers['Authorization'] = `Bearer ${user.token}`
     fetch(api(`/api/books/${id}`), { headers })
-      .then(r => r.json())
-      .then((data: BookWithPages) => { setBook(data); setLoading(false) })
+      // Match the res.ok discipline the mutation fetches use: a non-2xx
+      // response (e.g. 404 for a draft requested before auth resolves) must
+      // resolve to `null`, never the error body. Otherwise the error object
+      // is stored as `book`, slips past the `!book` guard, and crashes the
+      // render at `book.price.toFixed` (#59).
+      .then(r => (r.ok ? r.json() as Promise<BookWithPages> : null))
+      .then(data => { setBook(data); setLoading(false) })
+      .catch(() => { setBook(null); setLoading(false) })
   }
 
-  useEffect(() => { fetchBook() }, [id, user])
+  // Wait for auth to settle before the first fetch. Drafts 404 for anonymous
+  // requests, so fetching while the stored session is still resolving would
+  // 404 an owned draft. Re-runs when `user` populates so the authed refetch
+  // succeeds.
+  useEffect(() => {
+    if (authLoading) return
+    fetchBook()
+  }, [id, user, authLoading])
 
   const fetchVersions = useCallback(async (bookId: string, token: string) => {
     setVersionsLoading(true)

@@ -908,3 +908,47 @@ describe('BookDetail — theater mode', () => {
     })
   })
 })
+
+describe('BookDetail — non-2xx book fetch (#59 regression)', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  // Before the fix, fetchBook called r.json() unconditionally. A 404 body
+  // ({ error: ... }) was stored as `book` — truthy, so it slipped past the
+  // `if (!book)` guard, `isDraft` evaluated false, and the non-draft branch
+  // crashed at `book.price.toFixed`. The fix resolves any non-2xx to null so
+  // the "Book not found" guard catches it instead.
+  it('renders "Book not found" instead of crashing when the book GET returns 404', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url === '/api/books/book-1') {
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: 'Book not found' }), {
+            status: 404,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        )
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ error: `unmocked ${url}` }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+    })
+
+    renderBookDetail()
+
+    await waitFor(() => {
+      expect(screen.getByText('Book not found')).toBeInTheDocument()
+    })
+    // The price span from the non-draft branch must never render off a poisoned
+    // book object.
+    expect(screen.queryByText(/\$\d+\.\d{2}/)).not.toBeInTheDocument()
+  })
+})
