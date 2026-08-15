@@ -7,8 +7,8 @@ Run a single task from an approved task plan by dispatching the **developer** ag
 
 ## When to use
 
-- After the architect (`spec.md`) and planner (`tasks.md`) have produced an approved plan, and you're ready to execute one task.
-- For trivial work (1-2 file edits, single zone, no schema change), **don't use this command**. Dispatch the developer directly from the main session — or just edit yourself. `/execute-task` adds ceremony that's only worth it when the planner did real decomposition.
+- After the architect has produced an approved `spec.md` + `tasks.md`, and you're ready to execute.
+- For trivial work (1-2 file edits, single zone, no schema change), **don't use this command**. Dispatch the developer directly from the main session — or just edit yourself. `/execute-task` adds ceremony that's only worth it when the architect did real decomposition.
 
 ## Steps
 
@@ -19,13 +19,13 @@ Run a single task from an approved task plan by dispatching the **developer** ag
 
 2. **Hard refusal — no tasks.md.** If `.code-captain/specs/<slug>/tasks.md` doesn't exist, refuse with a message like:
 
-   > No task plan found at `.code-captain/specs/<slug>/tasks.md`. The harness requires spec → plan → execute: run `/edit-spec` (or have the architect draft a spec at `.code-captain/specs/<slug>/spec.md`), then dispatch the planner agent to produce `tasks.md`, then re-run `/execute-task <slug> <task-number>`.
+   > No task plan found at `.code-captain/specs/<slug>/tasks.md`. The harness requires design → execute: dispatch the architect agent to produce `spec.md` and `tasks.md`, then re-run `/execute-task <slug> <task-number>`.
 
    Do **not** attempt to plan on the fly. Do **not** fall back to dispatching the developer with a freehand prompt. This refusal is the whole point of the command — it prevents the "skip-the-spec" failure mode.
 
 3. **Load the task body.** Read `.code-captain/specs/<slug>/tasks.md` and find the requested task by its `### Task N — <title>` heading. Read the full task body: Zone, Depends on, Parallel-safe with, Files, Signatures, Tests, Manual verify, Done when.
 
-4. **Verify prerequisites.** Inspect the task's `**Depends on:**` line and parse **every** task number referenced — the planner writes both singular (`Task 2`) and plural forms (`Tasks 2 and 3`, `Tasks 1, 3, and 5`). Extract all integers from the line, then for each one grep the task plan for the corresponding `### Task N` heading and confirm `**Status:** Done` appears in its body.
+4. **Verify prerequisites.** Inspect the task's `**Depends on:**` line and parse **every** task number referenced — the architect writes both singular (`Task 2`) and plural forms (`Tasks 2 and 3`, `Tasks 1, 3, and 5`). Extract all integers from the line, then for each one grep the task plan for the corresponding `### Task N` heading and confirm `**Status:** Done` appears in its body.
    - `none` → proceed.
    - One or more numbers extracted → check each. If **any** are not Done, refuse and list every incomplete prerequisite (not just the first one) so the user knows the full gap.
 

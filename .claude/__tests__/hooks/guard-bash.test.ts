@@ -46,6 +46,12 @@ function expectAllow(cmd: string) {
   expect(r.exitCode, `expected allow (exit 0), got ${r.exitCode}. stderr: ${r.stderr}`).toBe(0);
 }
 
+/** Same as expectAllow, but against a specific project dir rather than the real repo. */
+function expectAllowIn(dir: string, cmd: string) {
+  const r = runHook(GUARD, { command: cmd }, { env: { CLAUDE_PROJECT_DIR: dir } });
+  expect(r.exitCode, `expected allow (exit 0), got ${r.exitCode}. stderr: ${r.stderr}`).toBe(0);
+}
+
 describe('guard-bash.sh — rule 1: data.json deletion', () => {
   it('blocks bare `rm data.json`', () => expectBlock('rm data.json', 'data.json'));
   it('blocks `rm -f data.json`', () => expectBlock('rm -f data.json', 'data.json'));
@@ -79,12 +85,25 @@ describe('guard-bash.sh — rule 4: force-push to protected branch', () => {
     expectAllow('git push origin master'));
 });
 
-describe('guard-bash.sh — rule 5 + 7: protected-branch operations (current branch dependent)', () => {
-  // We are on a feature branch (test/hr11-...) during the test run.
-  it('allows `git reset --hard` while on feature branch (current repo)', () =>
-    expectAllow('git reset --hard origin/master'));
-  it('allows `git commit` while on feature branch (current repo)', () =>
-    expectAllow('git commit -m wip'));
+describe('guard-bash.sh — rule 5 + 7: protected-branch operations', () => {
+  // Negative cases run against a temp repo pinned to a feature branch rather
+  // than the real repo. Reading the ambient branch made these fail on master
+  // and pass on a feature branch — the assertion tracked whoever's checkout
+  // happened to be current, not the hook's behavior.
+  describe('on temp repo with HEAD=feat/example', () => {
+    let repo: string;
+    beforeAll(() => {
+      repo = makeRepoOnBranch('feat/example');
+    });
+    afterAll(() => {
+      rmSync(repo, { recursive: true, force: true });
+    });
+
+    it('allows `git reset --hard` while on a feature branch', () =>
+      expectAllowIn(repo, 'git reset --hard origin/master'));
+    it('allows `git commit` while on a feature branch', () =>
+      expectAllowIn(repo, 'git commit -m wip'));
+  });
 
   // Positive cases — use a temp repo where HEAD is genuinely on a protected
   // branch, so the rule's `git rev-parse` returns master/main/develop.

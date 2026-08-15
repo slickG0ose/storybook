@@ -13,7 +13,7 @@ Append a new ADR entry to `.code-captain/product/decisions.md` (newest-on-top), 
 
 ## Steps
 
-1. **Locate `decisions.md`.** Path is `.code-captain/product/decisions.md`. If it doesn't exist, abort with a message — `/plan-product` should be run first to scaffold the product directory.
+1. **Locate `decisions.md`.** Path is `.code-captain/product/decisions.md`. If it doesn't exist, abort and say so — the product directory needs scaffolding before an ADR can be appended.
 
 2. **Determine the next ADR number.** Read `decisions.md`, grep for `## ADR-NNN`, take the highest existing number and add 1. Use 3-digit zero-padding (`ADR-003`, not `ADR-3`).
 

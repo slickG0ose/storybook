@@ -35,7 +35,7 @@ The slug form is the default; it maps to the canonical paths above. If a path do
 Collect candidate items from both files:
 
 - **`spec.md`** — items under the `## ADR-worthy decisions` heading. Items are checkbox bullets: `- [ ] **<decision>** — <reasoning>`.
-- **`tasks.md`** — items under **any** heading containing "ADR-worthy" or "Open questions" (case-insensitive). The planner template uses `## Open questions`; theater-mode used `## ADR-worthy items beyond the spec's existing 5`. Tolerate both. Treat `- ` and `- [ ]` bullets under such a heading as candidate items.
+- **`tasks.md`** — items under **any** heading containing "ADR-worthy" or "Open questions" (case-insensitive). The architect's task template uses `## Open questions`; theater-mode used `## ADR-worthy items beyond the spec's existing 5`. Tolerate both. Treat `- ` and `- [ ]` bullets under such a heading as candidate items.
 
 Record each item's short title (the bolded `**<decision>**` text, or the first clause of the bullet). If a bullet can't be parsed into an item, **do not drop it silently** — record it as `<unparseable — review by hand>` and surface it in the report.
 
@@ -114,6 +114,6 @@ A clean run is one paragraph ("N items, all tracked"). A failing run names every
 ## Related
 
 - `.claude/agents/reviewer.md` — Check 6 (this skill is the mechanical implementation of its ADR-item slice).
-- `.claude/agents/planner.md` — emits a "Pre-merge follow-ups" task whose Done-when runs this skill when a spec has ADR-worthy items.
+- `.claude/agents/architect.md` — emits a "Pre-merge follow-ups" task whose Done-when runs this skill when a spec has ADR-worthy items.
 - `.code-captain/product/decisions.md` — the ADR log this skill reads.
 - `feedback_surfaced-gaps-tracking` (user memory) — the policy this operationalizes: every surfaced gap needs one tracking action.

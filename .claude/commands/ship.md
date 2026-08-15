@@ -75,11 +75,9 @@ Get the current branch ready to ship. Follow the project's done criteria in `CLA
         single zone, no schema/deps)".
 
      2. AGENT OWNERSHIP — which agent did which slice. Be honest:
-          - architect: <spec authoring> (if applicable)
-          - planner: <task decomposition> (if applicable)
-          - developer: <task implementations — list which tasks>
+          - architect: <spec + task decomposition> (if applicable)
+          - developer: <task implementations — list which tasks; include e2e/test-infra work>
           - reviewer: pre-merge gate via /ship
-          - qa: <e2e / test-infra work, if any>
           - main: <orchestration, cross-zone glue, 1-line fixes>
         If only main touched the branch (docs / tooling / pure orchestration),
         write "main only — no zone code touched">

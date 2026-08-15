@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   harness-tests:
-    name: Harness tests (.claude/ schema + references + hook behavior)
+    name: Harness tests (guard-bash behavior + resolution snapshot)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -23,11 +23,16 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: npm test
-      # NOTE: a previous job had a second "Resolution snapshot is up to date"
-      # step here that ran `npm run audit:resolution && git diff --exit-code`.
-      # The vitest suite now covers that check (see
-      # .claude/__tests__/references/resolution-snapshot.test.ts), so it
-      # fires during `npm test` above — locally too, before push.
+      # The schema/reference vitest suites were removed in the 2026-08 harness
+      # simplification, and resolution-snapshot.test.ts went with them. That
+      # test was the only thing keeping harness-resolution.md from drifting, so
+      # the check moves back here as an explicit step — cheaper than a vitest
+      # file, and this is what CI is for. Run `npm run audit:resolution` and
+      # commit the result if this fails.
+      - name: Resolution snapshot is up to date
+        run: |
+          npm run audit:resolution
+          git diff --exit-code docs/conventions/harness-resolution.md
 
   server-tests:
     name: Server tests (vitest + supertest)

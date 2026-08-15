@@ -47,7 +47,7 @@ testing|server/src/__tests__/, e2e/tests/
 
 ## Docs
 CLAUDE.md|Behavioral rules — branching, delegation, guardrails, done criteria (auto-loaded by Claude Code)
-.claude/agents/{architect,planner,developer,reviewer,qa}.md|Hybrid-harness agent definitions — spec→plan→execute→review chain plus the qa e2e specialist
+.claude/agents/{architect,developer,reviewer}.md|Hybrid-harness agent definitions — design→execute→review chain
 .code-captain/docs/toc.md|Compressed codebase index with full structure and API pointers
 .code-captain/docs/tech-stack.md|Full tech stack, dependencies, tooling
 .code-captain/docs/code-style.md|Naming conventions, patterns, linting rules
