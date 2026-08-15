@@ -13,7 +13,7 @@
  * Run with: npm run db:seed-demo
  */
 import { PrismaClient } from '@prisma/client';
-import { createHash, randomBytes } from 'crypto';
+import { hashPassword } from '../src/lib/password';
 import { readFileSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -71,11 +71,10 @@ interface BookFixture {
   }[];
 }
 
-function hashPassword(password: string): string {
-  const salt = randomBytes(16).toString('hex');
-  const hash = createHash('sha256').update(salt + password).digest('hex');
-  return `${salt}:${hash}`;
-}
+// Imported from the auth route rather than re-implemented. This file used to
+// carry its own copy of the old single-round sha256 hash, which is exactly how
+// it got left behind when the real one moved to scrypt — a seeded demo user
+// would have been created with a weak hash indefinitely.
 
 function loadFixtures(): BookFixture[] {
   const files = readdirSync(FIXTURES_DIR).filter(f => f.endsWith('.json'));

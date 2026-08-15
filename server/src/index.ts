@@ -2,8 +2,22 @@
 // before any other import instantiates the Prisma client.
 import './loadEnv';
 
-// Allow self-signed certs (corporate proxy)
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+// Allow self-signed certs behind a corporate proxy. This disables TLS
+// certificate validation for EVERY outbound request the server makes —
+// including the ones carrying API keys to Anthropic and Fal — so it must never
+// be on in production. It previously ran unconditionally and shipped to Render.
+//
+// Opt in explicitly with ALLOW_INSECURE_TLS=1 when you're behind a proxy that
+// needs it; the guard refuses in production regardless.
+if (process.env.ALLOW_INSECURE_TLS === '1') {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'ALLOW_INSECURE_TLS=1 is not permitted when NODE_ENV=production — it would disable TLS certificate validation for outbound API calls.',
+    );
+  }
+  console.warn('[tls] Certificate validation DISABLED (ALLOW_INSECURE_TLS=1). Development only.');
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+}
 
 import express from 'express';
 import cors from 'cors';

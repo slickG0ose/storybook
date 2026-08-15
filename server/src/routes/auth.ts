@@ -1,22 +1,15 @@
 import { Router } from 'express';
-import { createHash, randomBytes } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import prisma from '../db/prisma';
+import { hashPassword, verifyPassword, isLegacyHash } from '../lib/password';
 import type { Request, Response } from 'express';
 
 const router = Router();
 
-function hashPassword(password: string): string {
-  const salt = randomBytes(16).toString('hex');
-  const hash = createHash('sha256').update(salt + password).digest('hex');
-  return salt + ':' + hash;
-}
-
-function verifyPassword(password: string, stored: string): boolean {
-  const [salt, hash] = stored.split(':');
-  const check = createHash('sha256').update(salt + password).digest('hex');
-  return check === hash;
-}
+// Password hashing lives in ../lib/password so the Prisma seed scripts can
+// share it without importing an Express router. Re-exported for existing
+// importers.
+export { hashPassword, verifyPassword, isLegacyHash };
 
 export async function getAuthUser(req: Request) {
   const header = req.headers.authorization;
@@ -46,8 +39,11 @@ router.post('/register', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'email, name, and password are required' });
   }
 
-  if (password.length < 4) {
-    return res.status(400).json({ error: 'Password must be at least 4 characters' });
+  // 8 is the NIST-recommended floor. Only applies to new registrations —
+  // existing accounts with shorter passwords keep working, and upgrade their
+  // hash on next login.
+  if (password.length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters' });
   }
 
   const existing = await prisma.user.findFirst({ where: { email, deleted_at: null } });
@@ -84,7 +80,17 @@ router.post('/login', async (req: Request, res: Response) => {
   }
 
   const token = uuidv4();
-  await prisma.user.update({ where: { id: user.id }, data: { token } });
+
+  // Transparently upgrade legacy sha256 hashes now that we've verified the
+  // plaintext. This is the only moment we hold it, so it's the only chance to
+  // re-hash without forcing a reset. Written in the same update as the token
+  // so a successful login is one round-trip either way.
+  const data: { token: string; password_hash?: string } = { token };
+  if (isLegacyHash(user.password_hash)) {
+    data.password_hash = hashPassword(password);
+  }
+
+  await prisma.user.update({ where: { id: user.id }, data });
 
   res.json({ id: user.id, email: user.email, name: user.name, role: user.role, token });
 });
