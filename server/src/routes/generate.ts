@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import Anthropic from '@anthropic-ai/sdk';
 import prisma from '../db/prisma';
-import { getAuthUser } from './auth';
+import { requireAuth } from '../middleware/requireAuth';
 import {
   generateCover,
   generateIllustration,
@@ -96,7 +96,13 @@ function formatCharacter(c: Character): string {
 
 const router = Router();
 
-router.post('/', async (req: Request, res: Response) => {
+// requireAuth runs BEFORE the handler on purpose. This route bills the
+// project's own Anthropic key (and, in cover/full preview modes, the image
+// provider) — and it does so before it ever touches the database, so an
+// anonymous request costs real money even when the DB is unreachable. It was
+// previously ungated on a public deployment; see #5/#6 for the allowlist and
+// spend-ceiling layers that sit on top of this gate.
+router.post('/', requireAuth, async (req: Request, res: Response) => {
   const body = req.body as GenerateRequestBody;
   const { theme, ageRange, additionalDetails, styleDescriptor, styleReferenceUrl } = body;
   const previewMode: PreviewMode = body.previewMode && VALID_PREVIEW_MODES.includes(body.previewMode)
@@ -161,12 +167,13 @@ Make the story warm, engaging, and age-appropriate. Use vivid but simple languag
 
     const story = parseAiJson(content) as GeneratedStory;
 
-    const user = await getAuthUser(req);
+    // requireAuth guarantees this is populated.
+    const user = res.locals.user as { id: string; name: string };
 
     let book = await prisma.book.create({
       data: {
         title: story.title,
-        author: user ? user.name : 'AI Storybook',
+        author: user.name,
         description: story.description,
         theme,
         age_range: ageRange,
@@ -175,12 +182,15 @@ Make the story warm, engaging, and age-appropriate. Use vivid but simple languag
         price: 24.99,
         is_featured: false,
         is_user_created: true,
-        status: user ? 'draft' : 'published',
+        // Always 'draft' now that the route requires auth. The old
+        // `user ? 'draft' : 'published'` meant an anonymous generate landed
+        // straight in the public catalog with no owner who could unpublish it.
+        status: 'draft',
         version: 1,
         characters_json: JSON.stringify(characters),
         style_descriptor: styleDescriptor?.trim() || null,
         style_reference_url: styleReferenceUrl?.trim() || null,
-        created_by: user?.id ?? null,
+        created_by: user.id,
         pages: {
           create: story.pages.map((page, i) => ({
             page_number: i + 1,

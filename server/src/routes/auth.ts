@@ -1,21 +1,57 @@
 import { Router } from 'express';
-import { createHash, randomBytes } from 'crypto';
+import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import prisma from '../db/prisma';
 import type { Request, Response } from 'express';
 
 const router = Router();
 
-function hashPassword(password: string): string {
+/**
+ * Password hashing.
+ *
+ * Stored format is `scrypt:<salt>:<hash>`. The legacy format was a bare
+ * `<salt>:<hash>` of a SINGLE sha256 round — fast enough to brute-force
+ * offline, which is the whole problem: a fast hash is a weak hash. scrypt is
+ * deliberately slow and memory-hard.
+ *
+ * Legacy hashes still verify, so nobody is locked out. On a successful login
+ * against a legacy hash we transparently re-hash to scrypt (see the login
+ * handler), so the old format drains as users sign in rather than needing a
+ * migration or a forced reset.
+ *
+ * scrypt is in Node's stdlib — no new dependency, which also keeps this off
+ * the CLAUDE.md "new dependency" guardrail.
+ */
+const SCRYPT_PREFIX = 'scrypt';
+const SCRYPT_KEYLEN = 64;
+
+export function hashPassword(password: string): string {
   const salt = randomBytes(16).toString('hex');
-  const hash = createHash('sha256').update(salt + password).digest('hex');
-  return salt + ':' + hash;
+  const hash = scryptSync(password, salt, SCRYPT_KEYLEN).toString('hex');
+  return `${SCRYPT_PREFIX}:${salt}:${hash}`;
 }
 
-function verifyPassword(password: string, stored: string): boolean {
-  const [salt, hash] = stored.split(':');
-  const check = createHash('sha256').update(salt + password).digest('hex');
-  return check === hash;
+/** True when the stored hash still uses the legacy single-round sha256 format. */
+export function isLegacyHash(stored: string): boolean {
+  return !stored.startsWith(`${SCRYPT_PREFIX}:`);
+}
+
+export function verifyPassword(password: string, stored: string): boolean {
+  if (isLegacyHash(stored)) {
+    const [salt, hash] = stored.split(':');
+    if (!salt || !hash) return false;
+    const check = createHash('sha256').update(salt + password).digest('hex');
+    // Both sides are fixed-length hex of our own making, so the lengths match
+    // and timingSafeEqual won't throw.
+    return timingSafeEqual(Buffer.from(check, 'hex'), Buffer.from(hash, 'hex'));
+  }
+
+  const [, salt, hash] = stored.split(':');
+  if (!salt || !hash) return false;
+  const check = scryptSync(password, salt, SCRYPT_KEYLEN);
+  const expected = Buffer.from(hash, 'hex');
+  if (check.length !== expected.length) return false;
+  return timingSafeEqual(check, expected);
 }
 
 export async function getAuthUser(req: Request) {
@@ -46,8 +82,11 @@ router.post('/register', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'email, name, and password are required' });
   }
 
-  if (password.length < 4) {
-    return res.status(400).json({ error: 'Password must be at least 4 characters' });
+  // 8 is the NIST-recommended floor. Only applies to new registrations —
+  // existing accounts with shorter passwords keep working, and upgrade their
+  // hash on next login.
+  if (password.length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters' });
   }
 
   const existing = await prisma.user.findFirst({ where: { email, deleted_at: null } });
@@ -84,7 +123,17 @@ router.post('/login', async (req: Request, res: Response) => {
   }
 
   const token = uuidv4();
-  await prisma.user.update({ where: { id: user.id }, data: { token } });
+
+  // Transparently upgrade legacy sha256 hashes now that we've verified the
+  // plaintext. This is the only moment we hold it, so it's the only chance to
+  // re-hash without forcing a reset. Written in the same update as the token
+  // so a successful login is one round-trip either way.
+  const data: { token: string; password_hash?: string } = { token };
+  if (isLegacyHash(user.password_hash)) {
+    data.password_hash = hashPassword(password);
+  }
+
+  await prisma.user.update({ where: { id: user.id }, data });
 
   res.json({ id: user.id, email: user.email, name: user.name, role: user.role, token });
 });

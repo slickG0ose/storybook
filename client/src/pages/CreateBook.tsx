@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { Sparkles, Wand2, Loader2, Plus, X } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/apiBase'
@@ -544,6 +544,16 @@ export default function CreateBook() {
               </div>
             </div>
 
+            {!user && (
+              <div className="bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 p-4 rounded-xl mt-4">
+                <p className="font-semibold">Sign in to generate your story</p>
+                <p className="text-sm mt-1">
+                  Generating a story uses paid AI, so it's limited to signed-in accounts. Your
+                  choices here are kept — <Link to="/login" className="underline font-semibold">sign in</Link> and come right back.
+                </p>
+              </div>
+            )}
+
             {error && (
               <div className="bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 p-4 rounded-xl mt-4">
                 {error}
@@ -574,7 +584,9 @@ export default function CreateBook() {
           ) : (
             <button
               onClick={() => void handleGenerate()}
-              className="flex items-center gap-2 px-8 py-3 rounded-xl font-bold bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:shadow-lg transition-shadow cursor-pointer"
+              disabled={!user}
+              title={!user ? 'Sign in to generate a story' : undefined}
+              className="flex items-center gap-2 px-8 py-3 rounded-xl font-bold bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:shadow-lg transition-shadow cursor-pointer disabled:opacity-40 disabled:cursor-default disabled:hover:shadow-none"
             >
               <Wand2 size={18} />
               Generate My Story
