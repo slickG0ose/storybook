@@ -69,7 +69,7 @@ Plus `master`/`main` (which shouldn't have PRs against itself, but is valid as a
 
 If `.code-captain/specs/<slug>/spec.md` exists for the feature being shipped (named in the PR body, the branch name, or recent commit messages), open it and compare:
 
-- **Scope creep:** files in the diff that aren't mentioned anywhere in the spec's "Files likely touched" section or the planner's tasks. Allow non-listed files only when (a) they're tests for explicitly-listed files, or (b) they're auto-generated (migrations folder, `package-lock.json`, `harness-resolution.md`).
+- **Scope creep:** files in the diff that aren't mentioned anywhere in the spec's "Files likely touched" section or the task plan. Allow non-listed files only when (a) they're tests for explicitly-listed files, or (b) they're auto-generated (migrations folder, `package-lock.json`, `harness-resolution.md`).
 - **Unimplemented spec items:** sections of the spec's "Proposed shape" / "Schema changes" that the diff does NOT touch, when the PR body claims the spec is being implemented (vs. partially implemented as one task).
 - **One-task-at-a-time discipline:** if the PR body says "implements Task 3" but the diff includes work outside Task 3's scope, flag it.
 

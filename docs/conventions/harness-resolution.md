@@ -23,25 +23,18 @@ Highest precedence first:
 
 | Name | Tier | Description |
 |------|------|-------------|
-| architect | project | Use proactively for non-trivial requests — features touching more than ~3 files, data-shape changes, new external dependencies, ambiguous "should we…" decisions, or anything that touches a CLAUDE.md guardrail. Produces a spec at .code-captain/specs/<slug>/spec.md and surfaces ADR-worthy decisions for /create-adr. Never edits source code. |
-| developer | project | Use for implementing a SINGLE task from an approved planner output at .code-captain/specs/<slug>/tasks.md. Full-stack — replaces the booksmith / storefront pair for execution. One task per dispatch, with the task identified explicitly in the dispatch prompt. Runs tests + typecheck before claiming completion. Writes code; never opens PRs, never commits, never runs destructive commands. |
-| planner | project | Use proactively once an approved spec exists at .code-captain/specs/<slug>/spec.md and the work is ready to execute. Decomposes the spec into 3–12 ordered tasks at .code-captain/specs/<slug>/tasks.md — each naming files, signatures, tests, and manual-verify steps. Skip for trivial work (1–2 file edits in a single zone); the main session dispatches the developer directly in that case. |
-| qa | project | Use proactively for new Playwright e2e specs under e2e/tests/, test infrastructure changes (vitest configs, playwright config, test setup files), and cross-zone test reviews. The developer agent owns its own zone's unit tests; route to qa when work spans zones or specifically touches e2e or test configs. |
+| architect | project | Use proactively for non-trivial requests — features touching more than ~3 files, data-shape changes, new external dependencies, ambiguous "should we…" decisions, or anything that touches a CLAUDE.md guardrail. Produces both the spec and the task plan at .code-captain/specs/<slug>/{spec.md,tasks.md}, and surfaces ADR-worthy decisions for /create-adr. Never edits source code. |
+| developer | project | Use for implementing named task(s) from an approved plan at .code-captain/specs/<slug>/tasks.md. Full-stack across client, server, shared, and e2e — also owns Playwright specs and test infrastructure. Runs tests + typecheck before claiming completion. Writes code; never opens PRs, never commits, never runs destructive commands. |
 | reviewer | project | Use as the pre-merge gate. Compares a branch's diff (or an existing PR's diff) against the spec, the CLAUDE.md guardrails, and the project's conventions. Surfaces scope creep, missing wire-shape assertions, missing dark-mode parity, guardrail touches, branch-name violations, and unaddressed "surfaced gaps" from the developer's hand-back. Read-only — flags issues, never fixes them. |
 
 ## Commands
 
 | Name | Tier | Description |
 |------|------|-------------|
-| /backlog | project | Browse open GitHub issues grouped by milestone. Read-only — use to pick the next task before /start-task. |
 | /create-adr | project | Append a new ADR to .code-captain/product/decisions.md — capture an architectural decision with rationale, alternatives, and consequences |
-| /edit-spec | project | Modify an existing feature spec at .code-captain/specs/<slug>/spec.md. Confirms intent and shows a diff before writing. |
 | /execute-task | project | Dispatch the developer agent to implement one task from .code-captain/specs/<slug>/tasks.md. Refuses to run if no tasks.md exists — forces the spec → plan → execute discipline. |
-| /plan-product | project | Scaffold or refresh .code-captain/product/ — mission, roadmap, decisions log. Idempotent: never overwrites existing content. |
 | /ship | project | Pre-flight a branch for PR — detect changed zones, run their tests, lint, draft commit + PR |
 | /start-task | project | Start a new task — pick a backlog item, create a properly-named branch + worktree, scaffold a scratchpad |
-| /status | project | Orient to the current state of work — git, PRs, backlog, suggested next actions. Use when starting a fresh session or switching context. |
-| /verify | project | Run tests, lint, and type checks for the zones changed on this branch. Mid-task sanity check — no commit, no PR. |
 
 ## Skills
 

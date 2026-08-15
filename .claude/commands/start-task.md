@@ -1,17 +1,17 @@
 ---
-description: Start a new task — pick a backlog item, create a properly-named branch + worktree, scaffold a scratchpad
-argument-hint: [backlog-id] (optional, e.g. T2.5, OPS.1)
+description: Start a new task — pick an open issue, create a properly-named branch + worktree, scaffold a scratchpad
+argument-hint: [issue-number] (optional, e.g. 26)
 ---
 
 Kick off a new task following the project's branching convention in `CLAUDE.md`.
 
 ## Steps
 
-1. **Read** `docs/backlog.md` to see what's open.
+1. **Read the open backlog** with `gh issue list --state open` (add `--milestone <name>` to narrow). GitHub Issues is the live backlog — `docs/backlog.md` is a frozen pre-migration archive, so don't pick work from it.
 
 2. **Pick the item:**
-   - If an argument was provided, look up that backlog ID (e.g., `T2.5`, `OPS.1`) and confirm the task with the user in one sentence.
-   - Otherwise, list open items grouped by tier (skip `[x]` done ones) and ask which to start.
+   - If an argument was provided, `gh issue view <number>` and confirm the task with the user in one sentence.
+   - Otherwise, list open issues grouped by milestone and ask which to start.
 
 3. **Propose a branch name** following the convention:
    - Type prefix from `feat/ | fix/ | chore/ | docs/ | test/ | refactor/`
@@ -39,12 +39,12 @@ Kick off a new task following the project's branching convention in `CLAUDE.md`.
 
    Skip this step only if the task is docs-only and explicitly doesn't need a runnable server/client.
 
-6. **Scaffold a scratchpad** by appending to the "Working notes" section of `docs/backlog.md`:
+6. **Scaffold a scratchpad** at `.code-captain/specs/<slug>/notes.md` (create the folder if the task will get a spec; otherwise skip this step for trivial work). Never append to `docs/backlog.md` — it's a frozen archive.
 
    ```
    ### <branch-name> — <today's date>
 
-   **Backlog:** <ID or GitHub issue #> — <one-line task summary>
+   **Issue:** #<number> — <one-line task summary>
    **Spec:** <.code-captain/specs/<slug>/spec.md path, or "trivial — no spec">
 
    **Plan**
@@ -65,8 +65,8 @@ Kick off a new task following the project's branching convention in `CLAUDE.md`.
    |---|---|---|
    | **Trivial** (1–2 files, single zone, no schema/deps) | n/a | Edit inline in main, OR dispatch `@developer` directly with a freehand prompt |
    | **Trivial cross-zone** (rename, move) | n/a | Edit inline in main |
-   | **Non-trivial** | No `.code-captain/specs/<slug>/spec.md` | Dispatch `@architect` (Agent tool, `subagent_type: architect`) to draft a fresh spec |
-   | **Non-trivial** | Spec exists, no `tasks.md` | Dispatch `@planner` (Agent tool, `subagent_type: planner`) to decompose |
+   | **Non-trivial** | No `.code-captain/specs/<slug>/spec.md` | Dispatch `@architect` (Agent tool, `subagent_type: architect`) to draft the spec **and** task plan |
+   | **Non-trivial** | Spec exists, no `tasks.md` | Re-dispatch `@architect` to decompose the existing spec into `tasks.md` |
    | **Non-trivial** | Spec + `tasks.md` exist | Suggest `/execute-task <slug> <task-number>` for the first incomplete task |
 
    Ask the user to confirm the route before dispatching. Do **not** start implementing — the goal of this command is setup + correct routing into the chain.

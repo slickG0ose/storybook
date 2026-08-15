@@ -61,20 +61,21 @@ cd e2e && npm run test:ui
 
 ## How work flows (hybrid harness)
 
-Non-trivial work flows through a four-role chain. Each role has one job; together they enforce spec → plan → execute → review before anything merges.
+Non-trivial work flows through a three-role chain: design → execute → review before anything merges.
 
 | Role | Dispatched via | Produces |
 |------|----------------|----------|
-| **architect** | `@architect` Agent call, or `/edit-spec` for revisions | `.code-captain/specs/<slug>/spec.md` |
-| **planner** | `@planner` Agent call | `.code-captain/specs/<slug>/tasks.md` (3–12 ordered tasks) |
-| **developer** | `/execute-task <slug> <task>` (preferred) or direct `@developer` Agent call | Code changes for one task, run tests, `Status: Done` marker |
+| **architect** | `@architect` Agent call (re-dispatch to revise) | `.code-captain/specs/<slug>/spec.md` **and** `tasks.md` (3–12 ordered tasks) |
+| **developer** | `/execute-task <slug> <task>` (preferred) or direct `@developer` Agent call | Code changes, tests run, `Status: Done` marker per task |
 | **reviewer** | Dispatched automatically by `/ship` (read-only, pre-merge gate) | Findings report — never fixes |
 
-The chain is enforced mechanically: `/execute-task` refuses to run without an approved `tasks.md`. Skipping the spec or plan to "just dispatch the developer with a prompt" sidesteps the discipline this exists to enforce.
+The chain is enforced mechanically: `/execute-task` refuses to run without an approved `tasks.md`. Skipping the spec to "just dispatch the developer with a prompt" sidesteps the discipline this exists to enforce.
+
+The architect owns both design and decomposition — they draw on the same context, so splitting them across two dispatches only re-derived it. The reviewer stays a separate role on purpose: independent review works because the reviewer didn't write the code.
 
 ### Size gate — when the chain is required
 
-You **must** route through the architect → planner → developer chain when **any** of these are true:
+You **must** route through the architect → developer chain when **any** of these are true:
 
 - **>3 files** likely to change (envelope estimate, not exact)
 - **Data shape change** — Prisma schema, Zod wire shapes in `@storybook/shared`, seed data shape
@@ -85,9 +86,9 @@ You **may bypass** the chain for:
 
 - **1–2 file edits** in a single zone → edit inline in main session
 - **Trivial cross-zone change** (rename, move, single import update) → edit inline
-- **Single-task feature, single zone, no schema/deps** → dispatch `@developer` directly with a freehand prompt; skip spec/plan
+- **Single-task feature, single zone, no schema/deps** → dispatch `@developer` directly with a freehand prompt; skip the spec
 
-When in doubt, lean toward the chain. The overhead is small (one architect dispatch, one planner dispatch) and the audit trail is preserved.
+When in doubt, lean toward the chain. The overhead is one architect dispatch, and the audit trail is preserved.
 
 ### Reviewer agent and mechanical-check skills
 
@@ -99,11 +100,11 @@ The reviewer runs six checks on every `/ship`. Two of them invoke project-local 
 
 The reviewer is read-only. Findings come back as a report; the user (or a follow-up developer dispatch) addresses them. Surfaced-gaps follow-through (Check 6) ensures developer-hand-back "Surprises" don't get orphaned.
 
-### Legacy zone-owner agents
+### Retired agents
 
-The **storefront** and **booksmith** zone-specialist agents have been retired and removed (archived for a stability window after HR10, then deleted in #55). The full-stack `@developer` agent replaces both, reading `docs/conventions/{server,client}.md` on demand for zone-specific patterns.
+The **storefront** and **booksmith** zone-specialists were retired in #55 — the full-stack `@developer` replaces both, reading `docs/conventions/{server,client}.md` on demand.
 
-`@qa` remains active. It owns net-new Playwright e2e specs and cross-zone test-infrastructure changes — work that doesn't fit `@developer`'s one-task-per-dispatch shape.
+**planner** and **qa** were retired in the 2026-08 harness simplification. The architect absorbed task decomposition; the developer absorbed Playwright e2e specs and test infrastructure (conventions in `docs/conventions/testing.md`).
 
 **ALWAYS record plan/spec link + agent ownership in the PR body** — `/ship` drafts this from the work you actually did, so the audit trail stays visible.
 
@@ -136,6 +137,7 @@ NEVER claim a feature complete until ALL of:
 - **Backlog (archive):** `docs/backlog.md` — pre-migration, preserved for OPS conventions
 - **Research:** `docs/marketing-research.md`, `docs/print-publishing-research.md`
 - **Conventions:** `docs/conventions/{server,client,testing,data}.md` — stack details, patterns, when-adding-a-new-X recipes; **`docs/conventions/harness-resolution.md`** — auto-generated snapshot of how every `.claude/` item resolves
-- **Active agents:** `.claude/agents/{architect,planner,developer,reviewer,qa}.md` — chain + e2e specialist
+- **Active agents:** `.claude/agents/{architect,developer,reviewer}.md`
+- **Commands:** `.claude/commands/{start-task,execute-task,ship,create-adr}.md`
 - **Mechanical-check skills:** `.claude/skills/{wire-shape-check,dark-mode-parity-check,adr-tracking-check}/SKILL.md`
 - **Codebase map:** `AGENTS.md` (entry point), `.code-captain/docs/{toc,architecture,tech-stack,code-style,objective}.md` (deep reference)
