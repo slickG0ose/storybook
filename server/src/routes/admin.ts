@@ -10,12 +10,18 @@ import {
   AdminUserRestoreResponseSchema,
   OrphanIllustrationListResponseSchema,
   OrphanDeleteResponseSchema,
+  AllowlistResponseSchema,
+  AllowlistAddRequestSchema,
+  AllowlistDeleteResponseSchema,
+  AllowedEmailSchema,
+  type AllowlistAddRequest,
   type AdminBookFeaturedRequest,
   type Character,
 } from '@storybook/shared';
 import prisma from '../db/prisma';
 import { getAuthUser, requireAdmin } from './auth';
 import { validate } from '../middleware/validate';
+import { normalizeEmail } from '../services/allowlist';
 
 const router = Router();
 
@@ -79,6 +85,10 @@ async function adminGate(req: Request, res: Response, next: NextFunction): Promi
     res.status(403).json({ error: 'Admin access required' });
     return;
   }
+  // Expose the admin to downstream handlers, matching requireAuth. Without
+  // this, attributing an action to the admin who took it (e.g. allowlist
+  // added_by) silently records null instead of failing loudly.
+  res.locals.user = admin;
   next();
 }
 
@@ -299,3 +309,74 @@ router.delete(
 );
 
 export default router;
+
+// ---------------------------------------------------------------------------
+// Registration allowlist (F4a / #5)
+// ---------------------------------------------------------------------------
+
+router.get(
+  '/allowlist',
+  adminGate,
+  validate({
+    name: 'GET /api/admin/allowlist',
+    response: AllowlistResponseSchema,
+  }),
+  async (_req: Request, res: Response) => {
+    const rows = await prisma.allowedEmail.findMany({ orderBy: { created_at: 'desc' } });
+    res.json(rows);
+  },
+);
+
+router.post(
+  '/allowlist',
+  adminGate,
+  validate({
+    name: 'POST /api/admin/allowlist',
+    request: AllowlistAddRequestSchema,
+    response: AllowedEmailSchema,
+  }),
+  async (req: Request, res: Response) => {
+    const { email, note } = req.body as AllowlistAddRequest;
+    const admin = res.locals.user as { email: string } | undefined;
+    const normalized = normalizeEmail(email);
+
+    const existing = await prisma.allowedEmail.findUnique({ where: { email: normalized } });
+    if (existing) {
+      return res.status(409).json({ error: 'That email is already on the allowlist' });
+    }
+
+    const row = await prisma.allowedEmail.create({
+      data: {
+        email: normalized,
+        added_by: admin?.email ?? null,
+        note: note?.trim() || null,
+      },
+    });
+
+    res.status(201).json(row);
+  },
+);
+
+router.delete(
+  '/allowlist/:email',
+  adminGate,
+  validate({
+    name: 'DELETE /api/admin/allowlist/:email',
+    response: AllowlistDeleteResponseSchema,
+  }),
+  async (req: Request<{ email: string }>, res: Response) => {
+    const normalized = normalizeEmail(req.params.email);
+
+    const existing = await prisma.allowedEmail.findUnique({ where: { email: normalized } });
+    if (!existing) {
+      return res.status(404).json({ error: 'That email is not on the allowlist' });
+    }
+
+    // Removing an email from the allowlist does NOT delete or disable an
+    // account that already registered with it — it only prevents a NEW
+    // registration. Use the soft-delete user endpoints to revoke access.
+    await prisma.allowedEmail.delete({ where: { email: normalized } });
+
+    res.json({ success: true, removed: normalized });
+  },
+);

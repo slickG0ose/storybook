@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';
 import type { Express } from 'express';
-import { createTestApp, resetDatabase } from '../../__tests__/setup';
+import { createTestApp, resetDatabase, allowEmail } from '../../__tests__/setup';
 import prisma from '../../db/prisma';
 
 // Stub the Anthropic SDK at module boundary so /revise tests can drive the
@@ -49,6 +49,7 @@ function mockClaudeReviseResponse(pages: { text: string; illustrationDescription
 }
 
 async function createUserAndGetToken(app: Express) {
+  await allowEmail('author@example.com');
   const res = await request(app).post('/api/auth/register').send({
     email: 'author@example.com',
     name: 'Author',
@@ -319,6 +320,7 @@ describe('Books API routes', () => {
       await setupDraftWithSnapshot(ownerToken);
 
       // Register a second user and try to restore using their token.
+      await allowEmail('intruder@example.com');
       const otherRes = await request(app).post('/api/auth/register').send({
         email: 'intruder@example.com',
         name: 'Intruder',

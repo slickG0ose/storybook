@@ -2,7 +2,7 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import Admin from '../Admin'
-import type { AdminUser, AdminBook, OrphanIllustration, User } from '../../types'
+import type { AdminUser, AdminBook, OrphanIllustration, AllowedEmail, User } from '../../types'
 
 const adminUser: User = {
   id: 'admin-1',
@@ -112,10 +112,21 @@ interface FetchCall {
   init?: RequestInit
 }
 
+const sampleAllowlist: AllowedEmail[] = [
+  {
+    email: 'invited@example.com',
+    added_by: 'admin@example.com',
+    note: 'beta tester',
+    created_at: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
+  },
+]
+
 function setupFetchMock(opts: {
   users?: AdminUser[]
   books?: AdminBook[]
   orphans?: OrphanIllustration[]
+  allowlist?: AllowedEmail[]
+  addAllowlistStatus?: number
   restoredUser?: AdminUser
   restoredBook?: AdminBook
   featuredBook?: AdminBook
@@ -138,6 +149,47 @@ function setupFetchMock(opts: {
     if (url === '/api/admin/books' && method === 'GET') {
       return Promise.resolve(
         new Response(JSON.stringify(opts.books ?? sampleBooks), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+    }
+    if (url === '/api/admin/allowlist' && method === 'GET') {
+      return Promise.resolve(
+        new Response(JSON.stringify(opts.allowlist ?? sampleAllowlist), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+    }
+    if (url === '/api/admin/allowlist' && method === 'POST') {
+      const status = opts.addAllowlistStatus ?? 201
+      const body = init?.body ? (JSON.parse(init.body as string) as { email: string; note?: string }) : { email: '' }
+      if (status >= 200 && status < 300) {
+        const created: AllowedEmail = {
+          email: body.email.toLowerCase(),
+          added_by: 'admin@example.com',
+          note: body.note ?? null,
+          created_at: new Date().toISOString(),
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify(created), {
+            status,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        )
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ error: 'That email is already on the allowlist' }), {
+          status,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+    }
+    if (/^\/api\/admin\/allowlist\/[^/]+$/.test(url) && method === 'DELETE') {
+      const email = decodeURIComponent(url.split('/').pop()!)
+      return Promise.resolve(
+        new Response(JSON.stringify({ success: true, removed: email }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         }),
@@ -429,6 +481,121 @@ describe('Admin page', () => {
     // After update, that book should now be unfeatured (button label flips).
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /Feature Featured Book/i })).toBeInTheDocument()
+    })
+  })
+
+  // ---------------------------------------------------------------------
+  // Registration allowlist (F4a / #5)
+  // ---------------------------------------------------------------------
+
+  it('renders the Allowlist tab and its entries', async () => {
+    setupFetchMock()
+    renderAdmin()
+
+    const tab = screen.getByRole('button', { name: /^Allowlist/ })
+    expect(tab).toBeInTheDocument()
+
+    await act(async () => {
+      fireEvent.click(tab)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('invited@example.com')).toBeInTheDocument()
+    })
+    expect(screen.getByText('beta tester')).toBeInTheDocument()
+    expect(screen.getByText('admin@example.com')).toBeInTheDocument()
+  })
+
+  it('adds an email and shows it in the table', async () => {
+    const { calls } = setupFetchMock()
+    renderAdmin()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^Allowlist/ }))
+    })
+
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Email to allow'), {
+        target: { value: 'newcomer@example.com' },
+      })
+      fireEvent.change(screen.getByLabelText('Note'), { target: { value: 'friend' } })
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('newcomer@example.com')).toBeInTheDocument()
+    })
+
+    const post = calls.find(c => c.url === '/api/admin/allowlist' && c.init?.method === 'POST')
+    expect(post).toBeDefined()
+    expect(JSON.parse(post!.init!.body as string)).toEqual({
+      email: 'newcomer@example.com',
+      note: 'friend',
+    })
+  })
+
+  it('surfaces a duplicate-email error without clearing the input', async () => {
+    setupFetchMock({ addAllowlistStatus: 409 })
+    renderAdmin()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^Allowlist/ }))
+    })
+
+    const input = screen.getByLabelText('Email to allow') as HTMLInputElement
+    await act(async () => {
+      fireEvent.change(input, { target: { value: 'invited@example.com' } })
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Add' }))
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText(/already on the allowlist/i)).toBeInTheDocument()
+    })
+    // The address stays put so a typo can be corrected rather than retyped.
+    expect(input.value).toBe('invited@example.com')
+  })
+
+  it('removes an email from the table', async () => {
+    const { calls } = setupFetchMock()
+    renderAdmin()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^Allowlist/ }))
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('invited@example.com')).toBeInTheDocument()
+    })
+
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Remove invited@example.com from the allowlist' }),
+      )
+    })
+
+    await waitFor(() => {
+      expect(screen.queryByText('invited@example.com')).not.toBeInTheDocument()
+    })
+
+    const del = calls.find(c => c.init?.method === 'DELETE' && c.url.includes('/allowlist/'))
+    expect(del).toBeDefined()
+  })
+
+  it('warns when nobody is allowlisted', async () => {
+    setupFetchMock({ allowlist: [] })
+    renderAdmin()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^Allowlist/ }))
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText(/no new accounts can be created/i)).toBeInTheDocument()
     })
   })
 })

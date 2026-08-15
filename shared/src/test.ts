@@ -23,3 +23,21 @@ export const TestUserDeleteResponseSchema = z.object({
   deleted: z.number().int().min(0).max(1),
 });
 export type TestUserDeleteResponse = z.infer<typeof TestUserDeleteResponseSchema>;
+
+// POST /api/_test/allow-email — put an address on the registration allowlist
+// so a Playwright spec can register it. Registration is closed by default
+// (F4a / #5); this is a test-only shortcut behind the same NODE_ENV +
+// x-test-secret guards as the cleanup endpoint above, NOT a bypass of the
+// gate itself — the spec still goes through the real /api/auth/register.
+export const TestAllowEmailRequestSchema = z.object({
+  email: z
+    .string({ required_error: 'email is required' })
+    .min(1, 'email is required'),
+});
+export type TestAllowEmailRequest = z.infer<typeof TestAllowEmailRequestSchema>;
+
+export const TestAllowEmailResponseSchema = z.object({
+  ok: z.literal(true),
+  email: z.string(),
+});
+export type TestAllowEmailResponse = z.infer<typeof TestAllowEmailResponseSchema>;

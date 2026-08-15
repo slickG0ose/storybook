@@ -4,7 +4,7 @@ import type { Express } from 'express';
 import { mkdir, rm, writeFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join, resolve } from 'path';
-import { createTestApp, resetDatabase } from '../../__tests__/setup';
+import { createTestApp, resetDatabase, allowEmail } from '../../__tests__/setup';
 import prisma from '../../db/prisma';
 
 // Mirrors ILLUSTRATIONS_DIR computation in admin.ts. The test file lives at
@@ -35,6 +35,7 @@ async function createUserAndGetToken(
   email: string,
   role: 'user' | 'admin' = 'user',
 ): Promise<{ token: string; userId: string }> {
+  await allowEmail(email);
   const reg = await request(app).post('/api/auth/register').send({
     email,
     name: email.split('@')[0],

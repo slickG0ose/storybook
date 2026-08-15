@@ -3,7 +3,7 @@ import request from 'supertest';
 import express, { type Express } from 'express';
 import authRouter from '../auth';
 import testRouter from '../test';
-import { resetDatabase } from '../../__tests__/setup';
+import { resetDatabase, allowEmail } from '../../__tests__/setup';
 import prisma from '../../db/prisma';
 
 // Build a test app that mounts the cleanup router behind the same path
@@ -70,6 +70,7 @@ describe('Test-only cleanup routes', () => {
 
     it('deletes a registered user and is idempotent on a second call', async () => {
       const email = 'cleanup-target@example.com';
+      await allowEmail(email);
       const register = await request(app)
         .post('/api/auth/register')
         .send({ email, name: 'Cleanup Target', password: 'pw-test-1234' });

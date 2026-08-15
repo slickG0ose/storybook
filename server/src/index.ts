@@ -31,6 +31,7 @@ import uploadsRouter from './routes/uploads';
 import adminRouter from './routes/admin';
 import testRouter from './routes/test';
 import { snapshotDb } from './db/snapshot';
+import { bootstrapAllowlist } from './services/allowlist';
 
 import type { Request, Response, NextFunction } from 'express';
 
@@ -82,4 +83,16 @@ app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
   // Best-effort backup of dev.db on every server start. Quiet on failure.
   void snapshotDb();
+
+  // Seed the registration allowlist from ALLOWLIST_BOOTSTRAP_EMAILS if it's
+  // empty, so a fresh deployment isn't locked out of its own signup. No-ops
+  // once the table has any row. Failure is logged, never fatal — a server that
+  // won't boot is worse than one whose allowlist needs a manual entry.
+  void bootstrapAllowlist()
+    .then(seeded => {
+      if (seeded.length > 0) {
+        console.log(`[allowlist] bootstrapped ${seeded.length} email(s): ${seeded.join(', ')}`);
+      }
+    })
+    .catch((err: unknown) => console.error('[allowlist] bootstrap failed', err));
 });
