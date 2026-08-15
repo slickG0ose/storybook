@@ -26,6 +26,7 @@ export type { Book } from '@storybook/shared';
 export type { BookWithPages } from '@storybook/shared';
 export type { OrphanIllustration } from '@storybook/shared';
 export type { AllowedEmail } from '@storybook/shared';
+export type { AdminSpendResponse, AdminSpendUserRow } from '@storybook/shared';
 export type { Page } from '@storybook/shared';
 
 import type { Book } from '@storybook/shared';

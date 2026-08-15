@@ -129,3 +129,25 @@ export const AllowlistDeleteResponseSchema = z.object({
   removed: z.string(),
 });
 export type AllowlistDeleteResponse = z.infer<typeof AllowlistDeleteResponseSchema>;
+
+// ---------------------------------------------------------------------------
+// GET /api/admin/spend — spend gates dashboard (F4b / #6)
+//
+// All money is in whole cents to avoid float drift; the client formats it.
+// ---------------------------------------------------------------------------
+export const AdminSpendUserRowSchema = z.object({
+  user_id: z.string(),
+  email: z.string().nullable(),
+  name: z.string().nullable(),
+  spent_cents: z.number().int().min(0),
+});
+export type AdminSpendUserRow = z.infer<typeof AdminSpendUserRowSchema>;
+
+export const AdminSpendResponseSchema = z.object({
+  dailyByUser: z.array(AdminSpendUserRowSchema),
+  monthlyTotalCents: z.number().int().min(0),
+  dailyLimitCents: z.number().int().min(0),
+  monthlyLimitCents: z.number().int().min(0),
+  adminBypassEnabled: z.boolean(),
+});
+export type AdminSpendResponse = z.infer<typeof AdminSpendResponseSchema>;

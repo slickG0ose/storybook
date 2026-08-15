@@ -144,3 +144,18 @@ model AllowedEmail {
   note       String?
   created_at DateTime @default(now())
 }
+
+// Spend ledger (F4b / #6). One row per paid AI call, written AFTER the call
+// succeeds so a failed request doesn't consume quota. Indexed on
+// (user_id, created_at) because every read is a windowed sum over one of those
+// two axes: per-user-per-day, or global-per-month.
+model UsageLog {
+  id         Int      @id @default(autoincrement())
+  user_id    String
+  kind       String
+  cost_cents Int
+  created_at DateTime @default(now())
+
+  @@index([user_id, created_at])
+  @@index([created_at])
+}

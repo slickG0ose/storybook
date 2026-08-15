@@ -48,6 +48,7 @@ export async function allowEmail(email: string): Promise<void> {
 }
 
 export async function resetDatabase() {
+  await prisma.usageLog.deleteMany();
   await prisma.orderItem.deleteMany();
   await prisma.order.deleteMany();
   await prisma.cartItem.deleteMany();

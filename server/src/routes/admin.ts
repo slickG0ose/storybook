@@ -14,6 +14,7 @@ import {
   AllowlistAddRequestSchema,
   AllowlistDeleteResponseSchema,
   AllowedEmailSchema,
+  AdminSpendResponseSchema,
   type AllowlistAddRequest,
   type AdminBookFeaturedRequest,
   type Character,
@@ -22,6 +23,13 @@ import prisma from '../db/prisma';
 import { getAuthUser, requireAdmin } from './auth';
 import { validate } from '../middleware/validate';
 import { normalizeEmail } from '../services/allowlist';
+import {
+  startOfUtcDay,
+  startOfUtcMonth,
+  dailyPerUserLimitCents,
+  monthlyGlobalLimitCents,
+  adminBypassEnabled,
+} from '../services/spend';
 
 const router = Router();
 
@@ -378,5 +386,57 @@ router.delete(
     await prisma.allowedEmail.delete({ where: { email: normalized } });
 
     res.json({ success: true, removed: normalized });
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Spend gates dashboard (F4b / #6)
+// ---------------------------------------------------------------------------
+
+router.get(
+  '/spend',
+  adminGate,
+  validate({
+    name: 'GET /api/admin/spend',
+    response: AdminSpendResponseSchema,
+  }),
+  async (_req: Request, res: Response) => {
+    const now = new Date();
+
+    const [dailyGroups, monthlyAgg] = await Promise.all([
+      prisma.usageLog.groupBy({
+        by: ['user_id'],
+        where: { created_at: { gte: startOfUtcDay(now) } },
+        _sum: { cost_cents: true },
+      }),
+      prisma.usageLog.aggregate({
+        _sum: { cost_cents: true },
+        where: { created_at: { gte: startOfUtcMonth(now) } },
+      }),
+    ]);
+
+    // Resolve names in one query rather than per row. A UsageLog row can
+    // outlive its user (hard-deleted test rows), so email/name are nullable
+    // rather than assuming the join always lands.
+    const users = await prisma.user.findMany({
+      where: { id: { in: dailyGroups.map(g => g.user_id) } },
+      select: { id: true, email: true, name: true },
+    });
+    const byId = new Map(users.map(u => [u.id, u]));
+
+    res.json({
+      dailyByUser: dailyGroups
+        .map(g => ({
+          user_id: g.user_id,
+          email: byId.get(g.user_id)?.email ?? null,
+          name: byId.get(g.user_id)?.name ?? null,
+          spent_cents: g._sum.cost_cents ?? 0,
+        }))
+        .sort((a, b) => b.spent_cents - a.spent_cents),
+      monthlyTotalCents: monthlyAgg._sum.cost_cents ?? 0,
+      dailyLimitCents: dailyPerUserLimitCents(),
+      monthlyLimitCents: monthlyGlobalLimitCents(),
+      adminBypassEnabled: adminBypassEnabled(),
+    });
   },
 );

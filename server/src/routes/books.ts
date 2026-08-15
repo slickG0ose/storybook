@@ -42,6 +42,8 @@ import {
 import { parseAiJson } from '../services/parseAiJson';
 import { validate } from '../middleware/validate';
 import { requireAuth } from '../middleware/requireAuth';
+import { spendGate } from '../middleware/spendGate';
+import { recordUsage, checkQuota } from '../services/spend';
 
 const router = Router();
 
@@ -289,6 +291,7 @@ router.put(
 router.post(
   '/:id/revise',
   requireAuth,
+  spendGate('story'),
   validate({
     name: 'POST /api/books/:id/revise',
     request: BookReviseRequestSchema,
@@ -384,6 +387,10 @@ Respond with ONLY valid JSON in this exact format (no markdown, no code fences):
         description: string;
         pages: { text: string; illustrationDescription: string }[];
       };
+
+      // Claude call succeeded — charge it. spendGate reserved the headroom;
+      // this is what actually consumes it.
+      await recordUsage((res.locals.user as { id: string }).id, 'story');
 
       const finalPageCount = revised.pages.length;
 
@@ -626,6 +633,7 @@ router.get(
 router.post(
   '/:id/illustrate',
   requireAuth,
+  spendGate('illustration'),
   validate({
     name: 'POST /api/books/:id/illustrate',
     request: BookIllustrateRequestSchema,
@@ -668,8 +676,22 @@ router.post(
     const portraitRefs = collectRequiredPortraitRefs(hydratedBook.characters);
     const referenceImages = portraitRefs.length > 0 ? portraitRefs : undefined;
 
+    // spendGate reserved only the first image. This is a loop over N paid
+    // calls, so quota is re-checked per iteration and charged per success.
+    // Hitting the ceiling mid-batch returns a PARTIAL result rather than
+    // failing the whole request — the user keeps the pages that were paid for.
+    const requester = res.locals.user as { id: string; role?: string };
+    const isAdmin = requester.role === 'admin';
+    let quotaHitAfterPage: number | null = null;
+
     try {
       for (const page of pagesToIllustrate) {
+        const decision = await checkQuota(requester.id, 'illustration', isAdmin);
+        if (!decision.allowed) {
+          quotaHitAfterPage = page.page_number - 1;
+          break;
+        }
+
         const url = await generateIllustration(
           book.id,
           page.page_number,
@@ -681,6 +703,7 @@ router.post(
         );
 
         if (url) {
+          await recordUsage(requester.id, 'illustration');
           await prisma.page.update({
             where: { id: page.id },
             data: { illustration_url: url },
@@ -693,7 +716,11 @@ router.post(
         include: { pages: { orderBy: { page_number: 'asc' } } },
       });
 
-      res.json(updated ? hydrateBook(updated) : null);
+      if (!updated) return res.json(null);
+      res.json({
+        ...hydrateBook(updated),
+        ...(quotaHitAfterPage !== null ? { quotaHitAfterPage } : {}),
+      });
     } catch (err: unknown) {
       console.error('Illustration error:', err);
       const message = err instanceof Error ? err.message : String(err);
