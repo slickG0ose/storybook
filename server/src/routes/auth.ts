@@ -1,58 +1,15 @@
 import { Router } from 'express';
-import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
 import prisma from '../db/prisma';
+import { hashPassword, verifyPassword, isLegacyHash } from '../lib/password';
 import type { Request, Response } from 'express';
 
 const router = Router();
 
-/**
- * Password hashing.
- *
- * Stored format is `scrypt:<salt>:<hash>`. The legacy format was a bare
- * `<salt>:<hash>` of a SINGLE sha256 round — fast enough to brute-force
- * offline, which is the whole problem: a fast hash is a weak hash. scrypt is
- * deliberately slow and memory-hard.
- *
- * Legacy hashes still verify, so nobody is locked out. On a successful login
- * against a legacy hash we transparently re-hash to scrypt (see the login
- * handler), so the old format drains as users sign in rather than needing a
- * migration or a forced reset.
- *
- * scrypt is in Node's stdlib — no new dependency, which also keeps this off
- * the CLAUDE.md "new dependency" guardrail.
- */
-const SCRYPT_PREFIX = 'scrypt';
-const SCRYPT_KEYLEN = 64;
-
-export function hashPassword(password: string): string {
-  const salt = randomBytes(16).toString('hex');
-  const hash = scryptSync(password, salt, SCRYPT_KEYLEN).toString('hex');
-  return `${SCRYPT_PREFIX}:${salt}:${hash}`;
-}
-
-/** True when the stored hash still uses the legacy single-round sha256 format. */
-export function isLegacyHash(stored: string): boolean {
-  return !stored.startsWith(`${SCRYPT_PREFIX}:`);
-}
-
-export function verifyPassword(password: string, stored: string): boolean {
-  if (isLegacyHash(stored)) {
-    const [salt, hash] = stored.split(':');
-    if (!salt || !hash) return false;
-    const check = createHash('sha256').update(salt + password).digest('hex');
-    // Both sides are fixed-length hex of our own making, so the lengths match
-    // and timingSafeEqual won't throw.
-    return timingSafeEqual(Buffer.from(check, 'hex'), Buffer.from(hash, 'hex'));
-  }
-
-  const [, salt, hash] = stored.split(':');
-  if (!salt || !hash) return false;
-  const check = scryptSync(password, salt, SCRYPT_KEYLEN);
-  const expected = Buffer.from(hash, 'hex');
-  if (check.length !== expected.length) return false;
-  return timingSafeEqual(check, expected);
-}
+// Password hashing lives in ../lib/password so the Prisma seed scripts can
+// share it without importing an Express router. Re-exported for existing
+// importers.
+export { hashPassword, verifyPassword, isLegacyHash };
 
 export async function getAuthUser(req: Request) {
   const header = req.headers.authorization;
