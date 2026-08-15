@@ -1257,4 +1257,165 @@ describe('Books API routes', () => {
       expect(res.body[0].id).toBe('luna-star-garden');
     });
   });
+
+  // -------------------------------------------------------------------------
+  // POST /api/books/:id/pdf — binary wire-shape carve-out
+  //
+  // OPS.3 / ADR-003 pins JSON response shapes with toMatchObject. This route's
+  // 2xx body is a PDF stream, so there is no JSON success shape to pin. The
+  // equivalent contract assertions for a binary endpoint are:
+  //   1. Content-Type is application/pdf
+  //   2. Content-Disposition names an attachment ending in .pdf
+  //   3. the body starts with the %PDF- magic bytes
+  // Every 4xx/5xx envelope still goes over JSON and is pinned against
+  // BookPdfErrorResponseSchema's shape the usual way.
+  // -------------------------------------------------------------------------
+  describe('POST /api/books/:id/pdf', () => {
+    // Supertest's default parser mangles binary bodies — collect the raw
+    // chunks ourselves on every test that asserts a 200.
+    function asPdf(req: request.Test) {
+      return req.buffer(true).parse((res, cb) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c: Buffer) => chunks.push(c));
+        res.on('end', () => cb(null, Buffer.concat(chunks)));
+      });
+    }
+
+    async function createOtherUserAndGetToken() {
+      await allowEmail('other@example.com');
+      const res = await request(app).post('/api/auth/register').send({
+        email: 'other@example.com',
+        name: 'Other',
+        password: 'pass1234',
+      });
+      return res.body.token as string;
+    }
+
+    it('streams a PDF for a published book to any authed user', async () => {
+      const token = await createUserAndGetToken(app);
+      const res = await asPdf(
+        request(app)
+          .post('/api/books/luna-star-garden/pdf')
+          .set('Authorization', `Bearer ${token}`)
+          .send({}),
+      );
+
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toMatch(/^application\/pdf/);
+      expect(res.headers['content-disposition']).toMatch(/attachment; filename=".+\.pdf"/);
+      expect((res.body as Buffer).subarray(0, 5).toString('utf8')).toBe('%PDF-');
+    });
+
+    it('names the attachment after the book title', async () => {
+      const token = await createUserAndGetToken(app);
+      const res = await asPdf(
+        request(app)
+          .post('/api/books/luna-star-garden/pdf')
+          .set('Authorization', `Bearer ${token}`)
+          .send({}),
+      );
+
+      expect(res.headers['content-disposition']).toBe(
+        'attachment; filename="luna-and-the-star-garden.pdf"',
+      );
+    });
+
+    it('streams a PDF for a draft to its owner', async () => {
+      const token = await createUserAndGetToken(app);
+      const user = await prisma.user.findFirst({ where: { email: 'author@example.com' } });
+      await prisma.book.update({
+        where: { id: 'luna-star-garden' },
+        data: { status: 'draft', created_by: user!.id },
+      });
+
+      const res = await asPdf(
+        request(app)
+          .post('/api/books/luna-star-garden/pdf')
+          .set('Authorization', `Bearer ${token}`)
+          .send({}),
+      );
+
+      expect(res.status).toBe(200);
+      expect((res.body as Buffer).subarray(0, 5).toString('utf8')).toBe('%PDF-');
+    });
+
+    it('returns 401 without auth', async () => {
+      const res = await request(app).post('/api/books/luna-star-garden/pdf').send({});
+      expect(res.status).toBe(401);
+      expect(res.body).toMatchObject({ error: expect.any(String) });
+    });
+
+    // requireAuth is mounted before validate(), so a malformed body from an
+    // anonymous caller is still a 401 — not a 400. That ordering is
+    // load-bearing (docs/conventions/server.md); this pins it.
+    it('returns 401, not 400, when an unauthenticated request also has a bad body', async () => {
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/pdf')
+        .send({ unexpected: 'key' });
+      expect(res.status).toBe(401);
+      expect(res.body).toMatchObject({ error: expect.any(String) });
+    });
+
+    it('returns 404 for a nonexistent book', async () => {
+      const token = await createUserAndGetToken(app);
+      const res = await request(app)
+        .post('/api/books/nonexistent-id/pdf')
+        .set('Authorization', `Bearer ${token}`)
+        .send({});
+      expect(res.status).toBe(404);
+      expect(res.body).toMatchObject({ error: expect.any(String) });
+    });
+
+    it('returns 404 for a soft-deleted book', async () => {
+      const token = await createUserAndGetToken(app);
+      await prisma.book.update({
+        where: { id: 'luna-star-garden' },
+        data: { deleted_at: new Date() },
+      });
+
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/pdf')
+        .set('Authorization', `Bearer ${token}`)
+        .send({});
+      expect(res.status).toBe(404);
+      expect(res.body).toMatchObject({ error: expect.any(String) });
+    });
+
+    it("returns 404 for another user's draft", async () => {
+      const ownerToken = await createUserAndGetToken(app);
+      expect(ownerToken).toBeTruthy();
+      const owner = await prisma.user.findFirst({ where: { email: 'author@example.com' } });
+      await prisma.book.update({
+        where: { id: 'luna-star-garden' },
+        data: { status: 'draft', created_by: owner!.id },
+      });
+
+      const otherToken = await createOtherUserAndGetToken();
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/pdf')
+        .set('Authorization', `Bearer ${otherToken}`)
+        .send({});
+      expect(res.status).toBe(404);
+      expect(res.body).toMatchObject({ error: expect.any(String) });
+    });
+
+    it('returns 400 when the body has unexpected keys', async () => {
+      const token = await createUserAndGetToken(app);
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/pdf')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ unexpected: 'key' });
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ error: expect.any(String) });
+    });
+
+    it('accepts a request with no body at all', async () => {
+      const token = await createUserAndGetToken(app);
+      const res = await asPdf(
+        request(app).post('/api/books/luna-star-garden/pdf').set('Authorization', `Bearer ${token}`),
+      );
+      expect(res.status).toBe(200);
+      expect((res.body as Buffer).subarray(0, 5).toString('utf8')).toBe('%PDF-');
+    });
+  });
 });

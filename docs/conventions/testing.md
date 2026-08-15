@@ -35,6 +35,22 @@ Rules:
 3. **One wire-shape assertion per response shape**, not per test — repeat shape assertions are noise.
 4. The `validate()` middleware (server) ALSO validates response shape against the Zod schema in dev, but that's a second line of defense — the test's job is to catch drift before code ships.
 
+### Carve-out: binary responses (ADR-008)
+
+A route whose 2xx body is a binary stream has no JSON success shape to pin. The rule's intent still holds — nothing about the response goes unasserted — so the pinnable surface becomes the headers plus the format signature:
+
+```ts
+expect(res.headers['content-type']).toMatch(/^application\/pdf/);
+expect(res.headers['content-disposition']).toMatch(/attachment; filename=".+\.pdf"/);
+expect((res.body as Buffer).subarray(0, 5).toString('utf8')).toBe('%PDF-');
+```
+
+Rules for these routes:
+
+1. **Every 4xx/5xx envelope is still pinned the normal way** — `toMatchObject({ error: expect.any(String) })` against the route's error schema. The carve-out covers the success path only.
+2. **Mount `validate({ request })` with no `response` key.** Response validation is opt-in; there is no schema to give it.
+3. **Collect the body yourself.** Supertest's default parser corrupts binary bodies — use `.buffer(true).parse(...)` on every test that asserts a 200. Canonical example: the `POST /api/books/:id/pdf` block in `server/src/routes/__tests__/books.test.ts`.
+
 ## Server tests — Vitest + Supertest + Prisma
 
 ### Test DB lifecycle

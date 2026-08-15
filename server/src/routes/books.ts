@@ -22,6 +22,7 @@ import {
   CharacterPortraitGenerateRequestSchema,
   CharacterPortraitGenerateResponseSchema,
   CharacterPortraitVersionListResponseSchema,
+  BookPdfRequestSchema,
   type BookUpdatePageRequest,
   type BookReviseRequest,
   type BookIllustrateRequest,
@@ -40,6 +41,7 @@ import {
   isImageGenConfigured,
 } from '../services/illustrations';
 import { parseAiJson } from '../services/parseAiJson';
+import { renderBookPdf } from '../services/pdf';
 import { validate } from '../middleware/validate';
 import { requireAuth } from '../middleware/requireAuth';
 import { STORY_MODEL, STORY_THINKING } from '../lib/models';
@@ -887,6 +889,69 @@ router.put(
     });
 
     res.json(updated ? hydrateBook(updated) : null);
+  },
+);
+
+// Filename-safe slug for the Content-Disposition header. Local on purpose —
+// one call site, and a slug library is a dependency we don't need.
+function slugify(title: string): string {
+  return (
+    title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 80) || 'storybook'
+  );
+}
+
+// POST, not GET: this performs real work (image reads + layout + render), and
+// PS2 will send a body (`{ format: 'screen' | 'print' }`) that GET can't carry
+// without breaking cache semantics. Don't "fix" it to GET.
+//
+// Wire-shape carve-out (OPS.3 / ADR-003): the 2xx response is a binary stream,
+// so `validate()` is mounted request-only — there is no JSON success shape to
+// pin. The route test asserts Content-Type + Content-Disposition + the %PDF-
+// magic bytes instead, and pins the JSON error envelope on every failure code.
+router.post(
+  '/:id/pdf',
+  requireAuth,
+  validate({
+    name: 'POST /api/books/:id/pdf',
+    request: BookPdfRequestSchema,
+  }),
+  async (req: Request<{ id: string }>, res: Response) => {
+    const user = res.locals.user as { id: string };
+
+    // Authorization mirrors GET /api/books/:id exactly: soft-deleted and
+    // other-people's drafts are both 404, never 403 — we don't confirm a book
+    // exists to someone who isn't allowed to see it.
+    const book = await prisma.book.findFirst({
+      where: { id: req.params.id, deleted_at: null },
+      include: { pages: { orderBy: { page_number: 'asc' } } },
+    });
+    if (!book || (book.status === 'draft' && book.created_by !== user.id)) {
+      return res.status(404).json({ error: 'Book not found' });
+    }
+
+    // Render fully before touching `res`. renderToStream resolves before any
+    // byte reaches the socket, so a render failure can still return a JSON
+    // envelope — once headers flush, we'd be stuck mid-PDF (spec §Risks).
+    let stream: NodeJS.ReadableStream;
+    try {
+      stream = await renderBookPdf(book);
+    } catch (err: unknown) {
+      console.error('[pdf] render error:', err);
+      return res.status(500).json({ error: 'Failed to render PDF.' });
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${slugify(book.title)}.pdf"`);
+
+    stream.on('error', (err: unknown) => {
+      console.error('[pdf] stream error:', err);
+      res.destroy();
+    });
+    stream.pipe(res);
   },
 );
 
