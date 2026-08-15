@@ -4,6 +4,45 @@ Append-only log. Newest entries on top. Each entry should answer: *what was deci
 
 ---
 
+## ADR-008 — PDF digital export pipeline (PS1)
+
+**Date:** 2026-08-15
+**Status:** Accepted
+**Scope:** `pdf-export` (PS1, first deliverable of the Print/Subscription milestone). Spec at [.code-captain/specs/pdf-export/spec.md](../specs/pdf-export/spec.md); backlog issue #26.
+
+### Decision
+
+Ship `POST /api/books/:id/pdf` — an authed route that renders a screen-quality (RGB) PDF of a book on demand and streams it back. Five coupled decisions, captured as a set per the ADR-004/006/007 grouped precedent. Each names its trade-off.
+
+1. **`@react-pdf/renderer` is the PDF layout library.** The renderer lives at `server/src/services/pdf.tsx` and declares `<Document>` / `<Page>` / `<View>` / `<Text>` / `<Image>` JSX. **Why:** the layout we need already exists as JSX in `client/src/components/BookSpread.tsx`, so a React-shaped library makes the port a translation rather than a redesign; it runs in plain Node with no headless browser, and ships its own types. **Trade-off:** no native CMYK or PDF/X-1a output — fine for PS1 (screen/RGB), but PS2's print-ready variant will need a post-process step or a library swap. Swapping means rewriting `pdf.tsx`; the route boundary and wire shape are unaffected.
+
+2. **PDFs are ephemeral — generated per request, never persisted as a `pdf_url` on `Book`.** No Prisma migration, no new column, no `PdfDownload` model. **Why:** render cost is dominated by image reads, not by the layout engine (sub-second for a 5–12 page book), and persisting would add a cache-invalidation rule to *every* mutation path — revise, re-illustrate, page edit, restore-version. Missing one silently serves a stale book. **Trade-off:** repeat downloads re-render. **Reconsider trigger:** a book downloaded 50+ times by one buyer, or PS2's print-quality PDFs where re-rendering is genuinely expensive — at which point add a `pdf_assets` table keyed `{ book_id, variant, version }` so invalidation falls out of the version bump automatically.
+
+3. **Wire-shape carve-out for binary endpoints.** OPS.3 / ADR-003 pins JSON response shapes with `toMatchObject`. A binary route has no JSON success shape, so the equivalent contract assertions are: `Content-Type` matches `application/pdf`, `Content-Disposition` matches `attachment; filename=".+\.pdf"`, and the body's first five bytes are `%PDF-`. Every 4xx/5xx envelope is still pinned the usual way against `BookPdfErrorResponseSchema`. `validate()` is mounted request-only (`validate({ request })`, no `response` key). **Why:** the rule's intent is "no response field goes unpinned"; for a binary body the pinnable surface is the headers and the format signature. **Trade-off:** this is a precedent — every future binary route (`POST /api/books/:id/epub`, `GET /api/orders/:id/receipt.pdf`) inherits it. **Follow-up:** codify the pattern as a paragraph in [docs/conventions/testing.md](../../docs/conventions/testing.md) so the next agent doesn't re-derive it — done in this PR, so the convention lands with the precedent rather than trailing it.
+
+4. **Always-watermark in MVP; no feature flag.** Every interior story page carries "Created with StoryBook Storefront · storybook.example.com"; cover and end spreads are exempt. The policy is exported as `watermarkFor(book): string | null` — a single function whose body PS3 swaps to make the band tier-aware. **Why:** subscription tiers don't exist yet. A hidden `PDF_WATERMARK=false` env flag now would be config for a decision nobody has made, and would need re-designing anyway once tiers are real. **Trade-off:** PS3 must touch this file. The concrete bar we held: making the watermark conditional per book is a one-function-body edit, never a `<Page>`-template rewrite.
+
+5. **POST, not GET, for the download route.** **Why:** the route performs real work (image reads + layout + render), and PS2 will send a body (`{ format: 'screen' | 'print' }`) that GET can't carry without breaking cache semantics. POST also keeps a stray `<a href>` or a bot crawl from firing renders. **Trade-off:** the client can't use a plain anchor — it fetches, reads the blob, and clicks a synthetic anchor at an object URL. Documented in `handleDownloadPdf` so nobody "fixes" it to GET.
+
+### Alternatives considered
+
+- **`pdfmake`** (rejected): smaller install, but its declarative-JSON document model doesn't map onto our existing JSX, so every layout decision would be re-described from scratch. The bundle-size win lands on the server, where it doesn't matter. Viable rewrite target if `@react-pdf/renderer` proves too slow at scale — the route boundary wouldn't change.
+- **`puppeteer` HTML-to-PDF** (rejected): would render `BookSpread.tsx` directly for maximum reuse, but bundles ~150 MB of Chromium and adds a sandbox/proxy surface this project already has friction with (`NODE_TLS_REJECT_UNAUTHORIZED` handling in `server/src/index.ts`).
+- **`pdf-lib` / `PDFKit`** (rejected): hand-rolling text wrapping, image positioning, and column layout is not PS1-sized scope.
+- **Client-side `jsPDF`** (rejected): ~500 KB added to the browser bundle, worse image fidelity via DOM → canvas → PDF, and per-browser rendering variance. Decisive argument: PS2 must run server-side regardless (POD vendors expect a finished PDF uploaded to them), so a client-side PS1 would be thrown away.
+- **Persist the PDF and store `pdf_url` on `Book`** (rejected): see decision 2 — the cache-invalidation surface is larger than the caching win.
+
+### Consequences
+
+- **New server dependencies.** `@react-pdf/renderer` (~1.5 MB, no native deps) plus `react` declared explicitly on the server — it is `@react-pdf/renderer`'s peer, and leaving it to resolve off the client's hoisted copy would be a phantom dependency. React and `react-dom` must stay version-locked across the workspace; a lockfile-only `npm update react react-dom` realigned them to 19.2.8.
+- **`server/tsconfig.json` now compiles TSX** (`"jsx": "react-jsx"`, `src/**/*.tsx` in `include`). The server previously had no JSX anywhere.
+- **`pdf.tsx` is an intentional duplicate of `BookSpread.tsx`'s layout.** Different reconcilers; the DOM component cannot be imported. When the web spread changes shape, change both — the file header says so.
+- **Two accepted visual deltas from the web reader, both recorded in the `pdf.tsx` header.** *Deferred:* (a) the PDF renders in built-in Helvetica rather than the web `font-display` family — registering a bundled OFL font is a one-call `Font.register()` swap if anyone asks for the fidelity; (b) the cover renders a disc tinted with `cover_color` instead of `cover_emoji`, because the standard-14 PDF fonts carry no emoji glyphs and the supported workaround (`Font.registerEmojiSource`) fetches images from a CDN at render time. Neither blocks PS1; both are one-file changes.
+- **Text is sanitised to WinAnsi before rendering** (`sanitizeForPdf`). Emoji and CJK in story text would otherwise render as missing glyphs. Revisit if the product ever supports non-Latin stories — that needs a real embedded font, not a wider filter.
+- **No rate limiting on the route.** It is authed, and generation costs CPU rather than API spend, so it sits outside the ADR-00x spend-ceiling machinery. Revisit if abuse shows up.
+
+---
+
 ## ADR-007 — Per-character portraits + FLUX Kontext consistency (IV2 Phase 2)
 
 **Date:** 2026-06-05

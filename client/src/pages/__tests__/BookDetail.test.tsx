@@ -156,6 +156,7 @@ function setupFetchMock(opts: {
   illustrationVersions?: IllustrationVersion[]
   revised?: BookWithPages
   versionsAfterRevise?: BookVersion[]
+  pdfStatus?: number
 }) {
   const calls: FetchCall[] = []
   let getVersionsCount = 0
@@ -198,6 +199,26 @@ function setupFetchMock(opts: {
         new Response(JSON.stringify(opts.restored ?? restoredBook), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
+        })
+      )
+    }
+    if (url === '/api/books/book-1/pdf' && method === 'POST') {
+      const status = opts.pdfStatus ?? 200
+      if (status !== 200) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: 'Book not found' }), {
+            status,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        )
+      }
+      return Promise.resolve(
+        new Response(new Blob(['%PDF-1.7 fake'], { type: 'application/pdf' }), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': 'attachment; filename="test-adventure.pdf"',
+          },
         })
       )
     }
@@ -950,5 +971,107 @@ describe('BookDetail — non-2xx book fetch (#59 regression)', () => {
     // The price span from the non-draft branch must never render off a poisoned
     // book object.
     expect(screen.queryByText(/\$\d+\.\d{2}/)).not.toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// PS1 — Download PDF button
+// ---------------------------------------------------------------------------
+// The download is a blob + synthetic-anchor click, neither of which jsdom
+// implements. We stub URL.createObjectURL / revokeObjectURL and spy on the
+// anchor's click so the round trip is observable without a real navigation.
+describe('BookDetail — Download PDF', () => {
+  const publishedBook: BookWithPages = { ...baseBook, status: 'published' }
+  let clickSpy: ReturnType<typeof vi.spyOn>
+  let createObjectURL: ReturnType<typeof vi.fn>
+  let revokeObjectURL: ReturnType<typeof vi.fn>
+  let originalCreate: typeof URL.createObjectURL | undefined
+  let originalRevoke: typeof URL.revokeObjectURL | undefined
+
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    originalCreate = URL.createObjectURL
+    originalRevoke = URL.revokeObjectURL
+    createObjectURL = vi.fn(() => 'blob:mock-pdf-url')
+    revokeObjectURL = vi.fn()
+    URL.createObjectURL = createObjectURL as unknown as typeof URL.createObjectURL
+    URL.revokeObjectURL = revokeObjectURL as unknown as typeof URL.revokeObjectURL
+    clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    URL.createObjectURL = originalCreate as typeof URL.createObjectURL
+    URL.revokeObjectURL = originalRevoke as typeof URL.revokeObjectURL
+    vi.restoreAllMocks()
+  })
+
+  it('renders the button with an accessible name for a signed-in reader', async () => {
+    setupFetchMock({ book: publishedBook })
+    renderBookDetail()
+
+    const button = await screen.findByRole('button', { name: 'Download PDF' })
+    expect(button).toHaveAttribute('aria-label', 'Download PDF')
+    expect(button).toBeEnabled()
+  })
+
+  it('POSTs to the pdf route with the bearer token and triggers a download', async () => {
+    const { calls } = setupFetchMock({ book: publishedBook })
+    renderBookDetail()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Download PDF' }))
+
+    await waitFor(() => {
+      expect(calls.some(c => c.url === '/api/books/book-1/pdf')).toBe(true)
+    })
+    const pdfCall = calls.find(c => c.url === '/api/books/book-1/pdf')
+    expect(pdfCall?.init?.method).toBe('POST')
+    expect(pdfCall?.init?.body).toBe('{}')
+    expect(
+      (pdfCall?.init?.headers as Record<string, string> | undefined)?.['Authorization']
+    ).toBe('Bearer test-token')
+
+    await waitFor(() => {
+      expect(clickSpy).toHaveBeenCalledTimes(1)
+    })
+    expect(createObjectURL).toHaveBeenCalledTimes(1)
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:mock-pdf-url')
+  })
+
+  it('carries a dark: variant on every themed surface of the button', async () => {
+    setupFetchMock({ book: publishedBook })
+    renderBookDetail()
+
+    const className = (await screen.findByRole('button', { name: 'Download PDF' })).className
+    for (const variant of [
+      'dark:border-',
+      'dark:bg-',
+      'dark:text-',
+      'dark:hover:bg-',
+      'dark:focus-visible:ring-',
+    ]) {
+      expect(className).toContain(variant)
+    }
+  })
+
+  it("hides the button on someone else's draft", async () => {
+    setupFetchMock({ book: { ...baseBook, status: 'draft', created_by: 'someone-else' } })
+    renderBookDetail()
+
+    await waitFor(() => {
+      expect(screen.getByText('Test Adventure')).toBeInTheDocument()
+    })
+    expect(screen.queryByRole('button', { name: 'Download PDF' })).not.toBeInTheDocument()
+  })
+
+  it('surfaces a failed download instead of silently doing nothing', async () => {
+    setupFetchMock({ book: publishedBook, pdfStatus: 404 })
+    renderBookDetail()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Download PDF' }))
+
+    await waitFor(() => {
+      expect(screen.getByText(/download failed \(404\)/i)).toBeInTheDocument()
+    })
+    expect(clickSpy).not.toHaveBeenCalled()
   })
 })

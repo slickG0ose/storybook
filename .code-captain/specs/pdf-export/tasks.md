@@ -1,8 +1,8 @@
 # PDF digital export (PS1) — task plan
 
 > Spec: [spec.md](spec.md)
-> Status: Draft
-> Last updated: 2026-05-29
+> Status: Complete (2026-08-15) — Tasks 1-6 + 8 done; Task 7 deferred
+> Last updated: 2026-08-15
 > Planner: Claude Opus 4.7 via planner agent (HR4)
 
 ## Overview
@@ -33,6 +33,8 @@ Carried over from the spec — re-stated here so the developer doesn't have to c
 ## Tasks
 
 ### Task 1 — Install `@react-pdf/renderer` on the server (USER CONFIRMATION REQUIRED)
+
+**Status:** Done (2026-08-15)
 
 **Zone:** server (dependency only — no source edits)
 **Depends on:** none
@@ -106,6 +108,8 @@ export type BookPdfErrorResponse = z.infer<typeof BookPdfErrorResponseSchema>;
 
 ### Task 3 — Build the PDF renderer service (`server/src/services/pdf.tsx`)
 
+**Status:** Done (2026-08-15)
+
 **Zone:** server
 **Depends on:** Task 1 (the library must be installed).
 **Parallel-safe with:** Task 2.
@@ -150,6 +154,8 @@ export function renderBookPdf(book: BookWithPages): Promise<NodeJS.ReadableStrea
 ---
 
 ### Task 4 — Add `POST /api/books/:id/pdf` route handler
+
+**Status:** Done (2026-08-15)
 
 **Zone:** server
 **Depends on:** Tasks 2 and 3.
@@ -231,6 +237,8 @@ router.post(
 ---
 
 ### Task 5 — Supertest integration tests for the PDF route (binary wire-shape carve-out)
+
+**Status:** Done (2026-08-15)
 
 **Zone:** server
 **Depends on:** Task 4.
@@ -318,6 +326,8 @@ describe('POST /api/books/:id/pdf', () => {
 
 ### Task 6 — Add the "Download PDF" button to `BookDetail`
 
+**Status:** Done (2026-08-15)
+
 **Zone:** client
 **Depends on:** Task 4 (the route must exist for the button to call it).
 **Parallel-safe with:** Task 5 (different zone, different file).
@@ -387,6 +397,8 @@ describe('POST /api/books/:id/pdf', () => {
 
 ### Task 7 — Optional: end-to-end Playwright case for the download
 
+**Status:** Deferred: e2e download coverage is explicitly optional for MVP (see the Scope note below). The server Supertest block and the client RTL block together pin the contract; revisit when PS2 extends this pipeline.
+
 **Zone:** e2e
 **Depends on:** Task 6.
 **Parallel-safe with:** Task 8.
@@ -414,6 +426,8 @@ describe('POST /api/books/:id/pdf', () => {
 ---
 
 ### Task 8 — Capture ADRs for the five hard-to-reverse decisions
+
+**Status:** Done (2026-08-15)
 
 **Zone:** docs (`.code-captain/product/decisions.md` via `/create-adr`)
 **Depends on:** Tasks 4 and 6 (so the choices are real, not hypothetical).

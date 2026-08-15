@@ -1,7 +1,7 @@
 # PDF digital export (PS1)
 
-> Status: Draft
-> Last updated: 2026-05-29
+> Status: Implemented (2026-08-15) — see ADR-008
+> Last updated: 2026-08-15
 > Architect: Claude Opus 4.7 via /start-task on 2026-05-29
 > Backlog: https://github.com/slickG0ose/storybook/issues/26
 
@@ -219,8 +219,8 @@ Image embedding **must read bytes, not pass URLs** — `@react-pdf/renderer` acc
 
 These are hard-to-reverse choices baked into the spec. Each should be captured via `/create-adr` after spec approval, so the next agent reading the codebase can see the rationale without re-reading this spec.
 
-- [ ] **`@react-pdf/renderer` as the PDF layout library** — choice of library affects every future PDF surface (PS2 print-ready, PS3 watermark variants). Swapping later means rewriting the renderer.
-- [ ] **PDFs are ephemeral, not persisted as `pdf_url` on Book** — schema decision. Reversing requires a migration + a cache-invalidation policy on every Book mutation path.
-- [ ] **Wire-shape carve-out for binary endpoints** — assert `Content-Type` + magic bytes + pinned error envelope instead of a JSON response schema. Sets a precedent for every future binary route (`POST /api/books/:id/epub`, `GET /api/orders/:id/receipt.pdf`, etc.). Worth a one-paragraph addition to `docs/conventions/testing.md` once the ADR is written.
-- [ ] **Always-watermark in MVP, no feature flag** — defers the tier-aware watermark to PS3. Alternative was a hidden `PDF_WATERMARK=false` env flag now, which felt like premature optimization. Capture the choice so PS3 doesn't relitigate.
-- [ ] **POST, not GET, for the download route** — non-obvious choice; documented above. Worth pinning so future agents don't "fix" it to GET.
+- [x] **`@react-pdf/renderer` as the PDF layout library** — ADR-008 decision 1. — choice of library affects every future PDF surface (PS2 print-ready, PS3 watermark variants). Swapping later means rewriting the renderer.
+- [x] **PDFs are ephemeral, not persisted as `pdf_url` on Book** — ADR-008 decision 2. — schema decision. Reversing requires a migration + a cache-invalidation policy on every Book mutation path.
+- [x] **Wire-shape carve-out for binary endpoints** — ADR-008 decision 3; convention paragraph added to docs/conventions/testing.md. — assert `Content-Type` + magic bytes + pinned error envelope instead of a JSON response schema. Sets a precedent for every future binary route (`POST /api/books/:id/epub`, `GET /api/orders/:id/receipt.pdf`, etc.). Worth a one-paragraph addition to `docs/conventions/testing.md` once the ADR is written.
+- [x] **Always-watermark in MVP, no feature flag** — ADR-008 decision 4. — defers the tier-aware watermark to PS3. Alternative was a hidden `PDF_WATERMARK=false` env flag now, which felt like premature optimization. Capture the choice so PS3 doesn't relitigate.
+- [x] **POST, not GET, for the download route** — ADR-008 decision 5. — non-obvious choice; documented above. Worth pinning so future agents don't "fix" it to GET.

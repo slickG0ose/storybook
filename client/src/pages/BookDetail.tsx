@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, ShoppingCart, ChevronLeft, ChevronRight, Send, Loader2, RefreshCw, Paintbrush, Image, BookOpen, FileText, History, RotateCcw, CheckCircle2, X, GitCompare, Users } from 'lucide-react'
+import { ArrowLeft, ShoppingCart, ChevronLeft, ChevronRight, Send, Loader2, RefreshCw, Paintbrush, Image, BookOpen, FileText, History, RotateCcw, CheckCircle2, X, GitCompare, Users, Download } from 'lucide-react'
 import { useCart } from '../context/CartContext'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/apiBase'
@@ -14,6 +14,16 @@ import BookSpread from '../components/BookSpread'
 // optional Generate affordance but never block approval.
 const isRequiredRole = (role: string): boolean =>
   role === 'primary' || role === 'antagonist'
+
+// Mirrors the server's slugify in routes/books.ts so the browser-side download
+// filename matches the Content-Disposition the route sends. If one changes,
+// change the other.
+const pdfSlug = (title: string): string =>
+  title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80) || 'storybook'
 
 function formatRelativeTime(iso: string): string {
   const then = new Date(iso).getTime()
@@ -105,6 +115,11 @@ export default function BookDetail() {
   const [generatingPortrait, setGeneratingPortrait] = useState<number | null>(null)
   const [portraitError, setPortraitError] = useState<Record<number, string>>({})
   const [skipPortraits, setSkipPortraits] = useState(false)
+  // PS1 PDF export. The route always succeeds for partially-illustrated books
+  // (missing pages render a placeholder), so the button is never gated on
+  // illustration completeness.
+  const [downloadingPdf, setDownloadingPdf] = useState(false)
+  const [pdfError, setPdfError] = useState('')
 
   const fetchBook = () => {
     const headers: Record<string, string> = {}
@@ -303,6 +318,36 @@ export default function BookDetail() {
     if (res.ok) {
       const updated = await res.json() as BookWithPages
       setBook({ ...book, ...updated })
+    }
+  }
+
+  const handleDownloadPdf = async (): Promise<void> => {
+    if (!user) return
+    setPdfError('')
+    setDownloadingPdf(true)
+    try {
+      const res = await fetch(api(`/api/books/${book.id}/pdf`), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${user.token}`,
+        },
+        body: '{}',
+      })
+      if (!res.ok) throw new Error(`Download failed (${res.status})`)
+      const blob = await res.blob()
+      // Object-URL + synthetic anchor click: the response is a stream, not a
+      // navigable URL, so there's nothing to point an <a href> at directly.
+      const objectUrl = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = objectUrl
+      anchor.download = `${pdfSlug(book.title)}.pdf`
+      anchor.click()
+      URL.revokeObjectURL(objectUrl)
+    } catch (err: unknown) {
+      setPdfError(err instanceof Error ? err.message : 'Download failed')
+    } finally {
+      setDownloadingPdf(false)
     }
   }
 
@@ -582,6 +627,24 @@ export default function BookDetail() {
                     {added ? 'Added!' : 'Add to Cart'}
                   </button>
                 </>
+              )}
+              {/* Published books: any signed-in reader. Drafts: the owner only,
+                  mirroring the route's authorization. */}
+              {user && (!isDraft || isOwner) && (
+                <button
+                  onClick={() => void handleDownloadPdf()}
+                  disabled={downloadingPdf}
+                  aria-label="Download PDF"
+                  className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold border-2 border-amber-300 dark:border-amber-700 bg-white dark:bg-gray-800 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 dark:focus-visible:ring-amber-500 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-default"
+                >
+                  {downloadingPdf
+                    ? <Loader2 size={18} className="animate-spin text-amber-700 dark:text-amber-300" />
+                    : <Download size={18} />}
+                  {downloadingPdf ? 'Preparing...' : 'Download PDF'}
+                </button>
+              )}
+              {pdfError && (
+                <span className="text-sm text-red-500 dark:text-red-400">{pdfError}</span>
               )}
             </div>
           </div>
