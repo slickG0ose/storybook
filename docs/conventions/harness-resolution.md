@@ -34,7 +34,7 @@ Highest precedence first:
 | /create-adr | project | Append a new ADR to .code-captain/product/decisions.md — capture an architectural decision with rationale, alternatives, and consequences |
 | /execute-task | project | Dispatch the developer agent to implement one task from .code-captain/specs/<slug>/tasks.md. Refuses to run if no tasks.md exists — forces the spec → plan → execute discipline. |
 | /ship | project | Pre-flight a branch for PR — detect changed zones, run their tests, lint, draft commit + PR |
-| /start-task | project | Start a new task — pick a backlog item, create a properly-named branch + worktree, scaffold a scratchpad |
+| /start-task | project | Start a new task — pick an open issue, create a properly-named branch + worktree, scaffold a scratchpad |
 
 ## Skills
 
