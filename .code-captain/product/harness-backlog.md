@@ -1,5 +1,14 @@
 # Harness Backlog — Upstream Code Captain v0.6.0
 
+> **Historical (2026-05-15). Superseded 2026-08-15.** This ranked what to
+> adopt from upstream. Most Tier 1/2 items were adopted, then removed again
+> in the harness simplification — the generic skills (`swab`,
+> `analyze-repos`, `explain-code`, `research`, `mcp-analysis`) are gone
+> because current-gen models cover that ground natively, which the Tier 2
+> notes below already half-predicted. Other details here have gone stale:
+> the repo *is* on GitHub now, and the `booksmith`/`storefront` agents were
+> retired in #55. Kept for the reasoning, not as a live plan.
+
 Long-term work to evaluate after the 2026-05-15 demo. None of this is blocking.
 
 **Upstream reference:** [devobsessed/code-captain @ main](https://github.com/devobsessed/code-captain/tree/main/claude-code) (PR #27 merged 2026-05-14, ~2 hours before this entry).

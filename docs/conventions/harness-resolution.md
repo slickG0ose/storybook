@@ -48,12 +48,7 @@ Highest precedence first:
 | Name | Tier | Mode | Description |
 |------|------|------|-------------|
 | adr-tracking-check | project | agent | Given a spec slug (or explicit spec.md + tasks.md paths), enumerate every ADR-worthy item and verify each has exactly one tracking action — a matching ADR in decisions.md, a linked follow-up issue, or an explicit Deferred: line. Reports orphaned items. Read-only; the mechanical procedure for the ADR-item slice of reviewer Check 6. |
-| analyze-repos | project | agent | Analyze repos in a workspace — generate compressed codebase indexes (AGENTS.md), per-repo docs, cross-repo dependency map, and master TOC for AI agent consumption |
 | dark-mode-parity-check | project | agent | Given a list of changed client/** files (or a diff), grep for new className strings that introduce visual surfaces and verify each has a matching dark: variant. Heuristic but catches the #1 source of UI regression bugs in this project. |
-| explain-code | project | agent | Explain a code element, file, or line range with diagrams and architectural context |
-| mcp-analysis | project | agent | Analyze an MCP server's GitHub repository for security risks, malicious intent, and code quality. Produces a trust rating and recommends whether to use it or suggests safer alternatives. |
-| research | project | agent | Conduct systematic multi-phase research on a topic and produce a documented findings report |
-| swab | project | agent | Find and apply one small, safe code cleanup improvement with user approval (Boy Scout Rule) |
 | wire-shape-check | project | agent | Given a server route file, identify the response shape(s) it returns and verify the route's test file pins every response field by name with toMatchObject. Encodes OPS.3 / ADR-003 mechanically so the reviewer agent doesn't re-derive the rule each time. |
 
 ## Hooks
