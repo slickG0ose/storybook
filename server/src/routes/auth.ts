@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import prisma from '../db/prisma';
 import { hashPassword, verifyPassword, isLegacyHash } from '../lib/password';
+import { isEmailAllowed } from '../services/allowlist';
 import type { Request, Response } from 'express';
 
 const router = Router();
@@ -44,6 +45,14 @@ router.post('/register', async (req: Request, res: Response) => {
   // hash on next login.
   if (password.length < 8) {
     return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  }
+
+  // Allowlist gate (F4a / #5). Checked before the duplicate-account lookup so
+  // a non-allowed email learns nothing about which accounts exist.
+  if (!(await isEmailAllowed(email))) {
+    return res.status(403).json({
+      error: 'Registration is currently limited to approved email addresses.',
+    });
   }
 
   const existing = await prisma.user.findFirst({ where: { email, deleted_at: null } });

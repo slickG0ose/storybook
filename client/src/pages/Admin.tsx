@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link, Navigate } from 'react-router-dom'
-import { Shield, Users, BookOpen, FolderOpen, Loader2, RotateCcw, Star, AlertCircle, Trash2 } from 'lucide-react'
+import { Shield, Users, BookOpen, FolderOpen, Loader2, RotateCcw, Star, AlertCircle, Trash2, MailCheck, Plus } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/apiBase'
-import type { AdminUser, AdminBook, OrphanIllustration } from '../types'
+import type { AdminUser, AdminBook, OrphanIllustration, AllowedEmail } from '../types'
 
 // The orphan listing returns `path` as `/illustrations/<entry>`. The delete
 // endpoint takes the entry (directory name) as `:id`.
@@ -27,7 +27,7 @@ function formatRelativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString()
 }
 
-type Tab = 'users' | 'books' | 'orphans'
+type Tab = 'users' | 'books' | 'orphans' | 'allowlist'
 
 export default function Admin() {
   const { user, loading: authLoading } = useAuth()
@@ -50,6 +50,13 @@ export default function Admin() {
   // Per-row state for the Delete action, keyed by directory entry id.
   const [orphanDeleting, setOrphanDeleting] = useState<Record<string, boolean>>({})
   const [orphanRowError, setOrphanRowError] = useState<Record<string, string>>({})
+
+  const [allowlist, setAllowlist] = useState<AllowedEmail[]>([])
+  const [allowlistLoading, setAllowlistLoading] = useState(true)
+  const [allowlistError, setAllowlistError] = useState('')
+  const [allowlistAddError, setAllowlistAddError] = useState('')
+  const [allowlistAdding, setAllowlistAdding] = useState(false)
+  const [allowlistRemoving, setAllowlistRemoving] = useState<Record<string, boolean>>({})
 
   const token = user?.token
 
@@ -107,12 +114,76 @@ export default function Admin() {
     }
   }, [token])
 
+  const fetchAllowlist = useCallback(async () => {
+    if (!token) return
+    setAllowlistLoading(true)
+    setAllowlistError('')
+    try {
+      const res = await fetch(api('/api/admin/allowlist'), {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error('Failed to load the allowlist')
+      const data = (await res.json()) as AllowedEmail[]
+      setAllowlist(data)
+    } catch (err) {
+      setAllowlistError(err instanceof Error ? err.message : 'Failed to load the allowlist')
+    } finally {
+      setAllowlistLoading(false)
+    }
+  }, [token])
+
+  const addAllowedEmail = async (email: string, note: string) => {
+    if (!token) return
+    setAllowlistAdding(true)
+    setAllowlistAddError('')
+    try {
+      const res = await fetch(api('/api/admin/allowlist'), {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, ...(note.trim() ? { note: note.trim() } : {}) }),
+      })
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string }
+        throw new Error(data.error || 'Could not add that email')
+      }
+      const created = (await res.json()) as AllowedEmail
+      setAllowlist(prev => [created, ...prev])
+    } catch (err) {
+      setAllowlistAddError(err instanceof Error ? err.message : 'Could not add that email')
+      throw err
+    } finally {
+      setAllowlistAdding(false)
+    }
+  }
+
+  const removeAllowedEmail = async (email: string) => {
+    if (!token) return
+    setAllowlistRemoving(prev => ({ ...prev, [email]: true }))
+    try {
+      const res = await fetch(api(`/api/admin/allowlist/${encodeURIComponent(email)}`), {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error('Could not remove that email')
+      setAllowlist(prev => prev.filter(a => a.email !== email))
+    } catch (err) {
+      setAllowlistError(err instanceof Error ? err.message : 'Could not remove that email')
+    } finally {
+      setAllowlistRemoving(prev => {
+        const next = { ...prev }
+        delete next[email]
+        return next
+      })
+    }
+  }
+
   useEffect(() => {
     if (!token) return
     void fetchUsers()
     void fetchBooks()
     void fetchOrphans()
-  }, [token, fetchUsers, fetchBooks, fetchOrphans])
+    void fetchAllowlist()
+  }, [token, fetchUsers, fetchBooks, fetchOrphans, fetchAllowlist])
 
   // Wait until auth resolves before deciding to redirect.
   if (authLoading) {
@@ -245,6 +316,7 @@ export default function Admin() {
           { id: 'users', label: 'Users', icon: Users, count: users.length },
           { id: 'books', label: 'Books', icon: BookOpen, count: books.length },
           { id: 'orphans', label: 'Orphans', icon: FolderOpen, count: orphans.length },
+          { id: 'allowlist', label: 'Allowlist', icon: MailCheck, count: allowlist.length },
         ] as const).map(t => {
           const Icon = t.icon
           const active = tab === t.id
@@ -283,6 +355,19 @@ export default function Admin() {
           onRestore={restoreBook}
           onToggleFeatured={toggleFeatured}
           onRetry={fetchBooks}
+        />
+      )}
+      {tab === 'allowlist' && (
+        <AllowlistTab
+          entries={allowlist}
+          loading={allowlistLoading}
+          error={allowlistError}
+          addError={allowlistAddError}
+          adding={allowlistAdding}
+          removingByEmail={allowlistRemoving}
+          onRetry={fetchAllowlist}
+          onAdd={addAllowedEmail}
+          onRemove={removeAllowedEmail}
         />
       )}
       {tab === 'orphans' && (
@@ -601,6 +686,143 @@ function OrphansTab({
           })}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+interface AllowlistTabProps {
+  entries: AllowedEmail[]
+  loading: boolean
+  error: string
+  addError: string
+  adding: boolean
+  removingByEmail: Record<string, boolean>
+  onRetry: () => Promise<void>
+  onAdd: (email: string, note: string) => Promise<void>
+  onRemove: (email: string) => Promise<void>
+}
+
+function AllowlistTab({
+  entries,
+  loading,
+  error,
+  addError,
+  adding,
+  removingByEmail,
+  onRetry,
+  onAdd,
+  onRemove,
+}: AllowlistTabProps) {
+  const [email, setEmail] = useState('')
+  const [note, setNote] = useState('')
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!email.trim()) return
+    try {
+      await onAdd(email.trim(), note)
+      setEmail('')
+      setNote('')
+    } catch {
+      // onAdd surfaces the message via addError; keep the inputs so the admin
+      // can correct a typo rather than retyping the whole address.
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-md p-5">
+        <h3 className="font-bold text-gray-800 dark:text-gray-100 mb-1">Invite an email</h3>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+          Registration is closed by default. Only addresses on this list can create an account.
+          Removing an address here does not disable an account that already exists — soft-delete
+          the user for that.
+        </p>
+        <form onSubmit={e => void submit(e)} className="flex flex-col sm:flex-row gap-2">
+          <input
+            type="email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            placeholder="person@example.com"
+            aria-label="Email to allow"
+            required
+            className="flex-1 px-3 py-2 rounded-lg text-sm bg-gray-50 dark:bg-gray-700 text-gray-800 dark:text-gray-100 border border-gray-200 dark:border-gray-600 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-400"
+          />
+          <input
+            type="text"
+            value={note}
+            onChange={e => setNote(e.target.value)}
+            placeholder="Note (optional)"
+            aria-label="Note"
+            maxLength={200}
+            className="flex-1 px-3 py-2 rounded-lg text-sm bg-gray-50 dark:bg-gray-700 text-gray-800 dark:text-gray-100 border border-gray-200 dark:border-gray-600 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-400"
+          />
+          <button
+            type="submit"
+            disabled={adding || !email.trim()}
+            className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-purple-500 hover:bg-purple-600 text-white cursor-pointer border-none disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {adding ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+            Add
+          </button>
+        </form>
+        {addError && (
+          <p className="flex items-center gap-1.5 mt-3 text-sm text-red-600 dark:text-red-400">
+            <AlertCircle size={14} />
+            {addError}
+          </p>
+        )}
+      </div>
+
+      {loading ? (
+        <LoadingRow message="Loading allowlist..." />
+      ) : error ? (
+        <ErrorRow message={error} onRetry={() => void onRetry()} />
+      ) : entries.length === 0 ? (
+        <p className="text-gray-500 dark:text-gray-400 text-sm py-6 px-4">
+          Nobody is allowlisted yet — no new accounts can be created.
+        </p>
+      ) : (
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-md overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0">
+              <tr className="text-left text-gray-600 dark:text-gray-300">
+                <th className="px-4 py-3 font-semibold">Email</th>
+                <th className="px-4 py-3 font-semibold">Note</th>
+                <th className="px-4 py-3 font-semibold">Added by</th>
+                <th className="px-4 py-3 font-semibold">Added</th>
+                <th className="px-4 py-3 font-semibold">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+              {entries.map(entry => {
+                const isRemoving = !!removingByEmail[entry.email]
+                return (
+                  <tr key={entry.email} className="text-gray-700 dark:text-gray-200">
+                    <td className="px-4 py-3 font-mono text-xs break-all">{entry.email}</td>
+                    <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{entry.note || '—'}</td>
+                    <td className="px-4 py-3 text-gray-500 dark:text-gray-400">{entry.added_by || '—'}</td>
+                    <td className="px-4 py-3 text-gray-500 dark:text-gray-400">
+                      {formatRelativeTime(String(entry.created_at))}
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => void onRemove(entry.email)}
+                        disabled={isRemoving}
+                        aria-label={`Remove ${entry.email} from the allowlist`}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-600 hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-400 text-white cursor-pointer border-none disabled:opacity-60 disabled:cursor-not-allowed"
+                      >
+                        {isRemoving ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }

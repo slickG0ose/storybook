@@ -202,6 +202,21 @@ async function main(): Promise<void> {
   });
   console.log(`[seed] demo user ${DEMO_EMAIL} (id ${user.id}, role ${user.role}). Password: ${DEMO_PASSWORD}`);
 
+  // Keep the demo account on the registration allowlist (F4a / #5). Without
+  // this, a reset environment could seed the demo user but reject anyone
+  // re-registering it. Upsert so reruns are idempotent and never clobber a
+  // note an admin has since edited.
+  await prisma.allowedEmail.upsert({
+    where: { email: DEMO_EMAIL },
+    update: {},
+    create: {
+      email: DEMO_EMAIL,
+      added_by: 'db:seed-demo',
+      note: 'Demo account — seeded.',
+    },
+  });
+  console.log(`[seed] allowlisted ${DEMO_EMAIL}`);
+
   const fixtures = loadFixtures();
   if (fixtures.length === 0) {
     console.warn(`[seed] no fixtures found in ${FIXTURES_DIR}. Nothing to seed.`);

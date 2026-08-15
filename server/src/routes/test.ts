@@ -3,10 +3,14 @@ import type { Request, Response } from 'express';
 import {
   TestUserDeleteRequestSchema,
   TestUserDeleteResponseSchema,
+  TestAllowEmailRequestSchema,
+  TestAllowEmailResponseSchema,
   type TestUserDeleteRequest,
+  type TestAllowEmailRequest,
 } from '@storybook/shared';
 import prisma from '../db/prisma';
 import { validate } from '../middleware/validate';
+import { normalizeEmail } from '../services/allowlist';
 
 // Test-only utility router. Mounted from index.ts only when
 // NODE_ENV !== 'production'. The handlers themselves also short-circuit to 404
@@ -90,6 +94,39 @@ router.delete(
     await prisma.user.delete({ where: { id: user.id } });
 
     res.json({ ok: true, deleted: 1 });
+  },
+);
+
+// Allowlist an address so a Playwright spec can register it. Registration is
+// closed by default (F4a / #5) and specs create timestamped throwaway emails,
+// so there's nothing to pre-seed via ALLOWLIST_BOOTSTRAP_EMAILS. Same
+// NODE_ENV + secret guards as the cleanup endpoint. This does NOT bypass the
+// gate — the spec still registers through the real /api/auth/register.
+router.post(
+  '/allow-email',
+  (req: Request, res: Response, next) => {
+    if (isProd()) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    const secret = req.headers['x-test-secret'];
+    if (secret !== expectedSecret()) {
+      return res.status(401).json({ error: 'Invalid test secret' });
+    }
+    next();
+  },
+  validate({
+    name: 'POST /api/_test/allow-email',
+    request: TestAllowEmailRequestSchema,
+    response: TestAllowEmailResponseSchema,
+  }),
+  async (req: Request, res: Response) => {
+    const email = normalizeEmail((req.body as TestAllowEmailRequest).email);
+    await prisma.allowedEmail.upsert({
+      where: { email },
+      update: {},
+      create: { email, added_by: 'api/_test/allow-email' },
+    });
+    res.json({ ok: true, email });
   },
 );
 

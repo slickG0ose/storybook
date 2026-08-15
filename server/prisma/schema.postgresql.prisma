@@ -133,3 +133,14 @@ model OrderItem {
   order Order @relation(fields: [order_id], references: [id], onDelete: Cascade)
   book  Book  @relation(fields: [book_id], references: [id])
 }
+
+// Registration allowlist (F4a / #5). Email is the primary key — an email is
+// either on the list or it isn't, and there's nothing else to identify a row
+// by. `added_by` is a free-text admin email rather than a User relation so a
+// bootstrap entry can be created before any user exists.
+model AllowedEmail {
+  email      String   @id
+  added_by   String?
+  note       String?
+  created_at DateTime @default(now())
+}

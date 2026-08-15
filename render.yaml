@@ -53,6 +53,11 @@ services:
       # manually in Render (Environment tab), same as the keys above.
       - key: FAL_KEY
         sync: false
+      # Seeds the registration allowlist (F4a / #5) on first start, so the
+      # deployment isn't locked out of its own signup. Only applies while the
+      # AllowedEmail table is empty; after that, manage it in the admin UI.
+      - key: ALLOWLIST_BOOTSTRAP_EMAILS
+        sync: false
       - key: DATABASE_URL
         fromDatabase:
           name: storybook-postgres

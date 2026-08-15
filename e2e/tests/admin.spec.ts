@@ -38,6 +38,16 @@ test.describe('Admin page', () => {
     // per run so concurrent test workers don't collide.
     const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
     const email = `admin-spec-${suffix}@example.com`;
+
+    // Registration is closed by default (F4a / #5), so allowlist the throwaway
+    // address first. The spec still registers through the real endpoint — this
+    // opts the address in, it does not skip the gate.
+    const allow = await request.post('http://localhost:3001/api/_test/allow-email', {
+      data: { email },
+      headers: { 'x-test-secret': 'dev-test-secret' },
+    });
+    expect(allow.ok()).toBeTruthy();
+
     const res = await request.post('http://localhost:3001/api/auth/register', {
       data: { email, name: 'Admin Spec Tester', password: 'pw-test-1234' },
     });

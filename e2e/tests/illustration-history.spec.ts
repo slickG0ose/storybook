@@ -70,6 +70,15 @@ test.describe('Illustration history — revert prior version', () => {
     // Register a fresh user against the real server. Unique email per run.
     const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
     const email = `illustration-history-${suffix}@example.com`;
+
+    // Registration is closed by default (F4a / #5) — opt the throwaway address
+    // in first. The spec still registers through the real endpoint.
+    const allow = await request.post('http://localhost:3001/api/_test/allow-email', {
+      data: { email },
+      headers: { 'x-test-secret': 'dev-test-secret' },
+    });
+    expect(allow.ok()).toBeTruthy();
+
     const res = await request.post('http://localhost:3001/api/auth/register', {
       data: { email, name: 'Illustration History Tester', password: 'pw-test-1234' },
     });

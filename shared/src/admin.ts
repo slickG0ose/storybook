@@ -90,3 +90,42 @@ export const OrphanDeleteResponseSchema = z.object({
   deleted: z.string(),
 });
 export type OrphanDeleteResponse = z.infer<typeof OrphanDeleteResponseSchema>;
+
+// ---------------------------------------------------------------------------
+// Registration allowlist (F4a / #5)
+//
+// GET    /api/admin/allowlist          — list every allowed email
+// POST   /api/admin/allowlist          — add one
+// DELETE /api/admin/allowlist/:email   — remove one
+// ---------------------------------------------------------------------------
+export const AllowedEmailSchema = z.object({
+  email: z.string(),
+  added_by: z.string().nullable(),
+  note: z.string().nullable(),
+  created_at: z.union([z.string(), z.date()]),
+});
+export type AllowedEmail = z.infer<typeof AllowedEmailSchema>;
+
+export const AllowlistResponseSchema = z.array(AllowedEmailSchema);
+export type AllowlistResponse = z.infer<typeof AllowlistResponseSchema>;
+
+export const AllowlistAddRequestSchema = z.object({
+  email: z
+    .string({
+      required_error: 'email is required',
+      invalid_type_error: 'email must be a string',
+    })
+    .trim()
+    .min(1, 'email is required')
+    .email('email must be a valid email address'),
+  note: z.string().trim().max(200, 'note must be 200 characters or fewer').optional(),
+});
+export type AllowlistAddRequest = z.infer<typeof AllowlistAddRequestSchema>;
+
+// `removed` echoes the email back so the client can update its list without
+// re-fetching, matching the OrphanDeleteResponse pattern above.
+export const AllowlistDeleteResponseSchema = z.object({
+  success: z.boolean(),
+  removed: z.string(),
+});
+export type AllowlistDeleteResponse = z.infer<typeof AllowlistDeleteResponseSchema>;

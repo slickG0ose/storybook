@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { createHash, randomBytes } from 'crypto';
 import request from 'supertest';
 import type { Express } from 'express';
-import { createTestApp, resetDatabase } from '../../__tests__/setup';
+import { createTestApp, resetDatabase, allowEmail } from '../../__tests__/setup';
 import prisma from '../../db/prisma';
 import { hashPassword, verifyPassword, isLegacyHash } from '../auth';
 
@@ -53,6 +53,7 @@ describe('POST /api/auth — registration + legacy upgrade', () => {
   });
 
   it('stores a scrypt hash on registration', async () => {
+    await allowEmail('new@example.com');
     await request(app)
       .post('/api/auth/register')
       .send({ email: 'new@example.com', name: 'New', password: 'pw-test-1234' });
@@ -62,6 +63,7 @@ describe('POST /api/auth — registration + legacy upgrade', () => {
   });
 
   it('rejects a password shorter than 8 characters', async () => {
+    await allowEmail('short@example.com');
     const res = await request(app)
       .post('/api/auth/register')
       .send({ email: 'short@example.com', name: 'Short', password: 'abc' });

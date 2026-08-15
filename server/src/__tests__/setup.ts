@@ -30,6 +30,23 @@ const seedPages = [
 // deleted_at = null (Prisma default). No seeded users, so role/deleted_at on
 // User are tested via per-test /register calls which inherit the schema
 // defaults (role='user', deleted_at=null).
+/**
+ * Put an email on the registration allowlist so a test can register it.
+ *
+ * Registration is closed by default (F4a / #5), so tests must opt an address
+ * in explicitly. This is deliberately NOT a bypass flag: tests exercise the
+ * real gate, and a test that forgets to call this fails the same way a real
+ * un-allowlisted signup would.
+ */
+export async function allowEmail(email: string): Promise<void> {
+  const normalized = email.trim().toLowerCase();
+  await prisma.allowedEmail.upsert({
+    where: { email: normalized },
+    update: {},
+    create: { email: normalized, added_by: 'test-setup' },
+  });
+}
+
 export async function resetDatabase() {
   await prisma.orderItem.deleteMany();
   await prisma.order.deleteMany();
@@ -39,6 +56,7 @@ export async function resetDatabase() {
   await prisma.page.deleteMany();
   await prisma.book.deleteMany();
   await prisma.user.deleteMany();
+  await prisma.allowedEmail.deleteMany();
 
   for (const book of seedBooks) {
     await prisma.book.upsert({

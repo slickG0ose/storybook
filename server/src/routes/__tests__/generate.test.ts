@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';
 import type { Express } from 'express';
-import { createTestApp, resetDatabase } from '../../__tests__/setup';
+import { createTestApp, resetDatabase, allowEmail } from '../../__tests__/setup';
 
 // Mock the Anthropic SDK the same way books.test.ts does. The point of most
 // assertions below is that mockCreate is NEVER reached — an unauthenticated
@@ -34,8 +34,10 @@ const VALID_BODY = {
 };
 
 async function createUserAndGetToken(app: Express): Promise<string> {
+  const email = `gen-${Date.now()}@example.com`;
+  await allowEmail(email);
   const res = await request(app).post('/api/auth/register').send({
-    email: `gen-${Date.now()}@example.com`,
+    email,
     name: 'Gen Tester',
     password: 'test-password',
   });
