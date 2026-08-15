@@ -169,18 +169,24 @@ This is the single most likely failure mode on first deploy. The Pages workflow 
 
 Recommendation: pick a workaround before Step 3, not after.
 
-### 6. CORS is wide-open
+### 6. CORS is wide-open — RESOLVED
 
-`server/src/index.ts` has `app.use(cors())` (no options) → `Access-Control-Allow-Origin: *`. Works for the spike. For prod, tighten to the actual Pages origin:
+**Status: fixed.** `server/src/lib/cors.ts` now reads a `CORS_ORIGIN` allowlist, and `render.yaml` sets it to `https://slickg0ose.github.io`. The next Render deploy picks it up.
 
-```ts
-app.use(cors({
-  origin: process.env.CORS_ORIGIN ?? 'http://localhost:5173',
-  credentials: true,
-}));
-```
+Behaviour by environment:
 
-Then set `CORS_ORIGIN` in Render env to `https://slickG0ose.github.io`.
+| `CORS_ORIGIN` | `NODE_ENV` | Result |
+|---|---|---|
+| set | any | Only those origins get `Access-Control-Allow-Origin`. Comma-separate for more than one. |
+| unset | not production | Every origin allowed. This is what local dev needs — Vite on `:5173`, Playwright, curl. |
+| unset | production | Every origin allowed **plus a startup warning**. Deliberate: a missing env var must not take a live service down. |
+
+Two things to know if you change it:
+
+- It's an **origin**, not a URL — scheme + host, no path. `https://slickg0ose.github.io/storybook/` is wrong; `https://slickg0ose.github.io` is right, even though Pages serves the app under `/storybook/`.
+- Requests with **no `Origin` header** always pass. That covers Render's health check and any curl/server-to-server call; rejecting them would fail `healthCheckPath` and spin the service down.
+
+Note on severity: auth here is a Bearer token in the `Authorization` header, not an ambient cookie, so the wide-open policy was never the classic cross-site-request hole — a browser won't attach a token to a cross-origin call by itself. What it did allow was any page on the web scripting the API from a visitor's browser and reading the responses.
 
 ## Cost projection
 
@@ -215,7 +221,7 @@ After merging this PR:
 
 - [ ] **Implement F5** (demo deploy) — execute the steps above on an actual Render account
 - [ ] Decide on the GitHub Pages base-path workaround (custom domain vs org root vs vite/router config)
-- [ ] Add `CORS_ORIGIN` env handling to `server/src/index.ts` and document in `server/.env.example`
+- [x] Add `CORS_ORIGIN` env handling to `server/src/index.ts` and document in `server/.env.example` — done; see "Known issues" §6
 - [ ] Generate Postgres-specific Prisma migrations and switch the Blueprint from `db push` to `migrate deploy`
 - [ ] Decide on illustration persistence strategy (accept-it / Render persistent disk / R2)
 - [ ] Calendar the Postgres-free expiry (90 days from deploy)

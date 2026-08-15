@@ -34,13 +34,20 @@ import { snapshotDb } from './db/snapshot';
 import { bootstrapAllowlist } from './services/allowlist';
 import Anthropic from '@anthropic-ai/sdk';
 import { checkForNewerModel } from './lib/models';
+import { buildCorsPolicy } from './lib/cors';
 
 import type { Request, Response, NextFunction } from 'express';
 
 const app = express();
 const PORT: number = parseInt(process.env.PORT || '3001', 10);
 
-app.use(cors());
+const corsPolicy = buildCorsPolicy();
+if (corsPolicy.warning) {
+  console.warn(`[cors] ${corsPolicy.warning}`);
+} else if (corsPolicy.allowed.length > 0) {
+  console.log(`[cors] restricted to: ${corsPolicy.allowed.join(', ')}`);
+}
+app.use(cors(corsPolicy.options));
 app.use(express.json({ limit: '10mb' }));
 app.use('/illustrations', express.static(join(import.meta.dirname, '../public/illustrations')));
 app.use('/uploads', express.static(join(import.meta.dirname, '../public/uploads')));

@@ -58,6 +58,15 @@ services:
       # AllowedEmail table is empty; after that, manage it in the admin UI.
       - key: ALLOWLIST_BOOTSTRAP_EMAILS
         sync: false
+      # Locks Access-Control-Allow-Origin to the deployed client instead of
+      # the wide-open `*` this service shipped with. This is the ORIGIN only
+      # — scheme + host. The /storybook/ path the Pages project site serves
+      # under is NOT part of an origin, so don't append it. Comma-separate to
+      # allow more than one (e.g. adding a custom domain later). Leaving this
+      # unset keeps every origin allowed and logs a warning at startup rather
+      # than failing the boot.
+      - key: CORS_ORIGIN
+        value: https://slickg0ose.github.io
       # Spend ceilings (F4b / #6), in whole cents. Daily is per-user and
       # admin-bypassable; monthly is global and bypassable by nobody.
       - key: QUOTA_DAILY_PER_USER_CENTS
