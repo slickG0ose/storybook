@@ -2,6 +2,7 @@ import { Router } from 'express';
 import Anthropic from '@anthropic-ai/sdk';
 import prisma from '../db/prisma';
 import { requireAuth } from '../middleware/requireAuth';
+import { STORY_MODEL, STORY_THINKING } from '../lib/models';
 import { spendGate } from '../middleware/spendGate';
 import { recordUsage, checkQuota } from '../services/spend';
 import {
@@ -156,7 +157,11 @@ Respond with ONLY valid JSON in this exact format (no markdown, no code fences):
 Make the story warm, engaging, and age-appropriate. Use vivid but simple language. Each page should advance the story and paint a picture. The story should have a satisfying, positive ending.`;
 
     const message = await client.messages.create({
-      model: 'claude-sonnet-4-6',
+      model: STORY_MODEL,
+      // Sonnet 5 runs adaptive thinking when this is omitted, and max_tokens
+      // caps thinking + response text together — omitting it would truncate
+      // stories. See server/src/lib/models.ts.
+      thinking: STORY_THINKING,
       max_tokens: Math.max(2000, pageCount * 500),
       messages: [{ role: 'user', content: prompt }],
     });

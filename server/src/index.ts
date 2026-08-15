@@ -32,6 +32,8 @@ import adminRouter from './routes/admin';
 import testRouter from './routes/test';
 import { snapshotDb } from './db/snapshot';
 import { bootstrapAllowlist } from './services/allowlist';
+import Anthropic from '@anthropic-ai/sdk';
+import { checkForNewerModel } from './lib/models';
 
 import type { Request, Response, NextFunction } from 'express';
 
@@ -83,6 +85,11 @@ app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
   // Best-effort backup of dev.db on every server start. Quiet on failure.
   void snapshotDb();
+
+  // Advisory: report if a newer Sonnet has shipped. Never changes the model.
+  if (process.env.ANTHROPIC_API_KEY) {
+    void checkForNewerModel(new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }));
+  }
 
   // Seed the registration allowlist from ALLOWLIST_BOOTSTRAP_EMAILS if it's
   // empty, so a fresh deployment isn't locked out of its own signup. No-ops

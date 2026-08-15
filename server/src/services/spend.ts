@@ -32,7 +32,10 @@ export type UsageKind = 'story' | 'illustration' | 'cover';
  * or model changes.
  */
 export const COST_CENTS: Record<UsageKind, number> = {
-  story: 3,
+  // A 15-page story runs ~4K output tokens; at Sonnet's $15/M output that is
+  // ~6c, not the 3c originally estimated. The old figure made the daily cap
+  // roughly twice as permissive for story calls as intended.
+  story: 6,
   illustration: 4,
   cover: 4,
 };
