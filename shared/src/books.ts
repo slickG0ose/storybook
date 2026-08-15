@@ -191,7 +191,13 @@ export const BookIllustrateRequestSchema = z.object({
 });
 export type BookIllustrateRequest = z.infer<typeof BookIllustrateRequestSchema>;
 
-export const BookIllustrateResponseSchema = BookWithPagesSchema.nullable();
+// `quotaHitAfterPage` is present only when the spend ceiling (F4b / #6) was
+// reached partway through a bulk illustrate. Its value is the last page number
+// that WAS illustrated, so the client can say "pages 1-N are done" rather than
+// implying the whole request failed. Absent on the normal path.
+export const BookIllustrateResponseSchema = BookWithPagesSchema.extend({
+  quotaHitAfterPage: z.number().int().min(0).optional(),
+}).nullable();
 export type BookIllustrateResponse = z.infer<typeof BookIllustrateResponseSchema>;
 
 // ---------------------------------------------------------------------------

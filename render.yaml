@@ -58,6 +58,12 @@ services:
       # AllowedEmail table is empty; after that, manage it in the admin UI.
       - key: ALLOWLIST_BOOTSTRAP_EMAILS
         sync: false
+      # Spend ceilings (F4b / #6), in whole cents. Daily is per-user and
+      # admin-bypassable; monthly is global and bypassable by nobody.
+      - key: QUOTA_DAILY_PER_USER_CENTS
+        value: '50'
+      - key: QUOTA_MONTHLY_GLOBAL_CENTS
+        value: '2000'
       - key: DATABASE_URL
         fromDatabase:
           name: storybook-postgres

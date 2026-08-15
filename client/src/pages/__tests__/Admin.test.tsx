@@ -2,7 +2,7 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import Admin from '../Admin'
-import type { AdminUser, AdminBook, OrphanIllustration, AllowedEmail, User } from '../../types'
+import type { AdminUser, AdminBook, OrphanIllustration, AllowedEmail, AdminSpendResponse, User } from '../../types'
 
 const adminUser: User = {
   id: 'admin-1',
@@ -121,11 +121,23 @@ const sampleAllowlist: AllowedEmail[] = [
   },
 ]
 
+const sampleSpend: AdminSpendResponse = {
+  dailyByUser: [
+    { user_id: 'u-1', email: 'spender@example.com', name: 'Spender', spent_cents: 50 },
+    { user_id: 'u-2', email: 'light@example.com', name: 'Light', spent_cents: 4 },
+  ],
+  monthlyTotalCents: 1800,
+  dailyLimitCents: 50,
+  monthlyLimitCents: 2000,
+  adminBypassEnabled: true,
+}
+
 function setupFetchMock(opts: {
   users?: AdminUser[]
   books?: AdminBook[]
   orphans?: OrphanIllustration[]
   allowlist?: AllowedEmail[]
+  spend?: AdminSpendResponse
   addAllowlistStatus?: number
   restoredUser?: AdminUser
   restoredBook?: AdminBook
@@ -149,6 +161,14 @@ function setupFetchMock(opts: {
     if (url === '/api/admin/books' && method === 'GET') {
       return Promise.resolve(
         new Response(JSON.stringify(opts.books ?? sampleBooks), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+    }
+    if (url === '/api/admin/spend' && method === 'GET') {
+      return Promise.resolve(
+        new Response(JSON.stringify(opts.spend ?? sampleSpend), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         }),
@@ -596,6 +616,66 @@ describe('Admin page', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/no new accounts can be created/i)).toBeInTheDocument()
+    })
+  })
+
+  // ---------------------------------------------------------------------
+  // Spend gates (F4b / #6)
+  // ---------------------------------------------------------------------
+
+  it('shows monthly usage against the ceiling', async () => {
+    setupFetchMock()
+    renderAdmin()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^Spend/ }))
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText(/\$18\.00 of \$20\.00 \(90%\)/)).toBeInTheDocument()
+    })
+    const bar = screen.getByRole('progressbar', { name: /monthly spend/i })
+    expect(bar).toHaveAttribute('aria-valuenow', '90')
+  })
+
+  it('lists per-user daily spend', async () => {
+    setupFetchMock()
+    renderAdmin()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^Spend/ }))
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('spender@example.com')).toBeInTheDocument()
+    })
+    expect(screen.getByText('light@example.com')).toBeInTheDocument()
+    expect(screen.getByText('$0.04')).toBeInTheDocument()
+  })
+
+  it('says generation is paused for everyone once the ceiling is reached', async () => {
+    setupFetchMock()
+    renderAdmin()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^Spend/ }))
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText(/admins included/i)).toBeInTheDocument()
+    })
+  })
+
+  it('handles a day with no recorded spend', async () => {
+    setupFetchMock({ spend: { ...sampleSpend, dailyByUser: [], monthlyTotalCents: 0 } })
+    renderAdmin()
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /^Spend/ }))
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText(/no ai spend recorded today/i)).toBeInTheDocument()
     })
   })
 })

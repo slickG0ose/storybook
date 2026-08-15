@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link, Navigate } from 'react-router-dom'
-import { Shield, Users, BookOpen, FolderOpen, Loader2, RotateCcw, Star, AlertCircle, Trash2, MailCheck, Plus } from 'lucide-react'
+import { Shield, Users, BookOpen, FolderOpen, Loader2, RotateCcw, Star, AlertCircle, Trash2, MailCheck, Plus, Gauge } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/apiBase'
-import type { AdminUser, AdminBook, OrphanIllustration, AllowedEmail } from '../types'
+import type { AdminUser, AdminBook, OrphanIllustration, AllowedEmail, AdminSpendResponse } from '../types'
 
 // The orphan listing returns `path` as `/illustrations/<entry>`. The delete
 // endpoint takes the entry (directory name) as `:id`.
@@ -27,7 +27,7 @@ function formatRelativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString()
 }
 
-type Tab = 'users' | 'books' | 'orphans' | 'allowlist'
+type Tab = 'users' | 'books' | 'orphans' | 'allowlist' | 'spend'
 
 export default function Admin() {
   const { user, loading: authLoading } = useAuth()
@@ -57,6 +57,10 @@ export default function Admin() {
   const [allowlistAddError, setAllowlistAddError] = useState('')
   const [allowlistAdding, setAllowlistAdding] = useState(false)
   const [allowlistRemoving, setAllowlistRemoving] = useState<Record<string, boolean>>({})
+
+  const [spend, setSpend] = useState<AdminSpendResponse | null>(null)
+  const [spendLoading, setSpendLoading] = useState(true)
+  const [spendError, setSpendError] = useState('')
 
   const token = user?.token
 
@@ -177,13 +181,31 @@ export default function Admin() {
     }
   }
 
+  const fetchSpend = useCallback(async () => {
+    if (!token) return
+    setSpendLoading(true)
+    setSpendError('')
+    try {
+      const res = await fetch(api('/api/admin/spend'), {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error('Failed to load spend')
+      setSpend((await res.json()) as AdminSpendResponse)
+    } catch (err) {
+      setSpendError(err instanceof Error ? err.message : 'Failed to load spend')
+    } finally {
+      setSpendLoading(false)
+    }
+  }, [token])
+
   useEffect(() => {
     if (!token) return
     void fetchUsers()
     void fetchBooks()
     void fetchOrphans()
     void fetchAllowlist()
-  }, [token, fetchUsers, fetchBooks, fetchOrphans, fetchAllowlist])
+    void fetchSpend()
+  }, [token, fetchUsers, fetchBooks, fetchOrphans, fetchAllowlist, fetchSpend])
 
   // Wait until auth resolves before deciding to redirect.
   if (authLoading) {
@@ -317,6 +339,7 @@ export default function Admin() {
           { id: 'books', label: 'Books', icon: BookOpen, count: books.length },
           { id: 'orphans', label: 'Orphans', icon: FolderOpen, count: orphans.length },
           { id: 'allowlist', label: 'Allowlist', icon: MailCheck, count: allowlist.length },
+          { id: 'spend', label: 'Spend', icon: Gauge, count: spend?.dailyByUser.length ?? 0 },
         ] as const).map(t => {
           const Icon = t.icon
           const active = tab === t.id
@@ -356,6 +379,9 @@ export default function Admin() {
           onToggleFeatured={toggleFeatured}
           onRetry={fetchBooks}
         />
+      )}
+      {tab === 'spend' && (
+        <SpendTab data={spend} loading={spendLoading} error={spendError} onRetry={fetchSpend} />
       )}
       {tab === 'allowlist' && (
         <AllowlistTab
@@ -815,6 +841,107 @@ function AllowlistTab({
                         {isRemoving ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
                         Remove
                       </button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function formatCents(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`
+}
+
+interface SpendTabProps {
+  data: AdminSpendResponse | null
+  loading: boolean
+  error: string
+  onRetry: () => Promise<void>
+}
+
+function SpendTab({ data, loading, error, onRetry }: SpendTabProps) {
+  if (loading) return <LoadingRow message="Loading spend..." />
+  if (error) return <ErrorRow message={error} onRetry={() => void onRetry()} />
+  if (!data) return null
+
+  const monthlyPct =
+    data.monthlyLimitCents > 0
+      ? Math.min(100, Math.round((data.monthlyTotalCents / data.monthlyLimitCents) * 100))
+      : 0
+  // Colour tracks headroom, not just a number, so the state reads at a glance.
+  const barTone =
+    monthlyPct >= 90
+      ? 'bg-red-500 dark:bg-red-400'
+      : monthlyPct >= 70
+        ? 'bg-amber-500 dark:bg-amber-400'
+        : 'bg-green-500 dark:bg-green-400'
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-md p-5">
+        <div className="flex items-baseline justify-between gap-3 flex-wrap">
+          <h3 className="font-bold text-gray-800 dark:text-gray-100">This month</h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
+            {formatCents(data.monthlyTotalCents)} of {formatCents(data.monthlyLimitCents)} ({monthlyPct}%)
+          </p>
+        </div>
+        <div
+          className="mt-3 h-2 w-full rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden"
+          role="progressbar"
+          aria-valuenow={monthlyPct}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label="Monthly spend against the ceiling"
+        >
+          <div className={`h-full ${barTone}`} style={{ width: `${monthlyPct}%` }} />
+        </div>
+        <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">
+          Generation pauses for everyone — admins included — once the monthly ceiling is reached.
+          The per-user daily cap is {formatCents(data.dailyLimitCents)}
+          {data.adminBypassEnabled ? ', which admins may exceed.' : ', which nobody may exceed.'}
+        </p>
+      </div>
+
+      {data.dailyByUser.length === 0 ? (
+        <p className="text-gray-500 dark:text-gray-400 text-sm py-6 px-4">
+          No AI spend recorded today.
+        </p>
+      ) : (
+        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-md overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0">
+              <tr className="text-left text-gray-600 dark:text-gray-300">
+                <th className="px-4 py-3 font-semibold">User</th>
+                <th className="px-4 py-3 font-semibold">Spent today</th>
+                <th className="px-4 py-3 font-semibold">Daily cap</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+              {data.dailyByUser.map(row => {
+                const atCap = row.spent_cents >= data.dailyLimitCents
+                return (
+                  <tr key={row.user_id} className="text-gray-700 dark:text-gray-200">
+                    <td className="px-4 py-3">
+                      {row.email ?? <span className="text-gray-400 dark:text-gray-500">(deleted user)</span>}
+                    </td>
+                    <td className="px-4 py-3 tabular-nums">
+                      <span
+                        className={
+                          atCap
+                            ? 'font-bold text-red-600 dark:text-red-400'
+                            : 'text-gray-700 dark:text-gray-200'
+                        }
+                      >
+                        {formatCents(row.spent_cents)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 tabular-nums text-gray-500 dark:text-gray-400">
+                      {formatCents(data.dailyLimitCents)}
                     </td>
                   </tr>
                 )

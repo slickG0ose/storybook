@@ -2,6 +2,8 @@ import { Router } from 'express';
 import Anthropic from '@anthropic-ai/sdk';
 import prisma from '../db/prisma';
 import { requireAuth } from '../middleware/requireAuth';
+import { spendGate } from '../middleware/spendGate';
+import { recordUsage, checkQuota } from '../services/spend';
 import {
   generateCover,
   generateIllustration,
@@ -102,7 +104,7 @@ const router = Router();
 // anonymous request costs real money even when the DB is unreachable. It was
 // previously ungated on a public deployment; see #5/#6 for the allowlist and
 // spend-ceiling layers that sit on top of this gate.
-router.post('/', requireAuth, async (req: Request, res: Response) => {
+router.post('/', requireAuth, spendGate('story'), async (req: Request, res: Response) => {
   const body = req.body as GenerateRequestBody;
   const { theme, ageRange, additionalDetails, styleDescriptor, styleReferenceUrl } = body;
   const previewMode: PreviewMode = body.previewMode && VALID_PREVIEW_MODES.includes(body.previewMode)
@@ -168,7 +170,12 @@ Make the story warm, engaging, and age-appropriate. Use vivid but simple languag
     const story = parseAiJson(content) as GeneratedStory;
 
     // requireAuth guarantees this is populated.
-    const user = res.locals.user as { id: string; name: string };
+    const user = res.locals.user as { id: string; name: string; role?: string };
+    const isAdmin = user.role === 'admin';
+
+    // The story call has now completed, so charge it. Recorded after the fact
+    // so a failed Claude call doesn't consume quota.
+    await recordUsage(user.id, 'story');
 
     let book = await prisma.book.create({
       data: {
@@ -227,7 +234,16 @@ Make the story warm, engaging, and age-appropriate. Use vivid but simple languag
     const portraitRefs = collectRequiredPortraitRefs(characters);
     const referenceImages = portraitRefs.length > 0 ? portraitRefs : undefined;
 
+    // Each image is a separate paid call, so each is separately gated. The
+    // spendGate middleware only reserved the story; without these checks a
+    // single previewMode:'full' request could blow past the ceiling by 16x.
+    let quotaExhausted = false;
+
     if ((previewMode === 'cover' || previewMode === 'full') && isImageGenConfigured()) {
+      const coverDecision = await checkQuota(user.id, 'cover', isAdmin);
+      if (!coverDecision.allowed) {
+        quotaExhausted = true;
+      } else {
       const coverUrl = await generateCover(
         book.id,
         story.title,
@@ -237,16 +253,26 @@ Make the story warm, engaging, and age-appropriate. Use vivid but simple languag
         referenceImages,
       );
       if (coverUrl) {
+        await recordUsage(user.id, 'cover');
         book = await prisma.book.update({
           where: { id: book.id },
           data: { cover_url: coverUrl },
           include: { pages: { orderBy: { page_number: 'asc' } } },
         });
       }
+      }
     }
 
-    if (previewMode === 'full' && isImageGenConfigured()) {
+    if (previewMode === 'full' && isImageGenConfigured() && !quotaExhausted) {
       for (const page of book.pages) {
+        const pageDecision = await checkQuota(user.id, 'illustration', isAdmin);
+        if (!pageDecision.allowed) {
+          // Partial result rather than a hard failure: the user keeps the
+          // story and whatever images were generated. Surfaced via
+          // quotaHitAfterPage below so the client can explain the gap.
+          quotaExhausted = true;
+          break;
+        }
         const url = await generateIllustration(
           book.id,
           page.page_number,
@@ -257,6 +283,7 @@ Make the story warm, engaging, and age-appropriate. Use vivid but simple languag
           referenceImages,
         );
         if (url) {
+          await recordUsage(user.id, 'illustration');
           await prisma.page.update({ where: { id: page.id }, data: { illustration_url: url } });
         }
       }
@@ -267,7 +294,7 @@ Make the story warm, engaging, and age-appropriate. Use vivid but simple languag
       if (refreshed) book = refreshed;
     }
 
-    res.json({ ...book, characters });
+    res.json({ ...book, characters, ...(quotaExhausted ? { quotaExhausted: true } : {}) });
   } catch (err: unknown) {
     console.error('Generation error:', err);
     const message = err instanceof Error ? err.message : String(err);
