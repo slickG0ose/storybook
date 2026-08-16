@@ -149,6 +149,10 @@ interface FetchCall {
   init?: RequestInit
 }
 
+// Stand-in for the PDF stream the server returns. Asserted on the way out so
+// the test proves real bytes reached the download, not just that a call fired.
+const FAKE_PDF_BODY = '%PDF-1.7 fake'
+
 function setupFetchMock(opts: {
   book?: BookWithPages
   versions?: BookVersion[]
@@ -212,8 +216,14 @@ function setupFetchMock(opts: {
           })
         )
       }
+      // Body MUST be a plain string, not a Blob. Under jsdom, `Blob` is
+      // jsdom's implementation while `Response` is Node's undici — undici
+      // doesn't recognise the foreign Blob and stringifies it to the literal
+      // "[object Blob]" on Node 24, and rejects outright on Node 22. Either
+      // way the test is testing nothing. A string body round-trips through
+      // res.blob() identically on both.
       return Promise.resolve(
-        new Response(new Blob(['%PDF-1.7 fake'], { type: 'application/pdf' }), {
+        new Response(FAKE_PDF_BODY, {
           status: 200,
           headers: {
             'Content-Type': 'application/pdf',
@@ -985,6 +995,7 @@ describe('BookDetail — Download PDF', () => {
   let clickSpy: ReturnType<typeof vi.spyOn>
   let createObjectURL: ReturnType<typeof vi.fn>
   let revokeObjectURL: ReturnType<typeof vi.fn>
+  let downloadedBlobs: Blob[]
   let originalCreate: typeof URL.createObjectURL | undefined
   let originalRevoke: typeof URL.revokeObjectURL | undefined
 
@@ -992,7 +1003,11 @@ describe('BookDetail — Download PDF', () => {
     vi.restoreAllMocks()
     originalCreate = URL.createObjectURL
     originalRevoke = URL.revokeObjectURL
-    createObjectURL = vi.fn(() => 'blob:mock-pdf-url')
+    downloadedBlobs = []
+    createObjectURL = vi.fn((blob: Blob) => {
+      downloadedBlobs.push(blob)
+      return 'blob:mock-pdf-url'
+    })
     revokeObjectURL = vi.fn()
     URL.createObjectURL = createObjectURL as unknown as typeof URL.createObjectURL
     URL.revokeObjectURL = revokeObjectURL as unknown as typeof URL.revokeObjectURL
@@ -1030,11 +1045,20 @@ describe('BookDetail — Download PDF', () => {
       (pdfCall?.init?.headers as Record<string, string> | undefined)?.['Authorization']
     ).toBe('Bearer test-token')
 
+    // Check the error surface before the click. If the fetch→blob path threw,
+    // this names the cause instead of leaving a bare "click was called 0 times".
     await waitFor(() => {
       expect(clickSpy).toHaveBeenCalledTimes(1)
-    })
+    }, { timeout: 2000 })
+    expect(screen.queryByText(/download failed/i)).not.toBeInTheDocument()
     expect(createObjectURL).toHaveBeenCalledTimes(1)
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:mock-pdf-url')
+
+    // The blob handed to createObjectURL must carry the server's actual bytes.
+    // Without this the suite passed against a body that had been stringified
+    // to "[object Blob]" — the download fired, but with garbage in it.
+    expect(downloadedBlobs).toHaveLength(1)
+    await expect(downloadedBlobs[0]!.text()).resolves.toBe(FAKE_PDF_BODY)
   })
 
   it('carries a dark: variant on every themed surface of the button', async () => {
