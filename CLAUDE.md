@@ -52,12 +52,61 @@ Prisma + SQLite. Snapshot/seed/restore conventions live in [docs/conventions/dat
 ## Testing
 
 ```bash
-cd server && npm test                # Vitest + Supertest (33 tests)
-cd client && npm test                # Vitest + RTL (19 tests)
-cd e2e && npm test                   # Playwright (20 tests)
+cd server && npm test                # Vitest + Supertest (221 tests)
+cd client && npm test                # Vitest + RTL (80 tests)
+cd e2e && npm test                   # Playwright (28 tests)
 cd e2e && npm run test:headed
 cd e2e && npm run test:ui
 ```
+
+## CI
+
+`.github/workflows/pr-ci.yml` runs on every PR. Four jobs, all independent:
+
+| Job | Covers |
+|-----|--------|
+| Harness tests | `guard-bash` hook behavior + the `.claude/` resolution snapshot |
+| Server tests | Vitest + Supertest |
+| Client tests | Vitest + RTL, plus typecheck, lint, and build |
+| E2E | Playwright (uploads a report artifact on failure) |
+
+Other workflows: `codeql.yml` (security scanning), `deploy-pages.yml` (client → GitHub Pages, `workflow_dispatch` only), `deploy.yml` (placeholder).
+
+**All four jobs are required status checks** — a red PR cannot merge. `strict_required_status_checks_policy` is `false`, so a branch does **not** have to be rebased onto the latest `master` before merging.
+
+Note the E2E job declares `needs: [server-tests, client-tests]`. When either dependency fails, E2E is *skipped* rather than failed — but the failing dependency is itself required, so a skipped E2E can never wave a PR through.
+
+**Merge protection on `master` is a repository *ruleset* (`develop-policy`), not classic branch protection** — `gh api repos/.../branches/master/protection` returns 404 even though the branch is protected. Read it with `gh api repos/slickG0ose/storybook/rulesets`. It enforces: PR required, the four status checks above, no force-push, no deletion, Copilot review on push, and CodeQL gating at `errors` / `high_or_higher`.
+
+One thing it deliberately does **not** enforce: **approving reviews** (`required_approving_review_count: 0`). GitHub forbids approving your own PR, so on a solo repo any non-zero value deadlocks every merge. Copilot review is the practical substitute.
+
+Server deploy is Render, auto-deploying on push to `master` via `render.yaml`. Client CORS is locked to `CORS_ORIGIN` (set in the Blueprint); unset in production means every origin is allowed plus a startup warning. See [docs/deploy-spike-render.md](docs/deploy-spike-render.md).
+
+## Spend gates
+
+AI calls cost real money, so every paid operation is metered and capped. Code lives in [server/src/services/spend.ts](server/src/services/spend.ts); the Express middleware is [server/src/middleware/spendGate.ts](server/src/middleware/spendGate.ts) (`spendGate(kind)`, mounted per route).
+
+- **Per-call cost** is a fixed table, not a measured value: `COST_CENTS = { story: 6, illustration: 4, cover: 4 }`. Update it when model pricing moves — a stale figure makes the caps silently wrong.
+- **Two windows, both UTC:** a per-user daily cap and a global monthly ceiling.
+- `checkQuota()` decides; `recordUsage()` writes the `UsageLog` row. A route must call both — gating without recording lets spend run away.
+
+| Env var | Default | Meaning |
+|---------|---------|---------|
+| `QUOTA_DAILY_PER_USER_CENTS` | `50` | Per-user, per-UTC-day ceiling |
+| `QUOTA_MONTHLY_GLOBAL_CENTS` | `2000` | Global, per-UTC-month ceiling |
+| `QUOTA_ADMIN_BYPASS` | `true` | Admins may exceed the **daily** cap. Never applies to the monthly ceiling — nobody bypasses that. |
+
+A malformed limit falls back to the default rather than to `Infinity`, so a typo can't disable the gate.
+
+## Registration allowlist
+
+Registration is **closed by default**. An address must be on the `AllowedEmail` table before `POST /api/auth/register` will accept it. Code: [server/src/services/allowlist.ts](server/src/services/allowlist.ts).
+
+- Admin endpoints in [server/src/routes/admin.ts](server/src/routes/admin.ts): `GET /api/admin/allowlist`, `POST /api/admin/allowlist`, `DELETE /api/admin/allowlist/:email`.
+- `bootstrapAllowlist()` runs once at server start and seeds from `ALLOWLIST_BOOTSTRAP_EMAILS` (comma-separated) **only while the table is empty**, so a fresh deploy isn't locked out of its own signup. It no-ops afterwards, and a failure is logged rather than fatal.
+- Emails are normalised (trim + lowercase) on both write and check, so casing can't create a bypass.
+
+**Tests must opt an address in explicitly** via the `allowEmail()` helper in `server/src/__tests__/setup.ts`. That is deliberately not a bypass flag — a test that forgets it fails exactly the way a real un-allowlisted signup does.
 
 ## How work flows (hybrid harness)
 
