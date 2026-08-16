@@ -72,14 +72,15 @@ cd e2e && npm run test:ui
 
 Other workflows: `codeql.yml` (security scanning), `deploy-pages.yml` (client → GitHub Pages, `workflow_dispatch` only), `deploy.yml` (placeholder).
 
-**Merge protection on `master` is a repository *ruleset* (`develop-policy`), not classic branch protection** — `gh api repos/.../branches/master/protection` returns 404 even though the branch is protected. Read it with `gh api repos/slickG0ose/storybook/rulesets`. It currently enforces: PR required, no force-push, no deletion, Copilot review on push, and CodeQL gating at `errors` / `high_or_higher`.
+**All four jobs are required status checks** — a red PR cannot merge. `strict_required_status_checks_policy` is `false`, so a branch does **not** have to be rebased onto the latest `master` before merging.
 
-Two things it does **not** enforce, deliberately:
+Note the E2E job declares `needs: [server-tests, client-tests]`. When either dependency fails, E2E is *skipped* rather than failed — but the failing dependency is itself required, so a skipped E2E can never wave a PR through.
 
-- **Required status checks.** CI green is not yet a merge gate — see the note in the F6 close-out PR.
-- **Approving reviews** (`required_approving_review_count: 0`). GitHub forbids approving your own PR, so on a solo repo any non-zero value deadlocks every merge. Copilot review is the practical substitute.
+**Merge protection on `master` is a repository *ruleset* (`develop-policy`), not classic branch protection** — `gh api repos/.../branches/master/protection` returns 404 even though the branch is protected. Read it with `gh api repos/slickG0ose/storybook/rulesets`. It enforces: PR required, the four status checks above, no force-push, no deletion, Copilot review on push, and CodeQL gating at `errors` / `high_or_higher`.
 
-Server deploy is Render, auto-deploying on push to `master` via `render.yaml`. See [docs/deploy-spike-render.md](docs/deploy-spike-render.md).
+One thing it deliberately does **not** enforce: **approving reviews** (`required_approving_review_count: 0`). GitHub forbids approving your own PR, so on a solo repo any non-zero value deadlocks every merge. Copilot review is the practical substitute.
+
+Server deploy is Render, auto-deploying on push to `master` via `render.yaml`. Client CORS is locked to `CORS_ORIGIN` (set in the Blueprint); unset in production means every origin is allowed plus a startup warning. See [docs/deploy-spike-render.md](docs/deploy-spike-render.md).
 
 ## Spend gates
 

@@ -19,7 +19,7 @@ server/src/routes/|Express routers|{books.ts,cart.ts,orders.ts,generate.ts,auth.
 server/src/services/|Business logic|{illustrations.ts,parseAiJson.ts,spend.ts,allowlist.ts,pdf.tsx,providers/}
 server/src/db/|Database layer|{prisma.ts,init.ts,snapshot.ts}
 server/src/middleware/|Middleware|{validate.ts,requireAuth.ts,spendGate.ts}
-server/src/lib/|Cross-cutting helpers|{models.ts,password.ts}
+server/src/lib/|Cross-cutting helpers|{models.ts,password.ts,cors.ts}
 server/prisma/|Schema + migrations|{schema.prisma,schema.postgresql.prisma,seed.ts,demo-seed.ts}
 shared/src/|Zod schemas + types|{index.ts,books.ts,cart.ts,orders.ts,admin.ts,test.ts,pdf.ts}
 e2e/tests/|Playwright specs|{home.spec.ts,book-detail.spec.ts,cart-checkout.spec.ts,create-book.spec.ts,dark-mode.spec.ts,admin.spec.ts,...}
@@ -51,6 +51,7 @@ ci|.github/workflows/pr-ci.yml, .github/workflows/codeql.yml, .github/workflows/
 spend-gates|server/src/services/spend.ts, server/src/middleware/spendGate.ts
 allowlist|server/src/services/allowlist.ts, server/src/routes/admin.ts (/allowlist endpoints)
 deploy|render.yaml, docs/deploy-spike-render.md, docs/deploy-stack-research.md
+cors|server/src/lib/cors.ts (CORS_ORIGIN allowlist)
 pdf-export|server/src/services/pdf.tsx, shared/src/pdf.ts
 
 ## Docs
