@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="StoryBook">
+  <title>StoryBook</title>
+  <rect width="512" height="512" rx="96" fill="#fffbeb"/>
+  <g transform="translate(96 116)">
+    <!-- open book: two facing pages with a spine -->
+    <path d="M160 24C118 4 66 -2 16 6a12 12 0 0 0-10 12v212a12 12 0 0 0 14 12c46-8 94-3 132 15a12 12 0 0 0 8 0V24z" fill="#f59e0b"/>
+    <path d="M160 24c42-20 94-26 144-18a12 12 0 0 1 10 12v212a12 12 0 0 1-14 12c-46-8-94-3-132 15a12 12 0 0 1-8 0V24z" fill="#fbbf24"/>
+    <path d="M160 24v233" stroke="#b45309" stroke-width="12" stroke-linecap="round"/>
+    <g fill="#fffbeb" opacity="0.85">
+      <rect x="42" y="66" width="86" height="12" rx="6"/>
+      <rect x="42" y="110" width="86" height="12" rx="6"/>
+      <rect x="42" y="154" width="60" height="12" rx="6"/>
+      <rect x="192" y="66" width="86" height="12" rx="6"/>
+      <rect x="192" y="110" width="86" height="12" rx="6"/>
+      <rect x="192" y="154" width="60" height="12" rx="6"/>
+    </g>
+  </g>
+  <!-- the "AI" spark that makes it this storefront and not a generic reader -->
+  <path d="M392 96l12 32 32 12-32 12-12 32-12-32-32-12 32-12z" fill="#a855f7"/>
+</svg>

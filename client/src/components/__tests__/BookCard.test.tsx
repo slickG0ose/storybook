@@ -3,12 +3,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import BookCard from '../BookCard'
 import type { Book } from '../../types'
+import type { CartContextValue } from '../../context/CartContext'
 
 // Mock the CartContext module
 const mockAddToCart = vi.fn().mockResolvedValue(undefined)
 
 vi.mock('../../context/CartContext', () => ({
-  useCart: () => ({
+  useCart: (): CartContextValue => ({
     items: [],
     total: 0,
     sessionId: 'test-session',
@@ -17,6 +18,9 @@ vi.mock('../../context/CartContext', () => ({
     removeFromCart: vi.fn(),
     clearCart: vi.fn(),
     fetchCart: vi.fn(),
+    // CartContextValue gained offline/lastSyncedAt in Task 6 (offline cart).
+    offline: false,
+    lastSyncedAt: null,
   }),
 }))
 

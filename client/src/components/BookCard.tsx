@@ -13,7 +13,7 @@ export default function BookCard({ book }: BookCardProps) {
     <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden group">
       <Link to={`/book/${book.id}`} className="no-underline">
         <div
-          className="h-48 flex items-center justify-center text-7xl transition-transform duration-300 group-hover:scale-105"
+          className="h-36 sm:h-48 flex items-center justify-center text-6xl sm:text-7xl transition-transform duration-300 group-hover:scale-105"
           style={{ backgroundColor: book.cover_color + '20' }}
         >
           <span className="drop-shadow-lg">{book.cover_emoji}</span>
@@ -39,7 +39,7 @@ export default function BookCard({ book }: BookCardProps) {
         </div>
         <button
           onClick={(e: React.MouseEvent<HTMLButtonElement>) => { e.preventDefault(); void addToCart(book.id) }}
-          className="mt-3 w-full bg-amber-500 hover:bg-amber-600 text-white py-2 rounded-xl font-semibold text-sm transition-colors cursor-pointer"
+          className="mt-3 w-full bg-amber-500 hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-500 text-white py-3 rounded-xl font-semibold text-sm transition-colors cursor-pointer"
         >
           Add to Cart
         </button>

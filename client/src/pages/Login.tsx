@@ -25,8 +25,8 @@ export default function Login() {
   }
 
   return (
-    <div className="max-w-md mx-auto px-4 py-16">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-8 transition-colors">
+    <div className="max-w-md mx-auto px-4 py-10 sm:py-16">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 sm:p-8 transition-colors">
         <div className="text-center mb-6">
           <LogIn size={40} className="text-purple-500 mx-auto mb-2" />
           <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100 font-display">Welcome Back</h1>
@@ -47,7 +47,7 @@ export default function Login() {
               value={email}
               onChange={e => setEmail(e.target.value)}
               required
-              className="w-full px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-400"
+              className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-400 dark:focus:ring-purple-500"
             />
           </div>
           <div>
@@ -57,7 +57,7 @@ export default function Login() {
               value={password}
               onChange={e => setPassword(e.target.value)}
               required
-              className="w-full px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-400"
+              className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-800 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-purple-400 dark:focus:ring-purple-500"
             />
           </div>
           <button

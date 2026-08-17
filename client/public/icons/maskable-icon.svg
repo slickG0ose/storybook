@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="StoryBook">
+  <title>StoryBook</title>
+  <!-- Maskable: full-bleed background, all content inside the 40% safe-zone radius
+       (the centred 320x320 box) so an aggressive circular mask cannot clip it. -->
+  <rect width="512" height="512" fill="#f59e0b"/>
+  <g transform="translate(136 168) scale(0.7)">
+    <path d="M160 24C118 4 66 -2 16 6a12 12 0 0 0-10 12v212a12 12 0 0 0 14 12c46-8 94-3 132 15a12 12 0 0 0 8 0V24z" fill="#fffbeb"/>
+    <path d="M160 24c42-20 94-26 144-18a12 12 0 0 1 10 12v212a12 12 0 0 1-14 12c-46-8-94-3-132 15a12 12 0 0 1-8 0V24z" fill="#fef3c7"/>
+    <path d="M160 24v233" stroke="#b45309" stroke-width="14" stroke-linecap="round"/>
+    <g fill="#f59e0b">
+      <rect x="42" y="66" width="86" height="14" rx="7"/>
+      <rect x="42" y="112" width="86" height="14" rx="7"/>
+      <rect x="42" y="158" width="60" height="14" rx="7"/>
+      <rect x="192" y="66" width="86" height="14" rx="7"/>
+      <rect x="192" y="112" width="86" height="14" rx="7"/>
+      <rect x="192" y="158" width="60" height="14" rx="7"/>
+    </g>
+  </g>
+</svg>

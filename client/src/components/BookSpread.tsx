@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { ChevronLeft, ChevronRight, Image as ImageIcon, RefreshCw, Loader2, Paintbrush, Check, History, Maximize2, Minimize2 } from 'lucide-react'
 import type { BookWithPages, IllustrationVersion, Page } from '../types'
 import { api } from '../lib/apiBase'
+import { useMediaQuery } from '../hooks/useMediaQuery'
 
 function formatRelativeTime(iso: string): string {
   const then = new Date(iso).getTime()
@@ -48,6 +49,18 @@ function buildImagePromptPreview(description: string, styleDescriptor: string | 
   return `Children's book illustration, ${desc}. ${style}. No text or words in the image.`;
 }
 
+/**
+ * Tailwind's `md` breakpoint is 768px, so `max-width: 767px` is its exact complement.
+ * Below it BookSpread renders one page panel instead of a two-panel spread.
+ */
+const NARROW_QUERY = '(max-width: 767px)';
+
+/** The painted centre spine. Two-panel layout only — see the frame comment below. */
+const SPINE_BACKGROUND: React.CSSProperties = {
+  backgroundImage:
+    'linear-gradient(to right, rgba(0,0,0,0.08) 0%, transparent 4%, transparent 49%, rgba(0,0,0,0.18) 50%, rgba(0,0,0,0.18) 50%, transparent 51%, transparent 96%, rgba(0,0,0,0.08) 100%)',
+};
+
 type SpreadKind =
   | { kind: 'cover' }
   | { kind: 'story'; page: Page; pageIndex: number }
@@ -70,6 +83,7 @@ export default function BookSpread({
   theater,
   onToggleTheater,
 }: BookSpreadProps) {
+  const isNarrow = useMediaQuery(NARROW_QUERY)
   const frameWidthClass = theater
     ? 'max-w-[min(90vw,1600px)]'
     : 'max-w-[900px]'
@@ -126,115 +140,185 @@ export default function BookSpread({
 
   return (
     <div className="bg-amber-50 dark:bg-gray-900 rounded-3xl shadow-lg p-4 md:p-8 transition-colors mb-8">
-      {/* Spine + book frame */}
+      {/*
+        * Spine + book frame. The centre-spine gradient only reads as a spine *between*
+        * two panels; in single-page mode it would paint a seam down the middle of one
+        * page, so it is dropped there.
+        */}
       <div
         data-testid="book-spread-frame"
         className={`relative mx-auto bg-amber-100 dark:bg-gray-800 rounded-2xl shadow-2xl border border-amber-200 dark:border-gray-700 transition-all duration-200 ease-in-out ${frameWidthClass}`}
-        style={{
-          backgroundImage:
-            'linear-gradient(to right, rgba(0,0,0,0.08) 0%, transparent 4%, transparent 49%, rgba(0,0,0,0.18) 50%, rgba(0,0,0,0.18) 50%, transparent 51%, transparent 96%, rgba(0,0,0,0.08) 100%)',
-        }}
+        style={isNarrow ? undefined : SPINE_BACKGROUND}
       >
-        <div className={`grid grid-cols-2 min-h-[400px] md:min-h-[480px] transition-all duration-200 ease-in-out ${flipClass}`}>
-          {spread.kind === 'cover' && (
-            <>
-              <PageCanvas side="left">
-                <div className="text-center text-amber-700 dark:text-amber-300/60 italic text-sm self-center">
-                  {book.is_user_created ? 'A story written just for you' : null}
-                </div>
-              </PageCanvas>
-              <PageCanvas side="right">
-                <div
-                  className="flex flex-col items-center justify-center h-full p-8 text-center rounded-r-xl"
-                  style={{ backgroundColor: book.cover_color + '20' }}
-                >
-                  {book.cover_url ? (
-                    <img
-                      src={api(book.cover_url)}
-                      alt={book.title}
-                      className="max-h-48 md:max-h-64 rounded-xl shadow-md mb-4"
-                    />
-                  ) : (
-                    <div className="text-7xl md:text-8xl mb-4 drop-shadow-xl">{book.cover_emoji}</div>
+        <div className={`grid grid-cols-1 md:grid-cols-2 min-h-[460px] md:min-h-[480px] transition-all duration-200 ease-in-out ${flipClass}`}>
+          {isNarrow ? (
+            /*
+             * Single-page mode (below md). One panel, one page: the illustration sits
+             * above its own text instead of beside it, and next/prev still advance one
+             * page at a time — the step size is unchanged, only the panel count is.
+             */
+            <PageCanvas side="single">
+              {spread.kind === 'cover' && (
+                <>
+                  <CoverArt book={book} className="flex-1 p-6 rounded-xl" />
+                  {book.is_user_created && (
+                    <div className="mt-3 text-center text-amber-700 dark:text-amber-300/60 italic text-sm">
+                      A story written just for you
+                    </div>
                   )}
-                  <h2 className="text-2xl md:text-3xl font-bold text-gray-800 dark:text-gray-100 font-display mb-2">{book.title}</h2>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">by {book.author}</p>
-                </div>
-              </PageCanvas>
-            </>
-          )}
+                </>
+              )}
 
-          {spread.kind === 'story' && (
-            <>
-              <PageCanvas side="left">
-                <PageIllustration
-                  page={spread.page}
-                  isOwner={isOwner}
-                  isDraft={isDraft}
-                  illustrating={illustrating}
-                  feedback={illustrationFeedback}
-                  onFeedbackChange={setIllustrationFeedback}
-                  onRegenerate={() => void handleRegeneratePageIllustration(spread.page.page_number)}
-                  onEditPrompt={onEditPrompt}
-                  styleDescriptor={book.style_descriptor}
-                  onShowVersions={onShowVersions}
-                  illustrationVersions={illustrationVersions}
-                  showVersions={showVersions}
-                  onRevertIllustration={onRevertIllustration}
-                />
-              </PageCanvas>
-              <PageCanvas side="right">
-                <div className="flex-1 flex flex-col justify-between p-2">
-                  <p className="text-base md:text-lg text-gray-700 dark:text-gray-200 leading-relaxed font-display">
-                    {spread.page.text}
-                  </p>
-                  <div className="text-right text-xs text-amber-700/60 dark:text-amber-300/40 mt-4 italic">
-                    — page {spread.page.page_number}
-                  </div>
-                </div>
-              </PageCanvas>
-            </>
-          )}
+              {spread.kind === 'story' && (
+                <>
+                  <PageIllustration
+                    page={spread.page}
+                    isOwner={isOwner}
+                    isDraft={isDraft}
+                    illustrating={illustrating}
+                    feedback={illustrationFeedback}
+                    onFeedbackChange={setIllustrationFeedback}
+                    onRegenerate={() => void handleRegeneratePageIllustration(spread.page.page_number)}
+                    onEditPrompt={onEditPrompt}
+                    styleDescriptor={book.style_descriptor}
+                    onShowVersions={onShowVersions}
+                    illustrationVersions={illustrationVersions}
+                    showVersions={showVersions}
+                    onRevertIllustration={onRevertIllustration}
+                  />
+                  <StoryText page={spread.page} className="shrink-0 mt-4" />
+                </>
+              )}
 
-          {spread.kind === 'end' && (
-            <>
-              <PageCanvas side="left">
-                <div className="flex-1 flex flex-col items-center justify-center text-center p-6">
-                  <div className="text-3xl font-bold text-gray-700 dark:text-gray-200 font-display mb-2">The End</div>
+              {spread.kind === 'end' && (
+                <div className="flex-1 flex flex-col items-center justify-center text-center gap-3 py-6">
+                  <div className="text-3xl font-bold text-gray-700 dark:text-gray-200 font-display">The End</div>
                   <p className="text-sm text-gray-500 dark:text-gray-400">Hope you enjoyed the story.</p>
+                  <p className="text-sm text-gray-400 dark:text-gray-500 italic">{book.description}</p>
                 </div>
-              </PageCanvas>
-              <PageCanvas side="right">
-                <div className="flex-1 flex items-center justify-center text-center p-6 text-gray-400 dark:text-gray-500 text-sm italic">
-                  {book.description}
-                </div>
-              </PageCanvas>
+              )}
+            </PageCanvas>
+          ) : (
+            <>
+              {spread.kind === 'cover' && (
+                <>
+                  <PageCanvas side="left">
+                    <div className="text-center text-amber-700 dark:text-amber-300/60 italic text-sm self-center">
+                      {book.is_user_created ? 'A story written just for you' : null}
+                    </div>
+                  </PageCanvas>
+                  <PageCanvas side="right">
+                    <CoverArt book={book} className="h-full p-8 rounded-r-xl" />
+                  </PageCanvas>
+                </>
+              )}
+
+              {spread.kind === 'story' && (
+                <>
+                  <PageCanvas side="left">
+                    <PageIllustration
+                      page={spread.page}
+                      isOwner={isOwner}
+                      isDraft={isDraft}
+                      illustrating={illustrating}
+                      feedback={illustrationFeedback}
+                      onFeedbackChange={setIllustrationFeedback}
+                      onRegenerate={() => void handleRegeneratePageIllustration(spread.page.page_number)}
+                      onEditPrompt={onEditPrompt}
+                      styleDescriptor={book.style_descriptor}
+                      onShowVersions={onShowVersions}
+                      illustrationVersions={illustrationVersions}
+                      showVersions={showVersions}
+                      onRevertIllustration={onRevertIllustration}
+                    />
+                  </PageCanvas>
+                  <PageCanvas side="right">
+                    <StoryText page={spread.page} className="flex-1 flex flex-col justify-between p-2" />
+                  </PageCanvas>
+                </>
+              )}
+
+              {spread.kind === 'end' && (
+                <>
+                  <PageCanvas side="left">
+                    <div className="flex-1 flex flex-col items-center justify-center text-center p-6">
+                      <div className="text-3xl font-bold text-gray-700 dark:text-gray-200 font-display mb-2">The End</div>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">Hope you enjoyed the story.</p>
+                    </div>
+                  </PageCanvas>
+                  <PageCanvas side="right">
+                    <div className="flex-1 flex items-center justify-center text-center p-6 text-gray-400 dark:text-gray-500 text-sm italic">
+                      {book.description}
+                    </div>
+                  </PageCanvas>
+                </>
+              )}
             </>
           )}
         </div>
 
-        {/* Page turn controls */}
-        <button
-          onClick={() => turnPage('prev')}
-          disabled={!canPrev || !!flipping}
-          aria-label="Previous spread"
-          className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/90 dark:bg-gray-700 shadow-md flex items-center justify-center cursor-pointer disabled:opacity-30 disabled:cursor-default hover:bg-white border-none text-amber-700 dark:text-amber-300"
-        >
-          <ChevronLeft size={20} />
-        </button>
-        <button
-          onClick={() => turnPage('next')}
-          disabled={!canNext || !!flipping}
-          aria-label="Next spread"
-          className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/90 dark:bg-gray-700 shadow-md flex items-center justify-center cursor-pointer disabled:opacity-30 disabled:cursor-default hover:bg-white border-none text-amber-700 dark:text-amber-300"
-        >
-          <ChevronRight size={20} />
-        </button>
+        {/*
+         * Page turn controls, desktop form: chevrons floating over the panel gutters.
+         * The pl-14 / pr-14 padding in PageCanvas exists to keep content out from under
+         * them. At 360px that gutter would eat ~56px of the only page on screen, so the
+         * narrow layout drops both the gutter and the overlay and renders the same two
+         * controls in a bar below the frame. Exactly one set is ever in the DOM, so the
+         * "Previous spread" / "Next spread" accessible names stay unambiguous.
+         */}
+        {!isNarrow && (
+          <>
+            <button
+              onClick={() => turnPage('prev')}
+              disabled={!canPrev || !!flipping}
+              aria-label="Previous spread"
+              className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/90 dark:bg-gray-700 shadow-md flex items-center justify-center cursor-pointer disabled:opacity-30 disabled:cursor-default hover:bg-white border-none text-amber-700 dark:text-amber-300"
+            >
+              <ChevronLeft size={20} />
+            </button>
+            <button
+              onClick={() => turnPage('next')}
+              disabled={!canNext || !!flipping}
+              aria-label="Next spread"
+              className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/90 dark:bg-gray-700 shadow-md flex items-center justify-center cursor-pointer disabled:opacity-30 disabled:cursor-default hover:bg-white border-none text-amber-700 dark:text-amber-300"
+            >
+              <ChevronRight size={20} />
+            </button>
+          </>
+        )}
       </div>
+
+      {/* Page turn controls, narrow form. 48px square clears the 44px HIG tap floor. */}
+      {isNarrow && (
+        <div className={`flex items-center justify-center gap-8 mt-4 mx-auto ${frameWidthClass}`}>
+          <button
+            onClick={() => turnPage('prev')}
+            disabled={!canPrev || !!flipping}
+            aria-label="Previous spread"
+            className="w-12 h-12 rounded-full bg-white dark:bg-gray-700 shadow-md flex items-center justify-center cursor-pointer disabled:opacity-30 disabled:cursor-default hover:bg-amber-50 dark:hover:bg-gray-600 border-none text-amber-700 dark:text-amber-300"
+          >
+            <ChevronLeft size={24} />
+          </button>
+          <button
+            onClick={() => turnPage('next')}
+            disabled={!canNext || !!flipping}
+            aria-label="Next spread"
+            className="w-12 h-12 rounded-full bg-white dark:bg-gray-700 shadow-md flex items-center justify-center cursor-pointer disabled:opacity-30 disabled:cursor-default hover:bg-amber-50 dark:hover:bg-gray-600 border-none text-amber-700 dark:text-amber-300"
+          >
+            <ChevronRight size={24} />
+          </button>
+        </div>
+      )}
 
       {/* Footer: position dots + revise CTA */}
       <div className={`flex flex-col md:flex-row items-center justify-between mt-4 gap-3 mx-auto transition-all duration-200 ease-in-out ${frameWidthClass}`}>
-        <div className="flex gap-1.5">
+        {/*
+          * Jump-to-spread dots. Hidden below md: at 2.5 x 2.5 (10px) they are far under
+          * any tap-target floor, and a 15-page book would need 17 of them at 44px —
+          * ~750px of controls on a 360px screen. The narrow layout navigates with the
+          * 48px chevrons below the frame and reads position from the "Page N of M"
+          * label beside this strip, so nothing is lost that was usable to begin with.
+          */}
+        <div className="hidden md:flex gap-1.5">
           {spreads.map((_, i) => (
             <button
               key={i}
@@ -246,7 +330,7 @@ export default function BookSpread({
             />
           ))}
         </div>
-        <span className="text-xs text-gray-500 dark:text-gray-400">
+        <span data-testid="spread-position" className="text-xs text-gray-500 dark:text-gray-400">
           {spread.kind === 'cover' ? 'Cover' : spread.kind === 'end' ? 'End' : `Page ${spread.pageIndex + 1} of ${pages.length}`}
         </span>
         {isOwner && isDraft && (
@@ -258,6 +342,12 @@ export default function BookSpread({
             {showFeedback ? 'Cancel' : 'Suggest changes'}
           </button>
         )}
+        {/*
+          * Theater mode stays desktop-only (ADR-004 decision 3): it widens the frame to
+          * min(90vw, 1600px), which on a 360-393px screen is *narrower* than the default
+          * layout already is, so there is nothing for the control to do. Making it
+          * reachable on mobile would be an ADR-004 amendment, not a responsive fix.
+          */}
         <button
           type="button"
           onClick={onToggleTheater}
@@ -321,7 +411,20 @@ export default function BookSpread({
   )
 }
 
-function PageCanvas({ side, children }: { side: 'left' | 'right'; children: React.ReactNode }) {
+function PageCanvas({ side, children }: { side: 'left' | 'right' | 'single'; children: React.ReactNode }) {
+  if (side === 'single') {
+    // Single-page mode. No inner spine shadow (there is no gutter to imply) and only
+    // enough horizontal padding to keep text off the rounded corners: the pl-14 / pr-14
+    // gutter below exists purely to clear the floating chevrons, and the narrow layout
+    // puts those in a bar below the frame instead. At 360px that gutter cost ~56px of
+    // the only page on screen.
+    return (
+      <div data-testid="book-page-panel" className="bg-white dark:bg-gray-800 rounded-2xl px-4 py-4 flex flex-col">
+        {children}
+      </div>
+    )
+  }
+
   const radius = side === 'left' ? 'rounded-l-xl' : 'rounded-r-xl'
   const innerShadow =
     side === 'left'
@@ -331,8 +434,47 @@ function PageCanvas({ side, children }: { side: 'left' | 'right'; children: Reac
   // chevron buttons don't overlap text or images that grow into them.
   const outerPad = side === 'left' ? 'pl-14 pr-4 md:pl-16 md:pr-6' : 'pr-14 pl-4 md:pr-16 md:pl-6'
   return (
-    <div className={`bg-white dark:bg-gray-800 ${radius} ${innerShadow} ${outerPad} py-4 md:py-6 flex flex-col`}>
+    <div data-testid="book-page-panel" className={`bg-white dark:bg-gray-800 ${radius} ${innerShadow} ${outerPad} py-4 md:py-6 flex flex-col`}>
       {children}
+    </div>
+  )
+}
+
+/**
+ * The cover artwork. Shared by both layouts; the caller supplies the sizing and the
+ * corner radius, which are the only things that differ between one panel and two.
+ */
+function CoverArt({ book, className }: { book: BookWithPages; className: string }) {
+  return (
+    <div
+      className={`flex flex-col items-center justify-center text-center ${className}`}
+      style={{ backgroundColor: book.cover_color + '20' }}
+    >
+      {book.cover_url ? (
+        <img
+          src={api(book.cover_url)}
+          alt={book.title}
+          className="max-h-48 md:max-h-64 rounded-xl shadow-md mb-4"
+        />
+      ) : (
+        <div className="text-7xl md:text-8xl mb-4 drop-shadow-xl">{book.cover_emoji}</div>
+      )}
+      <h2 className="text-2xl md:text-3xl font-bold text-gray-800 dark:text-gray-100 font-display mb-2">{book.title}</h2>
+      <p className="text-sm text-gray-500 dark:text-gray-400">by {book.author}</p>
+    </div>
+  )
+}
+
+/** A story page's text plus its page number. Sizing comes from the caller. */
+function StoryText({ page, className }: { page: Page; className: string }) {
+  return (
+    <div className={className}>
+      <p className="text-base md:text-lg text-gray-700 dark:text-gray-200 leading-relaxed font-display">
+        {page.text}
+      </p>
+      <div data-testid="page-number" className="text-right text-xs text-amber-700/60 dark:text-amber-300/40 mt-4 italic">
+        — page {page.page_number}
+      </div>
     </div>
   )
 }

@@ -165,6 +165,8 @@ NEVER claim a feature complete until ALL of:
 3. NO TypeScript errors
 4. If `data.json` shape changed, seed MUST load cleanly
 
+**Criterion #2, mechanical discharge (ADR-009).** A Playwright spec that runs the flow in **both themes** at a mobile viewport, asserting no horizontal overflow and minimum tap-target sizes (`forEachTheme` / `expectNoHorizontalOverflow` / `expectTapTargets` in `e2e/tests/mobile/_helpers.ts`), satisfies the **correctness** half of #2. The **aesthetic** half — "does it look right" — still needs a human, and a spec should say which half it is claiming.
+
 ## Guardrails (cross-cutting)
 
 **ALWAYS confirm with user before:**

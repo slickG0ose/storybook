@@ -92,6 +92,7 @@ export default function BookDetail() {
   const [currentPage, setCurrentPage] = useState(0)
   const [loading, setLoading] = useState(true)
   const [added, setAdded] = useState(false)
+  const [addFailed, setAddFailed] = useState(false)
   const [feedback, setFeedback] = useState('')
   const [revising, setRevising] = useState(false)
   const [reviseError, setReviseError] = useState('')
@@ -234,7 +235,14 @@ export default function BookDetail() {
   })()
 
   const handleAdd = async () => {
-    await addToCart(book.id)
+    // addToCart resolves false when the mutation was refused offline. Reporting
+    // "Added!" for a cart that gained nothing is a lie on the money path.
+    const ok = await addToCart(book.id)
+    if (!ok) {
+      setAddFailed(true)
+      setTimeout(() => setAddFailed(false), 2000)
+      return
+    }
     setAdded(true)
     setTimeout(() => setAdded(false), 2000)
   }
@@ -618,13 +626,15 @@ export default function BookDetail() {
                   <button
                     onClick={() => void handleAdd()}
                     className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all cursor-pointer ${
-                      added
-                        ? 'bg-green-500 text-white'
-                        : 'bg-amber-500 hover:bg-amber-600 text-white'
+                      addFailed
+                        ? 'bg-red-500 dark:bg-red-600 text-white'
+                        : added
+                          ? 'bg-green-500 text-white'
+                          : 'bg-amber-500 hover:bg-amber-600 text-white'
                     }`}
                   >
                     <ShoppingCart size={18} />
-                    {added ? 'Added!' : 'Add to Cart'}
+                    {addFailed ? "Offline \u2014 not added" : added ? 'Added!' : 'Add to Cart'}
                   </button>
                 </>
               )}

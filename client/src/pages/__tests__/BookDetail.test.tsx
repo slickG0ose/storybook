@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import BookDetail from '../BookDetail'
 import type { BookWithPages, BookVersion, IllustrationVersion } from '../../types'
+import type { CartContextValue } from '../../context/CartContext'
 
 const mockUser = {
   id: 'user-1',
@@ -92,7 +93,7 @@ const versionsResponse: BookVersion[] = [
 ]
 
 vi.mock('../../context/CartContext', () => ({
-  useCart: () => ({
+  useCart: (): CartContextValue => ({
     items: [],
     total: 0,
     sessionId: 'test-session',
@@ -101,6 +102,9 @@ vi.mock('../../context/CartContext', () => ({
     removeFromCart: vi.fn(),
     clearCart: vi.fn(),
     fetchCart: vi.fn(),
+    // CartContextValue gained offline/lastSyncedAt in Task 6 (offline cart).
+    offline: false,
+    lastSyncedAt: null,
   }),
 }))
 

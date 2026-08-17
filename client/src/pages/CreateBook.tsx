@@ -201,8 +201,8 @@ export default function CreateBook() {
 
   if (generating) {
     return (
-      <div className="max-w-2xl mx-auto px-4 py-20 text-center">
-        <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-lg p-12 transition-colors">
+      <div className="max-w-2xl mx-auto px-4 py-12 sm:py-20 text-center">
+        <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-lg p-8 sm:p-12 transition-colors">
           <Loader2 size={48} className="animate-spin text-purple-500 mx-auto mb-6" />
           <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 font-display mb-2">Creating your story...</h2>
           <p className="text-gray-500 dark:text-gray-400">
@@ -216,9 +216,9 @@ export default function CreateBook() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-12">
+    <div className="max-w-2xl mx-auto px-4 py-8 sm:py-12">
       <div className="text-center mb-8">
-        <h1 className="text-4xl font-bold text-gray-800 dark:text-gray-100 font-display mb-2">
+        <h1 className="text-3xl sm:text-4xl font-bold text-gray-800 dark:text-gray-100 font-display mb-2">
           <Sparkles className="inline text-purple-500 mr-2" size={32} />
           Create Your Book
         </h1>
@@ -239,17 +239,17 @@ export default function CreateBook() {
         ))}
       </div>
 
-      <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-lg p-8 transition-colors">
+      <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-lg p-5 sm:p-8 transition-colors">
         {/* Step 1: Theme + Style */}
         {step === 1 && (
           <div>
             <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100 font-display mb-4">Choose a Theme</h2>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 sm:gap-3">
               {THEMES.map(t => (
                 <button
                   key={t.value}
                   onClick={() => setTheme(t.value)}
-                  className={`p-4 rounded-2xl text-center transition-all cursor-pointer border-2 ${
+                  className={`p-3 sm:p-4 rounded-2xl text-center transition-all cursor-pointer border-2 ${
                     theme === t.value
                       ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30 shadow-md'
                       : 'border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50 hover:border-purple-200 dark:hover:border-purple-700'
@@ -261,7 +261,7 @@ export default function CreateBook() {
               ))}
               <button
                 onClick={() => setTheme('__custom__')}
-                className={`p-4 rounded-2xl text-center transition-all cursor-pointer border-2 border-dashed ${
+                className={`p-3 sm:p-4 rounded-2xl text-center transition-all cursor-pointer border-2 border-dashed ${
                   isCustomTheme
                     ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/30 shadow-md'
                     : 'border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/50 hover:border-purple-300 dark:hover:border-purple-700'
@@ -284,7 +284,7 @@ export default function CreateBook() {
 
             <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100 font-display mt-8 mb-2">Pick an Art Style</h2>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Applied to every illustration in your book for a consistent look.</p>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
               {STYLE_PRESETS.map(s => (
                 <button
                   key={s.value}
@@ -422,13 +422,13 @@ export default function CreateBook() {
               <div className="flex flex-wrap gap-2 mb-6">
                 <button
                   onClick={() => addCharacter('antagonist')}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-semibold bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/50 cursor-pointer border-none"
+                  className="flex items-center gap-1 px-3 py-1.5 min-h-[44px] sm:min-h-0 rounded-lg text-sm font-semibold bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/50 cursor-pointer border-none"
                 >
                   <Plus size={14} /> Add antagonist
                 </button>
                 <button
                   onClick={() => addCharacter('supporting', 'best friend')}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-semibold bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 cursor-pointer border-none"
+                  className="flex items-center gap-1 px-3 py-1.5 min-h-[44px] sm:min-h-0 rounded-lg text-sm font-semibold bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 cursor-pointer border-none"
                 >
                   <Plus size={14} /> Add supporting character
                 </button>
@@ -443,7 +443,7 @@ export default function CreateBook() {
                   <button
                     key={ar}
                     onClick={() => setAgeRange(ar)}
-                    className={`px-4 py-2 rounded-xl font-semibold text-sm transition-all cursor-pointer ${
+                    className={`px-4 py-2 min-h-[44px] sm:min-h-0 inline-flex items-center justify-center rounded-xl font-semibold text-sm transition-all cursor-pointer ${
                       ageRange === ar
                         ? 'bg-purple-500 text-white'
                         : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
@@ -563,11 +563,11 @@ export default function CreateBook() {
         )}
 
         {/* Navigation */}
-        <div className="flex justify-between mt-8">
+        <div className="flex flex-wrap items-center justify-between gap-3 mt-8">
           {step > 1 ? (
             <button
               onClick={() => setStep(s => s - 1)}
-              className="px-6 py-2 rounded-xl font-semibold text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+              className="px-6 py-2 min-h-[44px] sm:min-h-0 rounded-xl font-semibold text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
             >
               Back
             </button>
@@ -577,7 +577,7 @@ export default function CreateBook() {
             <button
               onClick={() => setStep(s => s + 1)}
               disabled={!canProceed()}
-              className="px-6 py-2 rounded-xl font-semibold bg-purple-500 text-white hover:bg-purple-600 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-default"
+              className="px-6 py-2 min-h-[44px] sm:min-h-0 rounded-xl font-semibold bg-purple-500 text-white hover:bg-purple-600 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-default"
             >
               Next
             </button>
@@ -586,7 +586,7 @@ export default function CreateBook() {
               onClick={() => void handleGenerate()}
               disabled={!user}
               title={!user ? 'Sign in to generate a story' : undefined}
-              className="flex items-center gap-2 px-8 py-3 rounded-xl font-bold bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:shadow-lg transition-shadow cursor-pointer disabled:opacity-40 disabled:cursor-default disabled:hover:shadow-none"
+              className="flex items-center justify-center gap-2 px-6 sm:px-8 py-3 rounded-xl font-bold bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:shadow-lg transition-shadow cursor-pointer disabled:opacity-40 disabled:cursor-default disabled:hover:shadow-none"
             >
               <Wand2 size={18} />
               Generate My Story
@@ -621,7 +621,7 @@ function CharacterRow({ character, label, accent, showRelationship, onChange, on
         {onRemove && (
           <button
             onClick={onRemove}
-            className="text-gray-400 hover:text-red-500 cursor-pointer bg-transparent border-none p-1"
+            className="inline-flex items-center justify-center min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 text-gray-400 hover:text-red-500 cursor-pointer bg-transparent border-none p-1"
             aria-label="Remove character"
           >
             <X size={16} />

@@ -2,12 +2,12 @@ import { render, screen } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import Navbar from '../Navbar'
-import type { CartItem } from '../../types'
+import type { CartContextValue } from '../../context/CartContext'
 
 const mockToggle = vi.fn()
 
 vi.mock('../../context/CartContext', () => ({
-  useCart: (): { items: CartItem[]; total: number; sessionId: string; addToCart: ReturnType<typeof vi.fn>; updateQuantity: ReturnType<typeof vi.fn>; removeFromCart: ReturnType<typeof vi.fn>; clearCart: ReturnType<typeof vi.fn>; fetchCart: ReturnType<typeof vi.fn> } => ({
+  useCart: (): CartContextValue => ({
     items: [
       {
         id: 1,
@@ -37,6 +37,9 @@ vi.mock('../../context/CartContext', () => ({
     removeFromCart: vi.fn(),
     clearCart: vi.fn(),
     fetchCart: vi.fn(),
+    // CartContextValue gained offline/lastSyncedAt in Task 6 (offline cart).
+    offline: false,
+    lastSyncedAt: null,
   }),
 }))
 
