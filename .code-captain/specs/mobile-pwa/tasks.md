@@ -611,6 +611,15 @@ they are decided in the spec and captured in Task 7.
    row?** Gates Task 2. Icon-only is more compact but must preserve the accessible name
    for `e2e/tests/create-book.spec.ts`. Default if unanswered: keep the text, shrink
    padding and gaps — text-preserving is the lower-risk option.
+
+   **Resolved (2026-08-16): icon-only below `sm` — against the stated default.** Forced by
+   arithmetic, not preference: the densest state is logged-in admin with eight controls,
+   measured at 336 px of usable width against ~290 px of content once My Books, Admin and
+   Sign out are present. Keeping the CTA text (plus the ~90 px wordmark, also hidden below
+   `sm`) pushed that case back over the viewport. `aria-label="Create a Book"` preserves
+   the accessible name, and `e2e/tests/create-book.spec.ts` passes unchanged (5/5).
+   Recorded here rather than as an ADR because it is a layout consequence of ADR-009's
+   tap-target split, not an independent decision.
 3. **Is the `hidden md:inline-flex` control at `BookSpread.tsx:266` needed on mobile?**
    Gates Task 4. It is desktop-only today; the developer should determine what it does and
    propose, rather than silently leaving it hidden.

@@ -13,7 +13,8 @@ export interface CartContextValue {
   items: CartItem[];
   total: number;
   sessionId: string;
-  addToCart: (bookId: string) => Promise<void>;
+  /** Resolves `false` when the add was refused offline, so callers do not report success. */
+  addToCart: (bookId: string) => Promise<boolean>;
   updateQuantity: (bookId: string, quantity: number) => Promise<void>;
   removeFromCart: (bookId: string) => Promise<void>;
   clearCart: () => Promise<void>;
@@ -95,14 +96,15 @@ export function CartProvider({ children }: CartProviderProps) {
     }
   }, [])
 
-  const addToCart = async (bookId: string): Promise<void> => {
+  const addToCart = async (bookId: string): Promise<boolean> => {
     const ok = await mutate(() => fetch(api(`/api/cart/${sessionId}/items`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ bookId }),
     }))
-    if (!ok) return
+    if (!ok) return false
     await fetchCart()
+    return true
   }
 
   const updateQuantity = async (bookId: string, quantity: number): Promise<void> => {

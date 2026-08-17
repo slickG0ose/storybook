@@ -1,4 +1,5 @@
 import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { useState } from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { CartItem } from '@storybook/shared'
 import { CartProvider, useCart } from '../CartContext'
@@ -28,10 +29,13 @@ function seedSnapshot(cachedAt = '2026-08-16T09:00:00.000Z'): void {
 
 /** Surfaces the bits of CartContextValue the offline behaviour is defined in terms of. */
 function CartConsumer() {
-  const { items, total, offline, lastSyncedAt, updateQuantity, clearCart } = useCart()
+  const { items, total, offline, lastSyncedAt, updateQuantity, clearCart, addToCart } = useCart()
+  const [addResult, setAddResult] = useState<string>('none')
   return (
     <div>
       <span data-testid="offline">{offline ? 'offline' : 'online'}</span>
+      <span data-testid="add-result">{addResult}</span>
+      <button onClick={() => void addToCart('book-1').then(ok => setAddResult(String(ok)))}>Add</button>
       <span data-testid="total">{total.toFixed(2)}</span>
       <span data-testid="last-synced">{lastSyncedAt ?? 'never'}</span>
       <ul>
@@ -162,5 +166,40 @@ describe('CartContext offline behaviour', () => {
     // A completed checkout must not leave a cart behind for the next cold launch.
     expect(localStorage.getItem(CART_CACHE_KEY)).toBeNull()
     expect(localStorage.getItem(SESSION_KEY)).toBe(SESSION_ID)
+  })
+
+  // Regression fence. Before this, `mutate` swallowed the network throw and
+  // `addToCart` resolved normally, so BookDetail's `await addToCart(...)` fell
+  // through to `setAdded(true)` and rendered "Added!" for a cart that gained
+  // nothing. The resolved value is what callers key their confirmation off.
+  it('resolves false from addToCart when the add is refused offline', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(okResponse({ items: [CACHED_ITEM], total: 25.98 }))
+      .mockRejectedValue(new TypeError('Failed to fetch'))
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderCart()
+    await waitFor(() => expect(screen.getByTestId('item')).toHaveTextContent('x2'))
+
+    fireEvent.click(screen.getByText('Add'))
+
+    await waitFor(() => expect(screen.getByTestId('add-result')).toHaveTextContent('false'))
+    expect(screen.getByTestId('offline')).toHaveTextContent('offline')
+    // Local state is untouched: no optimistic add.
+    expect(screen.getByTestId('item')).toHaveTextContent('The Brave Little Fox x2')
+  })
+
+  it('resolves true from addToCart when the add succeeds', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse({ items: [CACHED_ITEM], total: 25.98 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderCart()
+    await waitFor(() => expect(screen.getByTestId('item')).toHaveTextContent('x2'))
+
+    fireEvent.click(screen.getByText('Add'))
+
+    await waitFor(() => expect(screen.getByTestId('add-result')).toHaveTextContent('true'))
+    expect(screen.getByTestId('offline')).toHaveTextContent('online')
   })
 })
