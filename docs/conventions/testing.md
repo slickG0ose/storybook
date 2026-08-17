@@ -126,6 +126,23 @@ vi.mock('../../context/CartContext', () => ({
 
 This is faster than wiring a real provider and keeps tests focused.
 
+**Annotate the factory's return type — `tsc` will not do it for you.** A `vi.mock` factory
+returns an untyped object literal, so a mock that is *missing* fields the real context now
+exposes still type-checks. Adding `offline` / `lastSyncedAt` to `CartContextValue` left
+three of four mock sites silently stale under `npx tsc --noEmit`. Export the context's value
+type and pin the factory to it, so the next field addition breaks the mock at compile time
+instead of at runtime:
+
+```ts
+import type { CartContextValue } from '../../context/CartContext';
+
+vi.mock('../../context/CartContext', () => ({
+  useCart: (): CartContextValue => ({ items: [], total: 0, offline: false, /* ... */ }),
+}));
+```
+
+Same rule for any context whose value type grows: export the interface, annotate the mock.
+
 ### Mocking fetch
 
 Use `vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(...) }))`. Don't reach for MSW — overkill for the current test scope.
