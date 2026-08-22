@@ -881,7 +881,7 @@ describes read-aloud as unbuilt.
 
 ### Task 9 — Pre-merge follow-ups
 
-**Status:** Not started
+**Status:** Done (2026-08-22)
 
 **Zone:** docs (harness)
 **Depends on:** none (run last)
