@@ -52,16 +52,17 @@ Prisma + SQLite. Snapshot/seed/restore conventions live in [docs/conventions/dat
 ## Testing
 
 ```bash
-cd server && npm test                # Vitest + Supertest (221 tests)
-cd client && npm test                # Vitest + RTL (80 tests)
-cd e2e && npm test                   # Playwright (28 tests)
+npm test                             # Vitest — harness suite at repo root (44 tests)
+cd server && npm test                # Vitest + Supertest (233 tests)
+cd client && npm test                # Vitest + RTL (215 tests)
+cd e2e && npm test                   # Playwright (106 tests)
 cd e2e && npm run test:headed
 cd e2e && npm run test:ui
 ```
 
 ## CI
 
-`.github/workflows/pr-ci.yml` runs on every PR. Four jobs, all independent:
+`.github/workflows/pr-ci.yml` runs on every PR. Four jobs — the three test jobs start together, E2E waits on two of them:
 
 | Job | Covers |
 |-----|--------|
@@ -74,11 +75,15 @@ Other workflows: `codeql.yml` (security scanning), `deploy-pages.yml` (client �
 
 **All four jobs are required status checks** — a red PR cannot merge. `strict_required_status_checks_policy` is `false`, so a branch does **not** have to be rebased onto the latest `master` before merging.
 
+The ruleset pins each check by its **job name**, so renaming a job in `pr-ci.yml` renames the check GitHub waits for. Rename one without updating the ruleset and every PR sits blocked on a check that will never report. The harness job was renamed in #66 (`Harness tests (.claude/ schema + references + hook behavior)` → `Harness tests (guard-bash behavior + resolution snapshot)`); PRs have merged since, but nobody has re-read the ruleset to confirm the pinned name followed.
+
 Note the E2E job declares `needs: [server-tests, client-tests]`. When either dependency fails, E2E is *skipped* rather than failed — but the failing dependency is itself required, so a skipped E2E can never wave a PR through.
 
 **Merge protection on `master` is a repository *ruleset* (`develop-policy`), not classic branch protection** — `gh api repos/.../branches/master/protection` returns 404 even though the branch is protected. Read it with `gh api repos/slickG0ose/storybook/rulesets`. It enforces: PR required, the four status checks above, no force-push, no deletion, Copilot review on push, and CodeQL gating at `errors` / `high_or_higher`.
 
 One thing it deliberately does **not** enforce: **approving reviews** (`required_approving_review_count: 0`). GitHub forbids approving your own PR, so on a solo repo any non-zero value deadlocks every merge. Copilot review is the practical substitute.
+
+**Drift watch (audited 2026-08-22, [#36](https://github.com/slickG0ose/storybook/issues/36)):** two claims above are no longer visible in PR behavior. No PR since #65 (2026-06-11) has drawn a Copilot review: every PR from #66 to #81 merged without one, and the only reviews in that window are CodeQL alert notes from `github-advanced-security[bot]` on #67 and #73. The substitute for approvals is not firing today. And `allowed_merge_methods` was still `["merge", "squash", "rebase"]` at the last read with admin visibility; squash-only is convention here, not enforcement, though nothing has landed as a merge commit since #54. Both need an admin to read and fix the ruleset — tracked in #36.
 
 Server deploy is Render, auto-deploying on push to `master` via `render.yaml`. Client CORS is locked to `CORS_ORIGIN` (set in the Blueprint); unset in production means every origin is allowed plus a startup warning. See [docs/deploy-spike-render.md](docs/deploy-spike-render.md).
 
