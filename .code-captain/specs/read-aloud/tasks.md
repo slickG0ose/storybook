@@ -750,7 +750,7 @@ and Task 7's specs still pass (sentence-level assertions must be unaffected).
 
 ### Task 7 — E2E: fake-speech injection, desktop spec, mobile × theme spec
 
-**Status:** Not started
+**Status:** Done (2026-08-22)
 
 **Zone:** e2e
 **Depends on:** Task 5
@@ -842,7 +842,7 @@ uses 90 s for two themed read-throughs and this spec does more per theme.
 
 ### Task 8 — Reconcile the roadmap; record the fake-speech test pattern
 
-**Status:** Not started
+**Status:** Done (2026-08-22)
 
 **Zone:** docs
 **Depends on:** none

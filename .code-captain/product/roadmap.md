@@ -173,7 +173,17 @@ Five tightly scoped pieces. Each is independently useful; together they cover th
 ## Phase 3 — Stretch / Stub
 
 - **Variable page counts** (3 / 5 / 7 / 10). Currently hard-coded to 5 in [generate.ts:42](storybook-storefront/server/src/routes/generate.ts:42).
-- **Read-aloud narration** via OpenAI TTS or ElevenLabs; cache audio per page like illustrations.
+- **Read-aloud narration — SHIPPED (phase 1, device TTS).** The Web Speech API reads the
+  current page aloud with sentence highlighting and automatic page advance; no provider, no
+  per-call cost, no cached assets, no new dependency. Design, platform limits, and what
+  phase 1 deliberately leaves out: [.code-captain/specs/read-aloud/spec.md](../specs/read-aloud/spec.md).
+  - **Deferred — generated / premium audio** via OpenAI TTS or ElevenLabs; cache audio per
+    page like illustrations (the deferred model deliberately mirrors `IllustrationVersion`).
+    Do not build this off this line — it is a separate phase, not the one that shipped. It
+    is the only route to lock-screen playback, a downloadable audio artifact, or a
+    consistent brand voice, and it lands a Prisma migration, a wire shape, and a spend gate
+    all at once. Start it when one of the named triggers fires: see §"The deferred
+    generated-audio seam" in the spec above.
 - **PDF export / print-ready download.** Reuses the BookSpread component server-rendered to PDF (`puppeteer` or `@react-pdf/renderer`).
 - **Multi-language stories.** Add `language` to the generate payload; Claude handles translation.
 - **Story remix.** "Use this book as a starting point" → clone with edits.
