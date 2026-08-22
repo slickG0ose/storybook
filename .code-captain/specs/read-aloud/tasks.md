@@ -678,7 +678,7 @@ desktop + mobile suites (`book-detail`, `version-history`, `illustration-history
 
 ### Task 6 — Word-level highlight, as a self-activating enhancement
 
-**Status:** Not started
+**Status:** Done (2026-08-22)
 
 **Zone:** client
 **Depends on:** Task 5

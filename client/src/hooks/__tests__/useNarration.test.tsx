@@ -434,6 +434,100 @@ describe('useNarration', () => {
     })
   })
 
+  /**
+   * The word-level enhancement (Task 6). It is self-activating by construction: `wordRange`
+   * is non-null only because a real word-granularity `boundary` event actually arrived, so
+   * the degradation case below is not an edge case — it is the *normal* path on Safari
+   * (sentence-granularity boundaries) and Android Chrome (no boundary events at all).
+   */
+  describe('word-level highlight', () => {
+    /** Absolute page-text offsets, written the way the renderer consumes them. */
+    const at = (word: string): { start: number; end: number } => {
+      const start = PAGE_ONE.indexOf(word)
+      expect(start).toBeGreaterThanOrEqual(0)
+      return { start, end: start + word.length }
+    }
+
+    it('tracks successive words in page-text coordinates', () => {
+      control = installFakeSpeech({ emitWordBoundary: true })
+      const { result } = renderNarration()
+
+      act(() => result.current.play())
+      // The optimistic sentence highlight lands first: no boundary has been observed yet.
+      expect(result.current.position).toEqual({ chunkIndex: 0, wordRange: null })
+
+      tick(1)
+      expect(result.current.position).toEqual({ chunkIndex: 0, wordRange: at('Luna') })
+
+      tick(40)
+      expect(result.current.position).toEqual({ chunkIndex: 0, wordRange: at('woke') })
+
+      tick(40)
+      expect(result.current.position).toEqual({ chunkIndex: 0, wordRange: at('up.') })
+
+      // The load-bearing assertion: on the second sentence the offsets keep counting from
+      // the top of the *page*. Chunk-relative coordinates would put 'The' back at 0 and
+      // the renderer would highlight the wrong word of the wrong sentence.
+      tick(20)
+      // 'The' opens the second sentence, 14 characters into the page.
+      expect(result.current.position).toEqual({ chunkIndex: 1, wordRange: at('The') })
+      expect(result.current.position?.wordRange?.start).toBe(PAGE_ONE.indexOf('The garden'))
+    })
+
+    /**
+     * The degradation path, asserted rather than assumed. This is what every Android Chrome
+     * and every Safari reader gets, and it must be the shipped sentence-level behaviour with
+     * nothing missing and nothing thrown.
+     */
+    it('keeps wordRange null through a whole page when no boundary events arrive', () => {
+      // The default fake emits no boundary events at all.
+      const { result } = renderNarration()
+
+      act(() => result.current.play())
+      expect(result.current.position).toEqual({ chunkIndex: 0, wordRange: null })
+
+      tick(CHUNK_MS)
+      expect(result.current.position).toEqual({ chunkIndex: 1, wordRange: null })
+
+      tick(CHUNK_MS)
+      expect(result.current.position).toEqual({ chunkIndex: 2, wordRange: null })
+
+      // The page still finishes normally — the sentence-level machine is untouched.
+      tick(CHUNK_MS)
+      tick(AUTO_ADVANCE_DELAY_MS)
+      expect(result.current.state).toBe('playing')
+    })
+
+    it('ignores a boundary that arrives after the page turned', () => {
+      const speak = vi.spyOn(deviceProvider, 'speak')
+      const { result, turnPage } = renderNarration()
+
+      act(() => result.current.play())
+      tick(1)
+      const abandoned = eventsFromSpeak(speak)
+
+      turnPage({ pageKey: 1, text: PAGE_TWO })
+
+      // The abandoned page's engine reports a word after the new page has already mounted.
+      act(() => abandoned.onWordBoundary(0, 0, 4))
+
+      expect(result.current.position).toEqual({ chunkIndex: 0, wordRange: null })
+    })
+
+    it('ignores a zero-length boundary rather than producing a zero-width span', () => {
+      const speak = vi.spyOn(deviceProvider, 'speak')
+      const { result } = renderNarration()
+
+      act(() => result.current.play())
+      const events = eventsFromSpeak(speak)
+
+      // Some engines omit `charLength` entirely; the provider maps that to 0.
+      act(() => events.onWordBoundary(0, 5, 0))
+
+      expect(result.current.position).toEqual({ chunkIndex: 0, wordRange: null })
+    })
+  })
+
   describe('errors', () => {
     it("swallows 'canceled', which is what our own cancel() produces", () => {
       const speak = vi.spyOn(deviceProvider, 'speak')

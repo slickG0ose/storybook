@@ -215,9 +215,32 @@ export function useNarration({
           applyPosition({ chunkIndex, wordRange: null })
         },
 
-        onWordBoundary() {
-          // Task 6 populates `position.wordRange` from here. Sentence-level highlighting is
-          // the shipped baseline and needs nothing from this event.
+        /**
+         * The word-level highlight, which self-activates and never announces itself.
+         *
+         * `wordRange` is non-null only because a real `boundary` event with word
+         * granularity actually arrived — there is no capability sniffing, no user-agent
+         * test, and no setting. Safari reports boundaries at sentence granularity and
+         * Android Chrome reports none at all, so on those engines this handler simply
+         * never runs and the sentence highlight is what the reader keeps getting.
+         *
+         * Offsets are translated into **page-text** space to match `NarrationChunk`, so
+         * the renderer needs no second coordinate system.
+         */
+        onWordBoundary(chunkIndex: number, charIndex: number, charLength: number) {
+          if (stale()) return
+          // Some engines omit `charLength`; a zero-width range would render an empty
+          // highlighted span that flickers rather than tracking anything.
+          if (charLength <= 0) return
+          const chunk = chunksRef.current[chunkIndex]
+          if (!chunk) return
+          applyPosition({
+            chunkIndex,
+            wordRange: {
+              start: chunk.start + charIndex,
+              end: chunk.start + charIndex + charLength,
+            },
+          })
         },
 
         onChunkEnd() {

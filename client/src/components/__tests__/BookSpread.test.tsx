@@ -326,6 +326,41 @@ describe('BookSpread — narration', () => {
     expect(control.spoken().slice(spokenBefore)).toEqual(['The garden was glowing.'])
   })
 
+  /**
+   * The word-level enhancement. It self-activates off real word `boundary` events, so the
+   * pair below is the whole contract: a word span when the engine reports words, and the
+   * untouched sentence highlight when it does not.
+   */
+  it('wraps the spoken word inside the active sentence when the engine reports words', () => {
+    installFakeSpeech({ emitWordBoundary: true })
+    renderSpread({ book: narrationBook })
+    clickNextSpread()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }))
+    tick(1)
+
+    const sentence = screen.getByTestId('narration-highlight')
+    const word = screen.getByTestId('narration-word')
+    expect(sentence).toContainElement(word)
+    expect(word.tagName).toBe('SPAN')
+    expect(word).toHaveTextContent('Luna')
+    expect(word.className).toContain('dark:bg-amber-400/40')
+    // Narrowing the highlight must not lose a character of the sentence.
+    expect(sentence).toHaveTextContent('Luna woke up.')
+  })
+
+  // The degradation path — Safari and Android Chrome — asserted rather than assumed.
+  it('renders the sentence highlight alone when no word boundaries arrive', () => {
+    renderSpread({ book: narrationBook })
+    clickNextSpread()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }))
+    tick(CHUNK_MS)
+
+    expect(screen.getByTestId('narration-highlight')).toHaveTextContent('The garden was glowing.')
+    expect(screen.queryByTestId('narration-word')).not.toBeInTheDocument()
+  })
+
   // Open question 1, resolved: one Play press reads the whole book, starting with the cover.
   it('reads the title and author on the cover spread', () => {
     renderSpread({ book: narrationBook })

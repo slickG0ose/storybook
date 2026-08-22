@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { ChevronLeft, ChevronRight, Image as ImageIcon, RefreshCw, Loader2, Paintbrush, Check, History, Maximize2, Minimize2 } from 'lucide-react'
 import type { BookWithPages, IllustrationVersion, Page } from '../types'
 import { api } from '../lib/apiBase'
@@ -546,7 +546,7 @@ function StoryText({ page, className, chunks, position, onSeek }: {
 }) {
   const highlight =
     chunks && chunks.length > 0 && position
-      ? { chunks, activeIndex: position.chunkIndex }
+      ? { chunks, activeIndex: position.chunkIndex, wordRange: position.wordRange }
       : null
 
   return (
@@ -566,7 +566,9 @@ function StoryText({ page, className, chunks, position, onSeek }: {
                     }${onSeek ? ' cursor-pointer' : ''}`
                   }
                 >
-                  {page.text.slice(chunk.start, chunk.end)}
+                  {active && highlight.wordRange
+                    ? withWordHighlight(page.text, chunk, highlight.wordRange)
+                    : page.text.slice(chunk.start, chunk.end)}
                 </span>
               )
             })
@@ -576,6 +578,44 @@ function StoryText({ page, className, chunks, position, onSeek }: {
         — page {page.page_number}
       </div>
     </div>
+  )
+}
+
+/**
+ * Splits the spoken sentence around the word currently being said.
+ *
+ * This is a *self-activating* enhancement, not a mode: `wordRange` is only ever non-null
+ * because the engine actually emitted a word-granularity `boundary` event. Safari reports
+ * boundaries per sentence and Android Chrome reports none, so on those engines this
+ * function is never reached and the sentence highlight from Task 5 is exactly what renders.
+ *
+ * The range is clamped to the sentence rather than trusted: a `charIndex`/`charLength` pair
+ * that overruns its chunk would otherwise slice text belonging to the next sentence into
+ * this span. A range that lands entirely outside falls back to the plain sentence.
+ *
+ * `<span>`, never `<mark>`, for the same reason as the sentence highlight — and it inherits
+ * the sentence span's position in the `<p>`, so it is never inside an `aria-live` region.
+ */
+function withWordHighlight(
+  text: string,
+  chunk: NarrationChunk,
+  word: { start: number; end: number },
+): ReactNode {
+  const start = Math.min(Math.max(word.start, chunk.start), chunk.end)
+  const end = Math.min(Math.max(word.end, start), chunk.end)
+  if (end <= start) return text.slice(chunk.start, chunk.end)
+
+  return (
+    <>
+      {text.slice(chunk.start, start)}
+      <span
+        data-testid="narration-word"
+        className="rounded bg-amber-400/70 dark:bg-amber-400/40"
+      >
+        {text.slice(start, end)}
+      </span>
+      {text.slice(end, chunk.end)}
+    </>
   )
 }
 
