@@ -173,9 +173,11 @@ Five tightly scoped pieces. Each is independently useful; together they cover th
 ## Phase 3 — Stretch / Stub
 
 - **Variable page counts** (3 / 5 / 7 / 10). Currently hard-coded to 5 in [generate.ts:42](storybook-storefront/server/src/routes/generate.ts:42).
-- **Read-aloud narration — SHIPPED (phase 1, device TTS).** The Web Speech API reads the
-  current page aloud with sentence highlighting and automatic page advance; no provider, no
-  per-call cost, no cached assets, no new dependency. Design, platform limits, and what
+- **Read-aloud narration — SHIPPED via [PR #80](https://github.com/slickG0ose/storybook/pull/80) (phase 1, device TTS).**
+  The Web Speech API reads the current page aloud with sentence highlighting — narrowing to
+  word level on platforms that emit word-granularity `boundary` events, and staying at
+  sentence level everywhere else — plus automatic page advance; no provider, no per-call
+  cost, no cached assets, no new dependency. Design, platform limits, and what
   phase 1 deliberately leaves out: [.code-captain/specs/read-aloud/spec.md](../specs/read-aloud/spec.md).
   - **Deferred — generated / premium audio** via OpenAI TTS or ElevenLabs; cache audio per
     page like illustrations (the deferred model deliberately mirrors `IllustrationVersion`).
