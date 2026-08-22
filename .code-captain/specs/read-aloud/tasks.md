@@ -89,7 +89,7 @@ but rebase before starting rather than after.
 
 ### Task 1 — Narration core: types, sentence chunking, preference storage
 
-**Status:** Not started
+**Status:** Done (2026-08-22)
 
 **Zone:** client
 **Depends on:** none
@@ -203,7 +203,7 @@ preference.
 
 ### Task 2 — Provider seam, device provider, voice list, and the fake synth
 
-**Status:** Not started
+**Status:** Done (2026-08-22)
 
 **Zone:** client
 **Depends on:** Task 1
@@ -372,7 +372,7 @@ of the API, not the API — `deviceProvider.test.ts` is where that model is pinn
 
 ### Task 3 — `useNarration`: the playback state machine
 
-**Status:** Not started
+**Status:** Done (2026-08-22)
 
 **Zone:** client
 **Depends on:** Tasks 1, 2
@@ -492,7 +492,7 @@ Required behaviour, each of which maps to a test below:
 
 ### Task 4 — `NarrationPlayer` component
 
-**Status:** Not started
+**Status:** Done (2026-08-22)
 
 **Zone:** client
 **Depends on:** Task 3
@@ -588,7 +588,7 @@ bar sits well under the frame — is non-blocking; note it in the hand-back.
 
 ### Task 5 — Wire narration into `BookSpread`: highlight, auto-advance, cancel-on-nav
 
-**Status:** Not started
+**Status:** Done (2026-08-22)
 
 **Zone:** client
 **Depends on:** Task 4
