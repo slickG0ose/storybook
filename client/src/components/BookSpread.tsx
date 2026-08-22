@@ -1,8 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { ChevronLeft, ChevronRight, Image as ImageIcon, RefreshCw, Loader2, Paintbrush, Check, History, Maximize2, Minimize2 } from 'lucide-react'
 import type { BookWithPages, IllustrationVersion, Page } from '../types'
 import { api } from '../lib/apiBase'
 import { useMediaQuery } from '../hooks/useMediaQuery'
+import { useNarration } from '../hooks/useNarration'
+import NarrationPlayer from './NarrationPlayer'
+import type { NarrationChunk, NarrationPosition } from '../lib/narration/types'
 
 function formatRelativeTime(iso: string): string {
   const then = new Date(iso).getTime()
@@ -102,9 +105,6 @@ export default function BookSpread({
   const [illustrationFeedback, setIllustrationFeedback] = useState('')
 
   const spread = spreads[spreadIndex]
-  // canNext/canPrev keep spreadIndex in bounds; this guard exists so the
-  // discriminated-union narrowing on `spread.kind` works in the JSX below.
-  if (!spread) return null
   const canPrev = spreadIndex > 0
   const canNext = spreadIndex < spreads.length - 1
 
@@ -118,6 +118,40 @@ export default function BookSpread({
       setFlipping(null)
     }, 250)
   }
+
+  /*
+   * Read-aloud. The spread index is the master and audio is the follower: narration only
+   * *requests* a turn, and `turnPage` decides whether to honour it, so there is never a
+   * second source of truth for which page is on screen. `pageKey` is the existing
+   * `spreadIndex` rather than parallel state — changing it is what cancels in-flight audio
+   * before the next page paints.
+   *
+   * The cover reads its title and author and then advances, so a single Play press reads
+   * the book front to back; the end spread reads "The End." and stops, because `hasNext`
+   * is false there.
+   */
+  const narration = useNarration({
+    text:
+      !spread ? null :
+      spread.kind === 'story' ? spread.page.text :
+      spread.kind === 'cover' ? `${book.title}. By ${book.author}.` :
+      'The End.',
+    pageKey: spreadIndex,
+    hasNext: canNext,
+    onRequestNext: () => turnPage('next'),
+  })
+  const narrationAvailable = narration.state !== 'unavailable'
+
+  // The guard exists so the discriminated-union narrowing on `spread.kind` works in the
+  // JSX below; canNext/canPrev keep spreadIndex in bounds. It sits below the hooks because
+  // hook order may not depend on it.
+  if (!spread) return null
+
+  /** One string for the footer strip and the player's status region, so they cannot drift. */
+  const positionLabel =
+    spread.kind === 'cover' ? 'Cover'
+      : spread.kind === 'end' ? 'End'
+      : `Page ${spread.pageIndex + 1} of ${pages.length}`
 
   const handleSubmitFeedback = async (): Promise<void> => {
     if (!feedback.trim()) return
@@ -186,7 +220,13 @@ export default function BookSpread({
                     showVersions={showVersions}
                     onRevertIllustration={onRevertIllustration}
                   />
-                  <StoryText page={spread.page} className="shrink-0 mt-4" />
+                  <StoryText
+                    page={spread.page}
+                    className="shrink-0 mt-4"
+                    chunks={narration.chunks}
+                    position={narration.position}
+                    onSeek={narrationAvailable ? narration.play : undefined}
+                  />
                 </>
               )}
 
@@ -233,7 +273,13 @@ export default function BookSpread({
                     />
                   </PageCanvas>
                   <PageCanvas side="right">
-                    <StoryText page={spread.page} className="flex-1 flex flex-col justify-between p-2" />
+                    <StoryText
+                      page={spread.page}
+                      className="flex-1 flex flex-col justify-between p-2"
+                      chunks={narration.chunks}
+                      position={narration.position}
+                      onSeek={narrationAvailable ? narration.play : undefined}
+                    />
                   </PageCanvas>
                 </>
               )}
@@ -309,6 +355,18 @@ export default function BookSpread({
         </div>
       )}
 
+      {/*
+        * Read-aloud controls. One instance at every breakpoint — a desktop copy and a
+        * mobile copy would give two nodes the same accessible name, which is the mistake
+        * the chevrons above already had to be rescued from. In normal flow, never fixed:
+        * `UpdateToast` remains the app's only bottom-fixed surface.
+        */}
+      <NarrationPlayer
+        narration={narration}
+        pageLabel={positionLabel}
+        className={`mt-4 mx-auto ${frameWidthClass}`}
+      />
+
       {/* Footer: position dots + revise CTA */}
       <div className={`flex flex-col md:flex-row items-center justify-between mt-4 gap-3 mx-auto transition-all duration-200 ease-in-out ${frameWidthClass}`}>
         {/*
@@ -331,7 +389,7 @@ export default function BookSpread({
           ))}
         </div>
         <span data-testid="spread-position" className="text-xs text-gray-500 dark:text-gray-400">
-          {spread.kind === 'cover' ? 'Cover' : spread.kind === 'end' ? 'End' : `Page ${spread.pageIndex + 1} of ${pages.length}`}
+          {positionLabel}
         </span>
         {isOwner && isDraft && (
           <button
@@ -465,17 +523,99 @@ function CoverArt({ book, className }: { book: BookWithPages; className: string 
   )
 }
 
-/** A story page's text plus its page number. Sizing comes from the caller. */
-function StoryText({ page, className }: { page: Page; className: string }) {
+/**
+ * A story page's text plus its page number. Sizing comes from the caller.
+ *
+ * Narration highlighting is opt-in and inert by default: with no chunks or no position the
+ * paragraph renders exactly one text node, as it did before read-aloud existed. While
+ * something is being spoken the same `<p>` holds one `<span>` per sentence, sliced by the
+ * chunk offsets the hook already computed — the renderer never re-splits the text.
+ *
+ * `<span>`, never `<mark>`: VoiceOver announces `<mark>` as "highlighted", injecting a word
+ * into the middle of every sentence. The spans carry no `role` and no `tabIndex` either —
+ * turning a paragraph of story into eight tab stops announced as "button" would wreck the
+ * reading experience to duplicate the Previous/Next sentence buttons, which are the
+ * accessible seek path. Click-to-seek is a redundant pointer convenience on top of them.
+ */
+function StoryText({ page, className, chunks, position, onSeek }: {
+  page: Page;
+  className: string;
+  chunks?: NarrationChunk[];
+  position?: NarrationPosition | null;
+  onSeek?: (chunkIndex: number) => void;
+}) {
+  const highlight =
+    chunks && chunks.length > 0 && position
+      ? { chunks, activeIndex: position.chunkIndex, wordRange: position.wordRange }
+      : null
+
   return (
     <div className={className}>
       <p className="text-base md:text-lg text-gray-700 dark:text-gray-200 leading-relaxed font-display">
-        {page.text}
+        {highlight
+          ? highlight.chunks.map((chunk, i) => {
+              const active = i === highlight.activeIndex
+              return (
+                <span
+                  key={chunk.start}
+                  data-testid={active ? 'narration-highlight' : undefined}
+                  onClick={onSeek ? () => onSeek(i) : undefined}
+                  className={
+                    `rounded motion-safe:transition-colors${
+                      active ? ' bg-amber-200 dark:bg-amber-500/30' : ''
+                    }${onSeek ? ' cursor-pointer' : ''}`
+                  }
+                >
+                  {active && highlight.wordRange
+                    ? withWordHighlight(page.text, chunk, highlight.wordRange)
+                    : page.text.slice(chunk.start, chunk.end)}
+                </span>
+              )
+            })
+          : page.text}
       </p>
       <div data-testid="page-number" className="text-right text-xs text-amber-700/60 dark:text-amber-300/40 mt-4 italic">
         — page {page.page_number}
       </div>
     </div>
+  )
+}
+
+/**
+ * Splits the spoken sentence around the word currently being said.
+ *
+ * This is a *self-activating* enhancement, not a mode: `wordRange` is only ever non-null
+ * because the engine actually emitted a word-granularity `boundary` event. Safari reports
+ * boundaries per sentence and Android Chrome reports none, so on those engines this
+ * function is never reached and the sentence highlight from Task 5 is exactly what renders.
+ *
+ * The range is clamped to the sentence rather than trusted: a `charIndex`/`charLength` pair
+ * that overruns its chunk would otherwise slice text belonging to the next sentence into
+ * this span. A range that lands entirely outside falls back to the plain sentence.
+ *
+ * `<span>`, never `<mark>`, for the same reason as the sentence highlight — and it inherits
+ * the sentence span's position in the `<p>`, so it is never inside an `aria-live` region.
+ */
+function withWordHighlight(
+  text: string,
+  chunk: NarrationChunk,
+  word: { start: number; end: number },
+): ReactNode {
+  const start = Math.min(Math.max(word.start, chunk.start), chunk.end)
+  const end = Math.min(Math.max(word.end, start), chunk.end)
+  if (end <= start) return text.slice(chunk.start, chunk.end)
+
+  return (
+    <>
+      {text.slice(chunk.start, start)}
+      <span
+        data-testid="narration-word"
+        className="rounded bg-amber-400/70 dark:bg-amber-400/40"
+      >
+        {text.slice(start, end)}
+      </span>
+      {text.slice(end, chunk.end)}
+    </>
   )
 }
 

@@ -131,6 +131,15 @@ Pick the aria-label from the user's perspective ("Decrease quantity") not the im
 4. **Add an RTL test** in `components/__tests__/` — see `docs/conventions/testing.md` for the provider-wrapping pattern.
 5. **Verify in browser** in both light and dark mode before claiming done.
 
+### Browser device APIs jsdom doesn't implement
+
+A component that reaches for a device API (`speechSynthesis` today) gets an installable
+fake under `client/src/test/` — `client/src/test/fakeSpeech.ts` is the pattern. Install and
+uninstall it **per test file, never globally in `setup.ts`**: the API-absent path is a real
+state the component has to render, and a global install makes it unreachable. `matchMedia`
+is the exception that proves the rule — it is polyfilled globally in `setup.ts` because
+nothing branches on its absence.
+
 ## When adding a new page
 
 1. Mount the route in `App.tsx`.

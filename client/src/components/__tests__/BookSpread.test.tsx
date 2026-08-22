@@ -1,7 +1,13 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import BookSpread from '../BookSpread'
 import type { BookWithPages } from '../../types'
+import { AUTO_ADVANCE_DELAY_MS } from '../../hooks/useNarration'
+import {
+  installFakeSpeech,
+  uninstallFakeSpeech,
+  type FakeSpeechControl,
+} from '../../test/fakeSpeech'
 
 const mockBook: BookWithPages = {
   id: 'book-1',
@@ -194,5 +200,204 @@ describe('BookSpread — single-page mode below md', () => {
     expect(panel.className).not.toContain('pl-14')
     expect(panel.className).not.toContain('pr-14')
     expect(panel.className).toContain('dark:bg-gray-800')
+  })
+})
+
+/**
+ * Narration wiring. The state machine itself is covered by useNarration.test.tsx and the
+ * control bar by NarrationPlayer.test.tsx; what is under test here is only the three
+ * connections BookSpread owns — the highlight, the auto-advance page turn, and the text
+ * each spread hands to the hook.
+ */
+
+/** Two sentences per page, so "the highlight is on sentence one" is a real assertion. */
+const narrationBook: BookWithPages = {
+  ...mockBook,
+  pages: [
+    { ...(mockBook.pages[0] as BookWithPages['pages'][number]), text: 'Luna woke up. The garden was glowing.' },
+    { ...(mockBook.pages[1] as BookWithPages['pages'][number]), text: 'The stars were dancing. Luna laughed.' },
+  ],
+}
+
+/** The fake's default: one utterance takes this long under fake timers. */
+const CHUNK_MS = 100
+
+/**
+ * Advances fake timers inside `act`, then drains. The fake starts the next utterance from
+ * the previous one's `end` handler, and vitest's clock only picks up a zero-delay timer
+ * scheduled *during* a tick on a subsequent advance — without draining, a page stalls one
+ * utterance short. Mirrors the helper in useNarration.test.tsx.
+ */
+function tick(ms: number): void {
+  act(() => {
+    vi.advanceTimersByTime(ms)
+    for (let step = 0; step < 4; step += 1) vi.advanceTimersByTime(1)
+  })
+}
+
+/** The page-turn animation before `spreadIndex` actually moves. */
+const FLIP_MS = 250
+
+function clickNextSpread(): void {
+  fireEvent.click(screen.getByRole('button', { name: 'Next spread' }))
+  tick(FLIP_MS)
+}
+
+/** The sentence spans of the paragraph currently being narrated, in document order. */
+function sentenceSpans(): HTMLElement[] {
+  const paragraph = screen.getByTestId('narration-highlight').closest('p')
+  if (!paragraph) throw new Error('no narrated paragraph in the document')
+  return Array.from(paragraph.querySelectorAll<HTMLElement>(':scope > span'))
+}
+
+describe('BookSpread — narration', () => {
+  const realMatchMedia = window.matchMedia
+  let control: FakeSpeechControl
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    localStorage.removeItem('storybook-narration')
+    control = installFakeSpeech()
+  })
+
+  afterEach(() => {
+    uninstallFakeSpeech()
+    vi.useRealTimers()
+    localStorage.removeItem('storybook-narration')
+    Object.defineProperty(window, 'matchMedia', { writable: true, value: realMatchMedia })
+  })
+
+  // One DOM shape at every breakpoint. Two copies would give two nodes the same
+  // accessible name, which is the fence mobile/reader.spec.ts established for the chevrons.
+  it('mounts exactly one narration player at desktop width', () => {
+    renderSpread({ book: narrationBook })
+    clickNextSpread()
+    expect(screen.getAllByTestId('narration-player')).toHaveLength(1)
+  })
+
+  it('mounts exactly one narration player below md', () => {
+    matchOnly(NARROW_QUERY)
+    renderSpread({ book: narrationBook })
+    clickNextSpread()
+    expect(screen.getAllByTestId('narration-player')).toHaveLength(1)
+  })
+
+  // The regression fence for the untouched case: nothing about the page changes until
+  // something is actually being spoken.
+  it('renders the page text unchanged while narration is idle', () => {
+    renderSpread({ book: narrationBook })
+    clickNextSpread()
+
+    expect(screen.getByText('Luna woke up. The garden was glowing.')).toBeInTheDocument()
+    expect(screen.queryByTestId('narration-highlight')).not.toBeInTheDocument()
+  })
+
+  it('highlights exactly one sentence — the one being spoken — on play', () => {
+    renderSpread({ book: narrationBook })
+    clickNextSpread()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }))
+
+    // Position is set optimistically at speak() time, so the highlight lands on the press.
+    const highlights = screen.getAllByTestId('narration-highlight')
+    expect(highlights).toHaveLength(1)
+    expect(highlights[0]).toHaveTextContent('Luna woke up.')
+    expect(highlights[0]?.tagName).toBe('SPAN')
+    // <mark> would make VoiceOver announce "highlighted" mid-sentence.
+    expect(highlights[0]?.className).toContain('dark:bg-amber-500/30')
+
+    tick(CHUNK_MS)
+    expect(screen.getByTestId('narration-highlight')).toHaveTextContent('The garden was glowing.')
+  })
+
+  it('starts playback from a sentence the reader taps', () => {
+    renderSpread({ book: narrationBook })
+    clickNextSpread()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }))
+    const spans = sentenceSpans()
+    expect(spans).toHaveLength(2)
+
+    const spokenBefore = control.spoken().length
+    fireEvent.click(spans[1] as HTMLElement)
+
+    expect(screen.getByTestId('narration-highlight')).toHaveTextContent('The garden was glowing.')
+    // Re-queued from the tapped sentence, not from the top of the page.
+    expect(control.spoken().slice(spokenBefore)).toEqual(['The garden was glowing.'])
+  })
+
+  /**
+   * The word-level enhancement. It self-activates off real word `boundary` events, so the
+   * pair below is the whole contract: a word span when the engine reports words, and the
+   * untouched sentence highlight when it does not.
+   */
+  it('wraps the spoken word inside the active sentence when the engine reports words', () => {
+    installFakeSpeech({ emitWordBoundary: true })
+    renderSpread({ book: narrationBook })
+    clickNextSpread()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }))
+    tick(1)
+
+    const sentence = screen.getByTestId('narration-highlight')
+    const word = screen.getByTestId('narration-word')
+    expect(sentence).toContainElement(word)
+    expect(word.tagName).toBe('SPAN')
+    expect(word).toHaveTextContent('Luna')
+    expect(word.className).toContain('dark:bg-amber-400/40')
+    // Narrowing the highlight must not lose a character of the sentence.
+    expect(sentence).toHaveTextContent('Luna woke up.')
+  })
+
+  // The degradation path — Safari and Android Chrome — asserted rather than assumed.
+  it('renders the sentence highlight alone when no word boundaries arrive', () => {
+    renderSpread({ book: narrationBook })
+    clickNextSpread()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }))
+    tick(CHUNK_MS)
+
+    expect(screen.getByTestId('narration-highlight')).toHaveTextContent('The garden was glowing.')
+    expect(screen.queryByTestId('narration-word')).not.toBeInTheDocument()
+  })
+
+  // Open question 1, resolved: one Play press reads the whole book, starting with the cover.
+  it('reads the title and author on the cover spread', () => {
+    renderSpread({ book: narrationBook })
+
+    expect(screen.getByTestId('spread-position')).toHaveTextContent('Cover')
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }))
+
+    expect(control.spoken().join(' ')).toBe('The Brave Little Fox. By AI Author.')
+  })
+
+  it('turns the page itself when a page finishes and auto-advance is on', () => {
+    renderSpread({ book: narrationBook })
+    clickNextSpread()
+    expect(screen.getByTestId('spread-position')).toHaveTextContent('Page 1 of 2')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }))
+    tick(CHUNK_MS * 2 + AUTO_ADVANCE_DELAY_MS + FLIP_MS)
+
+    expect(screen.getByTestId('spread-position')).toHaveTextContent('Page 2 of 2')
+    // Re-armed on the new page rather than carrying the old page's audio across.
+    expect(control.spoken().slice(-2)).toEqual(['The stars were dancing.', 'Luna laughed.'])
+  })
+
+  it('reads "The End." on the end spread without asking for another page', () => {
+    renderSpread({ book: narrationBook })
+    clickNextSpread()
+    clickNextSpread()
+    clickNextSpread()
+    expect(screen.getByTestId('spread-position')).toHaveTextContent('End')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }))
+    expect(control.spoken()).toEqual(['The End.'])
+
+    tick(CHUNK_MS + AUTO_ADVANCE_DELAY_MS + FLIP_MS)
+
+    // hasNext is false on the last spread, so playback stops rather than requesting a turn.
+    expect(screen.getByTestId('spread-position')).toHaveTextContent('End')
+    expect(control.spoken()).toEqual(['The End.'])
   })
 })
