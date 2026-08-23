@@ -1103,3 +1103,187 @@ describe('BookDetail — Download PDF', () => {
     expect(clickSpy).not.toHaveBeenCalled()
   })
 })
+
+// ---------------------------------------------------------------------------
+// #20 — "withdraw to edit": PublishStateBar wiring + the two reader-view
+// controls that were gated on `isOwner` alone.
+// ---------------------------------------------------------------------------
+// Task 1 made `POST /:id/illustrate` (and its four siblings) 403 on a published
+// book. Before this task the reader view still rendered Regenerate / History /
+// Generate illustration for a published owner, so those buttons stopped being
+// affordances and started being traps. These tests are the fence on that.
+describe('BookDetail — publish state and the reader-view edit controls', () => {
+  const illustratedUrl = '/uploads/illustrations/page-1.png'
+
+  // Page 1 illustrated (Regenerate + History), page 2 not (Generate
+  // illustration). One book exercises both reader-view control clusters.
+  const twoPageBook: BookWithPages = {
+    ...baseBook,
+    pages: [
+      { id: 1, book_id: 'book-1', page_number: 1, text: 'Page 1 current', illustration_description: 'desc 1', illustration_url: illustratedUrl },
+      { id: 2, book_id: 'book-1', page_number: 2, text: 'Page 2 current', illustration_description: 'desc 2', illustration_url: null },
+    ],
+  }
+
+  // PUT /:id/publish and /:id/unpublish respond with `BookSchema` — the book
+  // row, with **no** `pages`. The mock mirrors that so the merge in
+  // handleWithdraw/handlePublish is actually under test: a naive
+  // `setBook(parsed)` would blank the story.
+  function bookRowOnly(book: BookWithPages, status: string) {
+    const { pages: _pages, ...row } = book
+    return { ...row, status }
+  }
+
+  function setupPublishFetchMock(opts: {
+    book: BookWithPages
+    /** Books returned by GETs after the first one — the "second tab" refetch. */
+    refetched?: BookWithPages
+    illustrateStatus?: number
+  }) {
+    const calls: FetchCall[] = []
+    let bookGets = 0
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      calls.push({ url, init })
+      const method = init?.method ?? 'GET'
+      const json = (body: unknown, status = 200) =>
+        Promise.resolve(new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }))
+
+      if (url === '/api/books/book-1' && method === 'GET') {
+        bookGets++
+        return json(bookGets > 1 && opts.refetched ? opts.refetched : opts.book)
+      }
+      if (url === '/api/books/book-1/versions' && method === 'GET') return json([])
+      if (url === '/api/books/book-1/unpublish' && method === 'PUT') return json(bookRowOnly(opts.book, 'draft'))
+      if (url === '/api/books/book-1/publish' && method === 'PUT') return json(bookRowOnly(opts.book, 'published'))
+      if (url === '/api/books/book-1/illustrate' && method === 'POST') {
+        const status = opts.illustrateStatus ?? 200
+        if (status !== 200) {
+          return json({ error: 'Published books cannot be edited. Take the book out of the catalog to edit it.' }, status)
+        }
+        return json(opts.book)
+      }
+      if (/^\/api\/books\/book-1\/illustrations\/\d+$/.test(url) && method === 'GET') return json([])
+      return json({ error: `unmocked ${method} ${url}` }, 500)
+    })
+    return { calls, bookGets: () => bookGets }
+  }
+
+  const readerView = async () => {
+    fireEvent.click(await screen.findByRole('button', { name: /reader view/i }))
+  }
+
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('shows "Edit this book" for a published owner and "Publish changes" for a draft owner', async () => {
+    setupPublishFetchMock({ book: { ...twoPageBook, status: 'published' } })
+    const { unmount } = renderBookDetail()
+
+    expect(await screen.findByRole('button', { name: /edit this book/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /publish changes/i })).not.toBeInTheDocument()
+    unmount()
+
+    vi.restoreAllMocks()
+    setupPublishFetchMock({ book: { ...twoPageBook, status: 'draft' } })
+    renderBookDetail()
+
+    expect(await screen.findByRole('button', { name: /publish changes/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /edit this book/i })).not.toBeInTheDocument()
+  })
+
+  it('shows no publish-state surface at all to a non-owner', async () => {
+    setupPublishFetchMock({ book: { ...twoPageBook, status: 'published', created_by: 'someone-else' } })
+    renderBookDetail()
+
+    await waitFor(() => {
+      expect(screen.getByText('Test Adventure')).toBeInTheDocument()
+    })
+    expect(screen.queryByTestId('publish-state-bar')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /edit this book/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /publish changes/i })).not.toBeInTheDocument()
+  })
+
+  it('withdraws via PUT /unpublish with the bearer token and re-renders in draft state', async () => {
+    const { calls } = setupPublishFetchMock({ book: { ...twoPageBook, status: 'published' } })
+    renderBookDetail()
+
+    fireEvent.click(await screen.findByRole('button', { name: /edit this book/i }))
+    // The confirm is inline and must be crossed before anything is called.
+    expect(calls.find(c => c.url.includes('/unpublish'))).toBeUndefined()
+    fireEvent.click(screen.getByRole('button', { name: /take it out and edit/i }))
+
+    await waitFor(() => {
+      const call = calls.find(c => c.url === '/api/books/book-1/unpublish')
+      expect(call).toBeDefined()
+      expect(call?.init?.method).toBe('PUT')
+      expect((call?.init?.headers as Record<string, string> | undefined)?.Authorization).toBe('Bearer test-token')
+    })
+
+    // Draft surfaces mount off the merged response...
+    expect(await screen.findByRole('button', { name: /publish changes/i })).toBeInTheDocument()
+    expect(screen.getByText(/out of the catalog while you edit/i)).toBeInTheDocument()
+    // ...and the pages survived the merge, even though /unpublish returns no
+    // `pages` field.
+    await readerView()
+    expect(await screen.findByText('Page 1 current')).toBeInTheDocument()
+  })
+
+  it('renders no reader-view illustration controls for a published book (success criterion 8)', async () => {
+    setupPublishFetchMock({ book: { ...twoPageBook, status: 'published' } })
+    renderBookDetail()
+    await readerView()
+
+    // Page 1 is illustrated: neither Regenerate nor History may be offered.
+    expect(await screen.findByText('Page 1 current')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^regenerate$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^history$/i })).not.toBeInTheDocument()
+
+    // Page 2 has a description and no illustration: no Generate illustration.
+    fireEvent.click(screen.getByRole('button', { name: /next/i }))
+    expect(await screen.findByText('Page 2 current')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /generate illustration/i })).not.toBeInTheDocument()
+  })
+
+  it('still renders the reader-view illustration controls for a draft the owner owns', async () => {
+    setupPublishFetchMock({ book: { ...twoPageBook, status: 'draft' } })
+    renderBookDetail()
+    await readerView()
+
+    expect(await screen.findByRole('button', { name: /^regenerate$/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^history$/i })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /next/i }))
+    expect(await screen.findByRole('button', { name: /generate illustration/i })).toBeInTheDocument()
+  })
+
+  it('treats a 403 from an edit route as a stale view: refetches the book instead of surfacing the error', async () => {
+    // The book is a draft in this tab; a second tab already republished it.
+    const { calls } = setupPublishFetchMock({
+      book: { ...twoPageBook, status: 'draft' },
+      refetched: { ...twoPageBook, status: 'published' },
+      illustrateStatus: 403,
+    })
+    renderBookDetail()
+    await readerView()
+
+    fireEvent.click(await screen.findByRole('button', { name: /^regenerate$/i }))
+
+    // The book is refetched...
+    await waitFor(() => {
+      expect(calls.filter(c => c.url === '/api/books/book-1' && (c.init?.method ?? 'GET') === 'GET').length)
+        .toBeGreaterThanOrEqual(2)
+    })
+    // ...and the now-published state takes the controls away rather than
+    // leaving a button next to the server's raw refusal.
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /^regenerate$/i })).not.toBeInTheDocument()
+    })
+    expect(screen.queryByText(/published books cannot be edited/i)).not.toBeInTheDocument()
+  })
+})

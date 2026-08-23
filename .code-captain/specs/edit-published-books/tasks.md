@@ -310,7 +310,7 @@ demonstrably fails when the `orders.ts` filter is reverted, no new TS errors.
 
 ### Task 4 — Client: `PublishStateBar`
 
-**Status:** Not started
+**Status:** Done (2026-08-23)
 
 **Zone:** client
 **Depends on:** none (pure component; can start alongside the server tasks)
@@ -399,7 +399,7 @@ human call, named in the spec's §Autonomy ledger.
 
 ### Task 5 — Client: wire `BookDetail`, and close the two ungated reader-view controls
 
-**Status:** Not started
+**Status:** Done (2026-08-23)
 
 **Zone:** client
 **Depends on:** Tasks 1, 4 (needs the 403 to exist and the component to mount)
@@ -481,7 +481,7 @@ the hero, since `PublishStateBar` now owns publish state.
 
 ### Task 6 — Client: align `MyBooks` vocabulary
 
-**Status:** Not started
+**Status:** Done (2026-08-23)
 
 **Zone:** client
 **Depends on:** Task 4 (adopt the same wording)
@@ -604,7 +604,7 @@ error, needs one human look. Recommend before merge; do not block the task.
 
 ### Task 9 — Docs: roadmap, conventions
 
-**Status:** Not started
+**Status:** Done (2026-08-23)
 
 **Zone:** docs
 **Depends on:** none
