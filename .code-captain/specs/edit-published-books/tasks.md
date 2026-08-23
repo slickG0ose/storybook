@@ -634,7 +634,7 @@ make.
 
 ### Task 10 — Pre-merge follow-ups
 
-**Status:** Not started
+**Status:** Done (2026-08-23)
 
 **Zone:** docs (harness) · **Depends on:** none (run last)
 
