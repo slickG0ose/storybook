@@ -188,6 +188,20 @@ Five tightly scoped pieces. Each is independently useful; together they cover th
     generated-audio seam" in the spec above.
 - **PDF export / print-ready download.** Reuses the BookSpread component server-rendered to PDF (`puppeteer` or `@react-pdf/renderer`).
 - **Multi-language stories.** Add `language` to the generate payload; Claude handles translation.
+- **Edit published books — SHIPPED as phase 1, "withdraw to edit" ([#20](https://github.com/slickG0ose/storybook/issues/20)).**
+  A published book is immutable. Editing one means withdrawing it from the catalog first
+  (`PUT /api/books/:id/unpublish`), revising it as a draft with the primitives that already
+  exist, then republishing as the cutover. Six content-mutating book routes share one
+  `isEditable()` gate that fails closed, and one `AVAILABLE_BOOK_WHERE` fragment keeps cart
+  display, add-to-cart, and checkout agreeing on what is purchasable. No Prisma schema change,
+  no seed change, no new wire-shape field. The accepted cost — the book is off-sale while the
+  author edits, and a prior buyer gets a 404 on `/book/:id` in that window — plus the five
+  triggers that would reopen the shadow-draft/cutover model:
+  [.code-captain/specs/edit-published-books/spec.md](../specs/edit-published-books/spec.md).
+  - **Not covered by it — "Story remix" and "Direct text editing per page" below remain
+    unbuilt.** #20 made the *existing* edit primitives reachable for a published book; it added
+    no new one. Each of those is a separate feature with its own route, wire shape, and
+    `BookVersion` snapshot semantics. Do not build either off this line.
 - **Story remix.** "Use this book as a starting point" → clone with edits.
 - **Reading-level controls** beyond age range (Lexile / Flesch-Kincaid target).
 - **Direct text editing per page** (the revise flow always goes through Claude; sometimes you just want to change one word).

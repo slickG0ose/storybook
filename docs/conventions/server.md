@@ -91,6 +91,33 @@ requireAuth | adminGate  →  validate()  →  handler
 
 Auth runs **first** so 401/403 wins over 400. If `validate()` ran first, an unauthenticated request with a bad body would return 400 (leaking validation details) instead of 401. Adding a new protected route? Mount the auth check before `validate()`.
 
+### Published books are immutable (#20, "withdraw to edit")
+
+A `Book` may be mutated only while `status === 'draft'`. Every content-mutating book route uses
+the shared gate in `server/src/lib/availability.ts` instead of writing its own check:
+
+```ts
+if (book.created_by !== user.id) return res.status(404).json({ error: 'Book not found.' });
+if (!isEditable(book)) return res.status(403).json({ error: PUBLISHED_IMMUTABLE_ERROR });
+```
+
+- **Ownership first, then status — always.** A non-owner gets **404**, never 403; a 403 would
+  confirm to a stranger that someone else's book exists and is published. The order of those two
+  lines is an information-leak decision, not a style choice.
+- `isEditable` **fails closed** — anything that is not exactly `'draft'` is immutable, so a
+  future status value cannot silently reopen editing.
+- It is a **handler-body check, not middleware**, so the order rule above is unchanged. On a paid
+  route it must be the first statement in the body, before any provider call and before
+  `recordUsage`, so a 403 costs nothing.
+- The shopper-facing sibling is `AVAILABLE_BOOK_WHERE` (`{ deleted_at: null, status: 'published' }`),
+  a Prisma `where` fragment shared by cart display, the add-item lookup, and checkout so all
+  three agree on what is purchasable. New availability conditions go there, not inline in one
+  route.
+
+Editing a published book means withdrawing it (`PUT /api/books/:id/unpublish`) and republishing.
+Reasoning, rejected alternatives, and accepted costs:
+`.code-captain/specs/edit-published-books/spec.md`.
+
 ## Auth — Bearer tokens (not "no auth")
 
 - **`Authorization: Bearer <uuid>`** header on every authed request.
@@ -120,7 +147,7 @@ Auth runs **first** so 401/403 wins over 400. If `validate()` ran first, an unau
 
 - **`loadEnv.ts` MUST be imported before anything else.** It populates `process.env.DATABASE_URL` before the Prisma client instantiates. Re-ordering imports breaks this — keep `import './loadEnv'` as the first line.
 - **`process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'`** is set unconditionally — required for the corporate proxy's self-signed cert. The test global setup mirrors this.
-- **CORS:** open (`app.use(cors())`). No origin allowlist today.
+- **CORS:** allowlisted via `CORS_ORIGIN`, parsed by `server/src/lib/cors.ts` (`corsPolicy`). Comma-separated, lowercased, trailing slashes stripped. Unset in non-prod allows any origin (Vite on :5173, Playwright, curl); unset in production warns loudly but **stays permissive on purpose** — a drifted env var must not take a live service offline. Bearer-token auth means this was never the classic cross-site-request hole; what it closes is any page on the web scripting the API from a victim's browser and reading the response.
 - **Body limit:** 10 MB (`app.use(express.json({ limit: '10mb' }))`). AI-generated content + illustrations can be large.
 - **Static assets:** `/illustrations/*` and `/uploads/*` are served from `server/public/`.
 - **`/api/_test`** is mounted **only** when `NODE_ENV !== 'production'`. Handlers themselves also re-check the env to belt-and-suspender.
@@ -134,6 +161,13 @@ Auth runs **first** so 401/403 wins over 400. If `validate()` ran first, an unau
 4. **Mount the router** in `server/src/index.ts`: `app.use('/api/<domain>', <domain>Router)`.
 5. **Write a Supertest integration test** in `server/src/routes/__tests__/<domain>.test.ts`. Use `createTestApp()` + `resetDatabase()` from `server/src/__tests__/setup.ts` (see `docs/conventions/testing.md`).
 6. **Wire-shape-assert** every new response in the test — pin every field name the client depends on. See `testing.md` for the pattern.
+7. **Mutating a book?** Call `isEditable(book)` from `server/src/lib/availability.ts` and return
+   403 with `PUBLISHED_IMMUTABLE_ERROR` — **after** the owner check, never before (see
+   "Published books are immutable" above).
+8. **Paid route?** It needs **both** a `spendGate(kind)` mount and a `recordUsage(...)` call on
+   success. Gating without recording defeats the global monthly ceiling, which sums the
+   `UsageLog` rows only `recordUsage` writes — the character-portrait route ran paid and
+   unmetered for exactly this reason.
 
 ## Things to NEVER do without user confirmation (CLAUDE.md guardrails)
 

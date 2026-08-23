@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, ShoppingCart, ChevronLeft, ChevronRight, Send, Loader2, RefreshCw, Paintbrush, Image, BookOpen, FileText, History, RotateCcw, CheckCircle2, X, GitCompare, Users, Download } from 'lucide-react'
+import { ArrowLeft, ShoppingCart, ChevronLeft, ChevronRight, Loader2, RefreshCw, Paintbrush, Image, BookOpen, FileText, History, RotateCcw, CheckCircle2, X, GitCompare, Users, Download } from 'lucide-react'
 import { useCart } from '../context/CartContext'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/apiBase'
 import { PER_IMAGE_COST_USD, fmtUsd, portraitStepCostNote } from '../lib/cost'
 import type { BookWithPages, BookVersion, IllustrationVersion, Page } from '../types'
 import BookSpread from '../components/BookSpread'
+import PublishStateBar from '../components/PublishStateBar'
 
 // A character "requires" a portrait (for the approve-cast soft gate) when its
 // role is primary or antagonist — these are the identity-critical, recurring
@@ -121,6 +122,11 @@ export default function BookDetail() {
   // illustration completeness.
   const [downloadingPdf, setDownloadingPdf] = useState(false)
   const [pdfError, setPdfError] = useState('')
+  // Publish-state surface (#20, "withdraw to edit"). One busy flag and one
+  // error string cover both transitions — they are mutually exclusive by
+  // definition, since a book is either in the catalog or out of it.
+  const [publishBusy, setPublishBusy] = useState(false)
+  const [publishError, setPublishError] = useState('')
 
   const fetchBook = () => {
     const headers: Record<string, string> = {}
@@ -247,6 +253,48 @@ export default function BookDetail() {
     setTimeout(() => setAdded(false), 2000)
   }
 
+  // A 403 from an edit route means *this view is stale*, not that the author
+  // did something wrong. Published books are immutable (#20), so the likely
+  // cause is a second tab that already withdrew or republished this book.
+  // Refetch and let the re-render take the affordance away, rather than
+  // surfacing the server's raw message next to a button that should not be
+  // there. Deliberately one helper called at each edit site — not a general
+  // retry layer.
+  const handledStale403 = (res: Response): boolean => {
+    if (res.status !== 403) return false
+    fetchBook()
+    return true
+  }
+
+  // PUT /api/books/:id/unpublish — the same call MyBooks makes. Takes the book
+  // out of the catalog so every draft-only editing surface below can mount.
+  const handleWithdraw = async (): Promise<void> => {
+    if (!user) return
+    setPublishBusy(true)
+    setPublishError('')
+    try {
+      const res = await fetch(api(`/api/books/${book.id}/unpublish`), {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${user.token}` },
+      })
+      if (handledStale403(res)) return
+      const parsed = await safeReadJson<BookWithPages>(res)
+      if (!res.ok) {
+        throw new Error(errorMessageFromResponse(parsed, res, 'Could not take the book out of the catalog'))
+      }
+      if (parsed === null || (typeof parsed === 'object' && 'error' in parsed)) {
+        throw new Error(errorMessageFromResponse(parsed, res, 'Could not take the book out of the catalog'))
+      }
+      // The route responds with BookSchema — the book row, with no `pages`.
+      // Merge rather than replace, or the reader loses the story it is showing.
+      setBook({ ...book, ...parsed })
+    } catch (err) {
+      setPublishError(err instanceof Error ? err.message : 'Could not take the book out of the catalog')
+    } finally {
+      setPublishBusy(false)
+    }
+  }
+
   const handleRevise = async (feedbackText?: string, newPageCount?: number) => {
     const text = (feedbackText ?? feedback).trim()
     if (!text || !user) return
@@ -263,6 +311,7 @@ export default function BookDetail() {
         },
         body: JSON.stringify(body),
       })
+      if (handledStale403(res)) return
       const parsed = await safeReadJson<BookWithPages>(res)
       if (!res.ok) {
         throw new Error(errorMessageFromResponse(parsed, res, 'Revision failed'))
@@ -299,6 +348,7 @@ export default function BookDetail() {
         method: 'PUT',
         headers: { 'Authorization': `Bearer ${user.token}` },
       })
+      if (handledStale403(res)) return
       const parsed = await safeReadJson<BookWithPages>(res)
       if (!res.ok) {
         throw new Error(errorMessageFromResponse(parsed, res, 'Failed to restore version'))
@@ -317,15 +367,32 @@ export default function BookDetail() {
     }
   }
 
-  const handlePublish = async () => {
+  // PUT /api/books/:id/publish. The "some pages have no illustration" confirm
+  // lives in PublishStateBar — by the time this runs the author has already
+  // answered it.
+  const handlePublish = async (): Promise<void> => {
     if (!user) return
-    const res = await fetch(api(`/api/books/${book.id}/publish`), {
-      method: 'PUT',
-      headers: { 'Authorization': `Bearer ${user.token}` },
-    })
-    if (res.ok) {
-      const updated = await res.json() as BookWithPages
-      setBook({ ...book, ...updated })
+    setPublishBusy(true)
+    setPublishError('')
+    try {
+      const res = await fetch(api(`/api/books/${book.id}/publish`), {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${user.token}` },
+      })
+      if (handledStale403(res)) return
+      const parsed = await safeReadJson<BookWithPages>(res)
+      if (!res.ok) {
+        throw new Error(errorMessageFromResponse(parsed, res, 'Could not publish this book'))
+      }
+      if (parsed === null || (typeof parsed === 'object' && 'error' in parsed)) {
+        throw new Error(errorMessageFromResponse(parsed, res, 'Could not publish this book'))
+      }
+      // BookSchema again — no `pages` on the response, so merge.
+      setBook({ ...book, ...parsed })
+    } catch (err) {
+      setPublishError(err instanceof Error ? err.message : 'Could not publish this book')
+    } finally {
+      setPublishBusy(false)
     }
   }
 
@@ -369,6 +436,7 @@ export default function BookDetail() {
       },
       body: JSON.stringify({ illustration_description: description }),
     })
+    if (handledStale403(res)) return
     if (res.ok) {
       const updated = await res.json() as BookWithPages
       setBook(updated)
@@ -393,6 +461,7 @@ export default function BookDetail() {
         },
         body: JSON.stringify(body),
       })
+      if (handledStale403(res)) return
       const parsed = await safeReadJson<BookWithPages>(res)
       if (!res.ok) {
         throw new Error(errorMessageFromResponse(parsed, res, 'Illustration failed'))
@@ -427,6 +496,7 @@ export default function BookDetail() {
           body: JSON.stringify(body),
         }
       )
+      if (handledStale403(res)) return
       const parsed = await safeReadJson<BookWithPages>(res)
       if (!res.ok) {
         throw new Error(errorMessageFromResponse(parsed, res, 'Portrait generation failed'))
@@ -469,6 +539,7 @@ export default function BookDetail() {
       },
       body: JSON.stringify({ url }),
     })
+    if (handledStale403(res)) return
     if (res.ok) {
       const updated = await res.json() as BookWithPages
       setBook(updated)
@@ -578,33 +649,24 @@ export default function BookDetail() {
             )}
             <div className="flex items-center gap-3">
               {isDraft && isOwner && (
-                <>
-                  <button
-                    onClick={() => void handlePublish()}
-                    className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold bg-green-500 hover:bg-green-600 text-white transition-colors cursor-pointer"
-                  >
-                    <Send size={16} />
-                    Publish
-                  </button>
-                  <button
-                    onClick={() => {
-                      const remaining = pages.filter(p => !p.illustration_url).length
-                      const estimate = (remaining * 0.04).toFixed(2)
-                      if (remaining > 1 && !window.confirm(`Generate ${remaining} illustration${remaining === 1 ? '' : 's'}? Estimated cost: $${estimate}.`)) return
-                      void handleIllustrate()
-                    }}
-                    disabled={illustrating || pages.every(p => p.illustration_url) || !canBulkIllustrate}
-                    title={
-                      !canBulkIllustrate
-                        ? 'Approve cast to illustrate with consistent characters, or skip portraits.'
-                        : `Generates ${pages.filter(p => !p.illustration_url).length} image(s) at ~$0.04 each`
-                    }
-                    className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold bg-purple-500 hover:bg-purple-600 text-white transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-default"
-                  >
-                    {illustrating ? <Loader2 size={16} className="animate-spin" /> : <Paintbrush size={16} />}
-                    {illustrating ? 'Illustrating...' : `Illustrate All (~$${(pages.filter(p => !p.illustration_url).length * 0.04).toFixed(2)})`}
-                  </button>
-                </>
+                <button
+                  onClick={() => {
+                    const remaining = pages.filter(p => !p.illustration_url).length
+                    const estimate = (remaining * 0.04).toFixed(2)
+                    if (remaining > 1 && !window.confirm(`Generate ${remaining} illustration${remaining === 1 ? '' : 's'}? Estimated cost: $${estimate}.`)) return
+                    void handleIllustrate()
+                  }}
+                  disabled={illustrating || pages.every(p => p.illustration_url) || !canBulkIllustrate}
+                  title={
+                    !canBulkIllustrate
+                      ? 'Approve cast to illustrate with consistent characters, or skip portraits.'
+                      : `Generates ${pages.filter(p => !p.illustration_url).length} image(s) at ~$0.04 each`
+                  }
+                  className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold bg-purple-500 hover:bg-purple-600 text-white transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-default"
+                >
+                  {illustrating ? <Loader2 size={16} className="animate-spin" /> : <Paintbrush size={16} />}
+                  {illustrating ? 'Illustrating...' : `Illustrate All (~$${(pages.filter(p => !p.illustration_url).length * 0.04).toFixed(2)})`}
+                </button>
               )}
               {illustrateError && (
                 <span className="text-sm text-red-500 dark:text-red-400">{illustrateError}</span>
@@ -660,6 +722,21 @@ export default function BookDetail() {
           </div>
         </div>
       </div>
+
+      {/* Publish state (#20). Renders null for readers; for the owner it is the
+          "Edit this book" withdraw affordance when published, and the
+          out-of-the-catalog banner with "Publish changes" when a draft. */}
+      <PublishStateBar
+        isOwner={!!isOwner}
+        isDraft={isDraft}
+        title={book.title}
+        pageCount={pages.length}
+        unillustratedCount={pages.filter(p => !p.illustration_url).length}
+        onWithdraw={handleWithdraw}
+        onPublish={handlePublish}
+        busy={publishBusy}
+        error={publishError}
+      />
 
       {/* Cast panel — draft + owner only. Generate/iterate per-character
           portraits so page illustration can reference a consistent cast. */}
@@ -848,7 +925,7 @@ export default function BookDetail() {
                       className="w-full h-auto"
                     />
                   </div>
-                  {isOwner && (
+                  {isOwner && isDraft && (
                     <div className="mt-3 space-y-2">
                       <div className="flex gap-2">
                         <input
@@ -938,7 +1015,7 @@ export default function BookDetail() {
                     <p className="text-sm text-amber-700 dark:text-amber-300 italic">
                       {page.illustration_description}
                     </p>
-                    {isOwner && (
+                    {isOwner && isDraft && (
                       <button
                         onClick={() => void handleIllustrate(page.page_number)}
                         disabled={illustrating}

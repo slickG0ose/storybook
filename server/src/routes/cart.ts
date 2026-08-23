@@ -13,6 +13,7 @@ import {
   type CartUpdateItemRequest,
 } from '@storybook/shared';
 import { validate } from '../middleware/validate';
+import { AVAILABLE_BOOK_WHERE } from '../lib/availability';
 
 const router = Router();
 
@@ -24,13 +25,16 @@ router.get(
   }),
   async (req: Request<{ sessionId: string }>, res: Response) => {
     const { sessionId } = req.params;
-    // Filter out cart items whose book has been soft-deleted. Silent-hide UX:
-    // the item simply disappears from the cart on next fetch. No banner, no 4xx.
+    // Filter out cart items whose book is unavailable — soft-deleted, or taken
+    // out of the catalog by its author to edit it (#20). Silent-hide UX: the
+    // item simply disappears from the cart on next fetch. No banner, no 4xx.
+    // AVAILABLE_BOOK_WHERE is shared with POST /api/orders so display and
+    // checkout cannot disagree about what is purchasable.
     // Prisma relation filter executes in a single round-trip and the response
     // stays schema-valid (drift catch-net would fire if a null book leaked
     // through the join).
     const items = await prisma.cartItem.findMany({
-      where: { session_id: sessionId, book: { deleted_at: null } },
+      where: { session_id: sessionId, book: AVAILABLE_BOOK_WHERE },
       include: { book: true },
     });
 
@@ -61,9 +65,10 @@ router.post(
     const { bookId, quantity } = req.body as CartAddItemRequest;
     const { sessionId } = req.params;
 
-    // findFirst with deleted_at: null so a soft-deleted book behaves identically
-    // to a missing one — same 404, no information leak about tombstoned rows.
-    const book = await prisma.book.findFirst({ where: { id: bookId, deleted_at: null } });
+    // findFirst with AVAILABLE_BOOK_WHERE so an unavailable book — soft-deleted,
+    // or a draft — behaves identically to a missing one: same 404, no information
+    // leak about tombstoned rows or about someone else's unpublished draft.
+    const book = await prisma.book.findFirst({ where: { id: bookId, ...AVAILABLE_BOOK_WHERE } });
     if (!book) {
       return res.status(404).json({ error: 'Book not found' });
     }

@@ -62,8 +62,14 @@ function setupFetchMock(opts: {
   books?: BookWithMaybePages[]
   unpublished?: Book
   unpublishStatus?: number
+  /** Hold the unpublish response open so the busy state can be observed. */
+  deferUnpublish?: boolean
 } = {}) {
   const calls: FetchCall[] = []
+  let releaseUnpublish: () => void = () => {}
+  const unpublishGate = new Promise<void>(resolve => {
+    releaseUnpublish = resolve
+  })
   vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString()
     calls.push({ url, init })
@@ -80,9 +86,17 @@ function setupFetchMock(opts: {
     if (url === '/api/books/book-1/unpublish' && method === 'PUT') {
       const status = opts.unpublishStatus ?? 200
       const body = status === 200 ? opts.unpublished ?? unpublishedBook : { error: 'failed' }
-      return Promise.resolve(
+      const respond = () =>
         new Response(JSON.stringify(body), {
           status,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      return opts.deferUnpublish ? unpublishGate.then(respond) : Promise.resolve(respond())
+    }
+    if (url === '/api/books/book-1/publish' && method === 'PUT') {
+      return Promise.resolve(
+        new Response(JSON.stringify(opts.unpublished ?? publishedBook), {
+          status: 200,
           headers: { 'Content-Type': 'application/json' },
         })
       )
@@ -95,7 +109,7 @@ function setupFetchMock(opts: {
       })
     )
   })
-  return { calls }
+  return { calls, releaseUnpublish: () => releaseUnpublish() }
 }
 
 function renderMyBooks() {
@@ -106,7 +120,12 @@ function renderMyBooks() {
   )
 }
 
-describe('MyBooks — Unpublish', () => {
+/**
+ * Task 6 of the "withdraw to edit" spec: the published-book control is an *edit* affordance
+ * whose consequence is leaving the catalog, not a bare "Unpublish". These tests pin the
+ * vocabulary — the strings themselves are the product decision under review.
+ */
+describe('MyBooks — Edit this book (withdraw to edit)', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
   })
@@ -115,7 +134,22 @@ describe('MyBooks — Unpublish', () => {
     vi.restoreAllMocks()
   })
 
-  it('unpublishes a published book on confirm and flips the card to draft', async () => {
+  it('labels the published-book control as editing, not unpublishing', async () => {
+    setupFetchMock({})
+
+    renderMyBooks()
+
+    await waitFor(() => {
+      expect(screen.getByText('Published')).toBeInTheDocument()
+    })
+
+    const editBtn = screen.getByRole('button', { name: /edit this book/i })
+    expect(editBtn).toHaveTextContent('Edit this book')
+    // The old withdrawal-and-abandonment vocabulary is gone from the card entirely.
+    expect(screen.queryByText(/unpublish/i)).not.toBeInTheDocument()
+  })
+
+  it('withdraws a published book on confirm and flips the card to draft', async () => {
     const { calls } = setupFetchMock({})
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
 
@@ -126,15 +160,19 @@ describe('MyBooks — Unpublish', () => {
       expect(screen.getByText('Published')).toBeInTheDocument()
     })
 
-    const unpublishBtn = screen.getByRole('button', { name: /unpublish book/i })
-    fireEvent.click(unpublishBtn)
+    const editBtn = screen.getByRole('button', { name: /edit this book/i })
+    fireEvent.click(editBtn)
 
+    // The confirm carries PublishStateBar's wording: what leaving the catalog costs, and
+    // the reassurance that an existing buyer's receipt survives it.
     expect(confirmSpy).toHaveBeenCalledTimes(1)
     const confirmMessage = confirmSpy.mock.calls[0]?.[0] as string
-    expect(confirmMessage).toMatch(/public catalog/i)
-    expect(confirmMessage).toMatch(/draft/i)
+    expect(confirmMessage).toContain('Published Adventure')
+    expect(confirmMessage).toMatch(/out of the catalog/i)
+    expect(confirmMessage).toMatch(/find or buy it until you publish again/i)
+    expect(confirmMessage).toMatch(/keeps their receipt/i)
 
-    // Unpublish endpoint hit with the right URL + auth header.
+    // Unpublish endpoint hit with the right URL + auth header — same route, new words.
     await waitFor(() => {
       const call = calls.find(c => c.url === '/api/books/book-1/unpublish')
       expect(call).toBeDefined()
@@ -162,13 +200,80 @@ describe('MyBooks — Unpublish', () => {
       expect(screen.getByText('Published')).toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getByRole('button', { name: /unpublish book/i }))
+    fireEvent.click(screen.getByRole('button', { name: /edit this book/i }))
 
     // No unpublish call should have been made.
     const unpublishCall = calls.find(c => c.url.includes('/unpublish'))
     expect(unpublishCall).toBeUndefined()
     // Card still shows Published.
     expect(screen.getByText('Published')).toBeInTheDocument()
+  })
+
+  it('reads "Taking out..." while the withdrawal is in flight', async () => {
+    const { releaseUnpublish } = setupFetchMock({ deferUnpublish: true })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    renderMyBooks()
+
+    await waitFor(() => {
+      expect(screen.getByText('Published')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /edit this book/i }))
+
+    await waitFor(() => {
+      const btn = screen.getByRole('button', { name: /edit this book/i })
+      expect(btn).toHaveTextContent('Taking out...')
+      expect(btn).toBeDisabled()
+    })
+
+    releaseUnpublish()
+    await waitFor(() => {
+      expect(screen.getByText('Draft')).toBeInTheDocument()
+    })
+  })
+
+  it('explains a failed withdrawal in the same vocabulary', async () => {
+    setupFetchMock({ unpublishStatus: 500 })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {})
+
+    renderMyBooks()
+
+    await waitFor(() => {
+      expect(screen.getByText('Published')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /edit this book/i }))
+
+    await waitFor(() => {
+      expect(alertSpy).toHaveBeenCalledTimes(1)
+    })
+    expect(alertSpy.mock.calls[0]?.[0] as string).toMatch(/take that book out of the catalog/i)
+    // Still published — the card did not lie about the outcome.
+    expect(screen.getByText('Published')).toBeInTheDocument()
+  })
+
+  it('leaves the draft-book Publish control unchanged', async () => {
+    const { calls } = setupFetchMock({ books: [unpublishedBook] })
+
+    renderMyBooks()
+
+    await waitFor(() => {
+      expect(screen.getByText('Draft')).toBeInTheDocument()
+    })
+
+    const publishBtn = screen.getByRole('button', { name: /publish book/i })
+    expect(publishBtn).toHaveTextContent('Publish')
+    fireEvent.click(publishBtn)
+
+    await waitFor(() => {
+      const call = calls.find(c => c.url === '/api/books/book-1/publish')
+      expect(call).toBeDefined()
+      expect(call?.init?.method).toBe('PUT')
+      const headers = call?.init?.headers as Record<string, string> | undefined
+      expect(headers?.Authorization).toBe('Bearer test-token')
+    })
   })
 })
 

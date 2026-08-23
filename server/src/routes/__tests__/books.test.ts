@@ -3,6 +3,8 @@ import request from 'supertest';
 import type { Express } from 'express';
 import { createTestApp, resetDatabase, allowEmail } from '../../__tests__/setup';
 import prisma from '../../db/prisma';
+import { PUBLISHED_IMMUTABLE_ERROR } from '../../lib/availability';
+import { COST_CENTS } from '../../services/spend';
 
 // Stub the Anthropic SDK at module boundary so /revise tests can drive the
 // handler past the API key check without making real network calls.
@@ -353,6 +355,8 @@ describe('Books API routes', () => {
         .put('/api/books/luna-star-garden/versions/1/restore')
         .set('Authorization', `Bearer ${token}`);
       expect(res.status).toBe(403);
+      // #20: this route now shares one message with every other immutability 403.
+      expect(res.body.error).toBe(PUBLISHED_IMMUTABLE_ERROR);
     });
 
     it('returns 404 if the version row does not exist', async () => {
@@ -987,6 +991,9 @@ describe('Books API routes', () => {
       } else {
         process.env.IMAGE_PROVIDER = originalProvider;
       }
+      // Quota limits are stubbed per-test via vi.stubEnv; restore them here so
+      // a cap set for the 429 case can't leak into the next test.
+      vi.unstubAllEnvs();
     });
 
     // Claim luna-star-garden as the authed user's draft with a two-character
@@ -1105,6 +1112,68 @@ describe('Books API routes', () => {
       // Feedback was forwarded to the service (5th positional arg).
       expect(mockGenerateCharacterPortrait.mock.calls[0][4]).toBe('make her hair red');
     });
+
+    // Spend metering (Task 2). This paid image call ran with no spendGate and
+    // no recordUsage, so it was invisible to both the per-user daily cap and
+    // the global monthly ceiling — the ceiling sums UsageLog rows that were
+    // never written.
+    it('records exactly one cover-rate UsageLog row on success', async () => {
+      const token = await setupOwnedDraftWithCast();
+      mockGenerateCharacterPortrait.mockResolvedValueOnce(
+        '/illustrations/luna-star-garden/portrait-1000.png',
+      );
+
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/characters/0/portrait')
+        .set('Authorization', `Bearer ${token}`)
+        .send({});
+      expect(res.status).toBe(200);
+
+      const rows = await prisma.usageLog.findMany();
+      expect(rows).toHaveLength(1);
+      // Charged at the existing `cover` rate — no fourth COST_CENTS kind.
+      expect(rows[0]).toMatchObject({ kind: 'cover', cost_cents: COST_CENTS.cover });
+    });
+
+    it('records no usage when the provider returns no url', async () => {
+      const token = await setupOwnedDraftWithCast();
+      mockGenerateCharacterPortrait.mockResolvedValueOnce(null);
+
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/characters/0/portrait')
+        .set('Authorization', `Bearer ${token}`)
+        .send({});
+      expect(res.status).toBe(200);
+
+      // A provider miss must not consume quota — usage is recorded only after
+      // the paid call actually succeeds.
+      expect(await prisma.usageLog.count()).toBe(0);
+    });
+
+    it('returns 429 when the daily cap is exhausted, before any provider call', async () => {
+      const token = await setupOwnedDraftWithCast();
+      const user = await prisma.user.findFirst({ where: { email: 'author@example.com' } });
+
+      // Same exhaustion pattern the spendGate tests use: a 1c cap with 1c
+      // already spent leaves no headroom for a 4c cover-rate call.
+      vi.stubEnv('QUOTA_DAILY_PER_USER_CENTS', '1');
+      await prisma.usageLog.create({
+        data: { user_id: user!.id, kind: 'story', cost_cents: 1 },
+      });
+
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/characters/0/portrait')
+        .set('Authorization', `Bearer ${token}`)
+        .send({});
+
+      expect(res.status).toBe(429);
+      // Wire-shape assertion (Check 4): the new 429 envelope.
+      expect(res.body).toMatchObject({ error: expect.any(String) });
+      // The gate is mounted before the handler, so nothing was generated and
+      // nothing new was charged.
+      expect(mockGenerateCharacterPortrait).not.toHaveBeenCalled();
+      expect(await prisma.usageLog.count()).toBe(1);
+    });
   });
 
   describe('GET /api/books/:id/characters/:characterIndex/portraits', () => {
@@ -1168,6 +1237,241 @@ describe('Books API routes', () => {
         feedback: 'make her hair red',
       });
       expect(mockListCharacterPortraitVersions).toHaveBeenCalledWith('luna-star-garden', 0);
+    });
+  });
+
+  // #20 Task 1 — "withdraw to edit": a published book is immutable. Every
+  // content-mutating route on a book runs the shared `isEditable` gate AFTER
+  // the ownership check, so a stranger still gets 404 and only the owner ever
+  // sees the 403.
+  describe('published books are immutable', () => {
+    let originalProvider: string | undefined;
+    let originalOpenAiKey: string | undefined;
+
+    beforeEach(() => {
+      mockCreate.mockReset();
+      mockGenerateIllustration.mockReset();
+      mockGenerateCharacterPortrait.mockReset();
+      process.env.ANTHROPIC_API_KEY = 'sk-test';
+      originalProvider = process.env.IMAGE_PROVIDER;
+      originalOpenAiKey = process.env.OPENAI_API_KEY;
+      // Image generation is fully configured here on purpose: the 403 must be
+      // the reason these routes stop, not a missing provider key.
+      process.env.IMAGE_PROVIDER = 'openai';
+      process.env.OPENAI_API_KEY = 'sk-test';
+    });
+
+    afterEach(() => {
+      if (originalProvider === undefined) delete process.env.IMAGE_PROVIDER;
+      else process.env.IMAGE_PROVIDER = originalProvider;
+      if (originalOpenAiKey === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = originalOpenAiKey;
+    });
+
+    // Claims luna-star-garden as the authed user's book at the given status,
+    // with a two-character cast so the portrait route has an index to hit.
+    async function setupOwnedBook(status: 'draft' | 'published'): Promise<string> {
+      const token = await createUserAndGetToken(app);
+      const user = await prisma.user.findFirst({ where: { email: 'author@example.com' } });
+      await prisma.book.update({
+        where: { id: 'luna-star-garden' },
+        data: {
+          status,
+          created_by: user!.id,
+          characters_json: JSON.stringify([
+            { role: 'primary', name: 'Luna', descriptor: 'a curious girl' },
+            { role: 'antagonist', name: 'Shadow', descriptor: 'a sly fox' },
+          ]),
+        },
+      });
+      return token;
+    }
+
+    async function publishOwnedByStranger(): Promise<void> {
+      await allowEmail('stranger@example.com');
+      const reg = await request(app).post('/api/auth/register').send({
+        email: 'stranger@example.com',
+        name: 'Stranger',
+        password: 'pass1234',
+      });
+      const stranger = await prisma.user.findFirst({
+        where: { email: 'stranger@example.com' },
+      });
+      await prisma.book.update({
+        where: { id: 'luna-star-garden' },
+        data: { status: 'published', created_by: stranger!.id },
+      });
+      expect(reg.status).toBe(201);
+    }
+
+    it('403s PUT /:id/pages/:pageNumber on a published book', async () => {
+      const token = await setupOwnedBook('published');
+
+      const res = await request(app)
+        .put('/api/books/luna-star-garden/pages/1')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ illustration_description: 'a new description' });
+
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ error: expect.any(String) });
+      expect(res.body.error).toBe(PUBLISHED_IMMUTABLE_ERROR);
+    });
+
+    it('403s PUT /:id/versions/:version/restore on a published book', async () => {
+      const token = await setupOwnedBook('published');
+      await prisma.bookVersion.create({
+        data: { book_id: 'luna-star-garden', version: 1, pages_json: JSON.stringify([]) },
+      });
+
+      const res = await request(app)
+        .put('/api/books/luna-star-garden/versions/1/restore')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ error: expect.any(String) });
+      expect(res.body.error).toBe(PUBLISHED_IMMUTABLE_ERROR);
+    });
+
+    it('403s POST /:id/revise on a published book without calling Claude or charging', async () => {
+      const token = await setupOwnedBook('published');
+
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/revise')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ feedback: 'rewrite page 1' });
+
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ error: expect.any(String) });
+      expect(res.body.error).toBe(PUBLISHED_IMMUTABLE_ERROR);
+
+      // The 403 costs nothing: no provider call, no ledger row. spendGate
+      // reserved headroom, but only recordUsage charges.
+      expect(mockCreate).not.toHaveBeenCalled();
+      expect(await prisma.usageLog.count()).toBe(0);
+    });
+
+    it('403s POST /:id/illustrate on a published book without generating or charging', async () => {
+      const token = await setupOwnedBook('published');
+
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/illustrate')
+        .set('Authorization', `Bearer ${token}`)
+        .send({});
+
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ error: expect.any(String) });
+      expect(res.body.error).toBe(PUBLISHED_IMMUTABLE_ERROR);
+
+      expect(mockGenerateIllustration).not.toHaveBeenCalled();
+      expect(await prisma.usageLog.count()).toBe(0);
+    });
+
+    it('403s POST /:id/characters/:characterIndex/portrait on a published book', async () => {
+      const token = await setupOwnedBook('published');
+
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/characters/0/portrait')
+        .set('Authorization', `Bearer ${token}`)
+        .send({});
+
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ error: expect.any(String) });
+      expect(res.body.error).toBe(PUBLISHED_IMMUTABLE_ERROR);
+
+      expect(mockGenerateCharacterPortrait).not.toHaveBeenCalled();
+      expect(await prisma.usageLog.count()).toBe(0);
+    });
+
+    it('403s PUT /:id/illustrations/:pageNumber/revert on a published book', async () => {
+      const token = await setupOwnedBook('published');
+      await prisma.page.update({
+        where: { book_id_page_number: { book_id: 'luna-star-garden', page_number: 1 } },
+        data: { illustration_url: '/illustrations/keep-me.png' },
+      });
+
+      const res = await request(app)
+        .put('/api/books/luna-star-garden/illustrations/1/revert')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ url: '/illustrations/overwrite-me.png' });
+
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ error: expect.any(String) });
+      expect(res.body.error).toBe(PUBLISHED_IMMUTABLE_ERROR);
+
+      const page = await prisma.page.findUnique({
+        where: { book_id_page_number: { book_id: 'luna-star-garden', page_number: 1 } },
+      });
+      expect(page!.illustration_url).toBe('/illustrations/keep-me.png');
+    });
+
+    // Ownership beats status. A stranger must never learn that someone else's
+    // book exists, let alone that it is published — so 404, never 403.
+    it('404s (not 403s) a non-owner on a published book', async () => {
+      const token = await createUserAndGetToken(app);
+      await publishOwnedByStranger();
+
+      const revise = await request(app)
+        .post('/api/books/luna-star-garden/revise')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ feedback: 'let me in' });
+      expect(revise.status).toBe(404);
+      expect(revise.body).toMatchObject({ error: expect.any(String) });
+
+      const illustrate = await request(app)
+        .post('/api/books/luna-star-garden/illustrate')
+        .set('Authorization', `Bearer ${token}`)
+        .send({});
+      expect(illustrate.status).toBe(404);
+      expect(illustrate.body).toMatchObject({ error: expect.any(String) });
+
+      const portrait = await request(app)
+        .post('/api/books/luna-star-garden/characters/0/portrait')
+        .set('Authorization', `Bearer ${token}`)
+        .send({});
+      expect(portrait.status).toBe(404);
+
+      const revert = await request(app)
+        .put('/api/books/luna-star-garden/illustrations/1/revert')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ url: '/illustrations/nope.png' });
+      expect(revert.status).toBe(404);
+
+      const pages = await request(app)
+        .put('/api/books/luna-star-garden/pages/1')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ illustration_description: 'nope' });
+      expect(pages.status).toBe(404);
+
+      expect(mockCreate).not.toHaveBeenCalled();
+      expect(mockGenerateIllustration).not.toHaveBeenCalled();
+      expect(mockGenerateCharacterPortrait).not.toHaveBeenCalled();
+    });
+
+    // The gate must not block the state it exists to protect. The revise and
+    // illustrate happy paths are already fenced by their own suites; these two
+    // routes had no coverage, so their draft path is pinned here.
+    it('still lets the owner edit a page and revert an illustration while in draft', async () => {
+      const token = await setupOwnedBook('draft');
+
+      const pages = await request(app)
+        .put('/api/books/luna-star-garden/pages/1')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ illustration_description: 'a new description' });
+      expect(pages.status).toBe(200);
+      expect(pages.body).toMatchObject({ id: 'luna-star-garden', pages: expect.any(Array) });
+
+      const revert = await request(app)
+        .put('/api/books/luna-star-garden/illustrations/1/revert')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ url: '/illustrations/restored.png' });
+      expect(revert.status).toBe(200);
+      expect(revert.body).toMatchObject({ id: 'luna-star-garden', pages: expect.any(Array) });
+
+      const page = await prisma.page.findUnique({
+        where: { book_id_page_number: { book_id: 'luna-star-garden', page_number: 1 } },
+      });
+      expect(page!.illustration_url).toBe('/illustrations/restored.png');
+      expect(page!.illustration_description).toBe('a new description');
     });
   });
 

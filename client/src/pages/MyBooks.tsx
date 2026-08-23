@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { BookOpen, Sparkles, Send, Trash2, EyeOff } from 'lucide-react'
+import { BookOpen, Sparkles, Send, Trash2, PencilLine } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/apiBase'
 import type { Book, BookWithPages } from '../types'
@@ -36,10 +36,20 @@ export default function MyBooks() {
     if (res.ok) fetchBooks()
   }
 
-  const unpublishBook = async (bookId: string) => {
+  /**
+   * The withdraw-to-edit affordance, in the same vocabulary as `PublishStateBar` on
+   * `/book/:id`: the action is "start editing", and leaving the catalog is its consequence
+   * rather than its purpose (spec: `.code-captain/specs/edit-published-books/spec.md`).
+   *
+   * `window.confirm` stays here deliberately (Task 6). It is pre-existing, the destination
+   * page now carries the richer themeable explanation, and pulling `PublishStateBar` into a
+   * card grid would put it in a context it was not designed for. Named as a deliberate
+   * inconsistency, not an oversight.
+   */
+  const unpublishBook = async (bookId: string, title: string) => {
     if (!user) return
     const ok = window.confirm(
-      'Unpublish this book? It will be removed from the public catalog but kept as a draft you can keep editing.'
+      `Editing takes "${title}" out of the catalog while you work. Readers won't be able to find or buy it until you publish again. Anyone who already bought it keeps their receipt.`
     )
     if (!ok) return
     setUnpublishingId(bookId)
@@ -52,10 +62,12 @@ export default function MyBooks() {
         const updated = (await res.json()) as MyBook
         setBooks(prev => prev.map(b => (b.id === updated.id ? { ...b, ...updated } : b)))
       } else {
-        window.alert("Couldn't unpublish that book. It may already be a draft — refresh to see the latest state.")
+        window.alert(
+          "Couldn't take that book out of the catalog. It may already be a draft — refresh to see the latest state."
+        )
       }
     } catch {
-      window.alert("Couldn't unpublish that book. Check your connection and try again.")
+      window.alert("Couldn't take that book out of the catalog. Check your connection and try again.")
     } finally {
       setUnpublishingId(null)
     }
@@ -192,13 +204,13 @@ export default function MyBooks() {
                 )}
                 {book.status === 'published' && (
                   <button
-                    onClick={() => void unpublishBook(book.id)}
+                    onClick={() => void unpublishBook(book.id, book.title)}
                     disabled={unpublishingId === book.id}
-                    aria-label="Unpublish book"
+                    aria-label="Edit this book — takes it out of the catalog"
                     className="flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors cursor-pointer border border-gray-200 dark:border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <EyeOff size={14} />
-                    {unpublishingId === book.id ? 'Unpublishing...' : 'Unpublish'}
+                    <PencilLine size={14} />
+                    {unpublishingId === book.id ? 'Taking out...' : 'Edit this book'}
                   </button>
                 )}
                 <button
