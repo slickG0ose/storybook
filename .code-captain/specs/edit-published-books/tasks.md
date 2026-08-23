@@ -82,7 +82,7 @@ Obey these; the reasoning is in the spec.
 
 ### Task 1 — Server: a published book is immutable
 
-**Status:** Not started
+**Status:** Done (2026-08-23)
 
 **Zone:** server
 **Depends on:** none
@@ -166,7 +166,7 @@ Routes to gate (all in `server/src/routes/books.ts`):
 
 ### Task 2 — Server: close the character-portrait spend hole
 
-**Status:** Not started
+**Status:** Done (2026-08-23)
 
 **Zone:** server
 **Depends on:** Task 1 (edits the same handler's chain; sequencing avoids a conflict)
@@ -230,7 +230,7 @@ hand-back states explicitly whether this should be split into its own PR.
 
 ### Task 3 — Server: one availability filter for cart display and checkout
 
-**Status:** Not started
+**Status:** Done (2026-08-23)
 
 **Zone:** server
 **Depends on:** none

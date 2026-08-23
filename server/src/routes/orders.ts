@@ -8,6 +8,7 @@ import {
 } from '@storybook/shared';
 import prisma from '../db/prisma';
 import { validate } from '../middleware/validate';
+import { AVAILABLE_BOOK_WHERE } from '../lib/availability';
 
 const router = Router();
 
@@ -22,11 +23,17 @@ router.post(
     // Body is already validated and typed by the middleware.
     const { sessionId, customerName, customerEmail } = req.body as OrderCreateRequest;
 
+    // Same availability filter GET /api/cart/:sessionId displays with, so the
+    // buyer is never charged for a row they were not shown a price for. Without
+    // it a soft-deleted (or, since #20, a withdrawn) book stayed hidden in the
+    // cart yet still landed in the order and the total.
     const cartItems = await prisma.cartItem.findMany({
-      where: { session_id: sessionId },
+      where: { session_id: sessionId, book: AVAILABLE_BOOK_WHERE },
       include: { book: true },
     });
 
+    // Zero available rows is an empty cart as far as checkout is concerned —
+    // the existing 400, no new status code for "everything you had went away".
     if (cartItems.length === 0) {
       return res.status(400).json({ error: 'Cart is empty' });
     }

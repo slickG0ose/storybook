@@ -45,6 +45,7 @@ import { renderBookPdf } from '../services/pdf';
 import { validate } from '../middleware/validate';
 import { requireAuth } from '../middleware/requireAuth';
 import { STORY_MODEL, STORY_THINKING } from '../lib/models';
+import { isEditable, PUBLISHED_IMMUTABLE_ERROR } from '../lib/availability';
 import { spendGate } from '../middleware/spendGate';
 import { recordUsage, checkQuota } from '../services/spend';
 
@@ -270,8 +271,8 @@ router.put(
     if (!book || book.created_by !== user.id) {
       return res.status(404).json({ error: 'Book not found' });
     }
-    if (book.status !== 'draft') {
-      return res.status(403).json({ error: 'Pages can only be edited on draft books' });
+    if (!isEditable(book)) {
+      return res.status(403).json({ error: PUBLISHED_IMMUTABLE_ERROR });
     }
 
     try {
@@ -312,6 +313,12 @@ router.post(
 
     if (!book || book.created_by !== user.id) {
       return res.status(404).json({ error: 'Book not found' });
+    }
+    // Ownership first, then status — a stranger never learns a book exists.
+    // Before the Claude call and before recordUsage, so a 403 costs nothing:
+    // spendGate reserved headroom, but only recordUsage charges.
+    if (!isEditable(book)) {
+      return res.status(403).json({ error: PUBLISHED_IMMUTABLE_ERROR });
     }
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -506,8 +513,8 @@ router.put(
     if (!book || book.created_by !== user.id) {
       return res.status(404).json({ error: 'Book not found' });
     }
-    if (book.status !== 'draft') {
-      return res.status(403).json({ error: 'Books can only be restored while in draft' });
+    if (!isEditable(book)) {
+      return res.status(403).json({ error: PUBLISHED_IMMUTABLE_ERROR });
     }
 
     const snapshot = await prisma.bookVersion.findUnique({
@@ -649,10 +656,10 @@ router.post(
   async (req: Request<{ id: string }>, res: Response) => {
     const user = res.locals.user as { id: string };
 
-    if (!isImageGenConfigured()) {
-      return res.status(501).json({ error: 'Image generation not configured' });
-    }
-
+    // Ownership and mutability are resolved before capability: a stranger gets
+    // 404 and a published owner gets 403 whether or not image gen is wired up,
+    // and both land before any provider call or recordUsage, so they cost
+    // nothing.
     const book = await prisma.book.findFirst({
       where: { id: req.params.id, deleted_at: null },
       include: { pages: { orderBy: { page_number: 'asc' } } },
@@ -660,6 +667,13 @@ router.post(
 
     if (!book || book.created_by !== user.id) {
       return res.status(404).json({ error: 'Book not found' });
+    }
+    if (!isEditable(book)) {
+      return res.status(403).json({ error: PUBLISHED_IMMUTABLE_ERROR });
+    }
+
+    if (!isImageGenConfigured()) {
+      return res.status(501).json({ error: 'Image generation not configured' });
     }
 
     const { pageNumber, feedback } = req.body as BookIllustrateRequest;
@@ -737,8 +751,10 @@ router.post(
 );
 
 // Generate (or regenerate) one character's canonical portrait (IV2 Phase 2).
-// Mirrors /illustrate: requireAuth -> validate -> handler, owner-gated, 501 when
-// image gen is unconfigured. The character is addressed by :characterIndex (its
+// Mirrors /illustrate: requireAuth -> spendGate -> validate -> handler, owner-gated,
+// 501 when image gen is unconfigured. A portrait is one paid image at the same
+// size class as a cover, so it is metered at the existing `cover` rate rather
+// than adding a fourth COST_CENTS kind. The character is addressed by :characterIndex (its
 // position in the hydrated `characters` array) rather than :role, because names
 // and roles aren't guaranteed unique (spec ADR sub-decision). On success the
 // handler patches characters_json[index].portrait_url to the new URL and returns
@@ -746,6 +762,7 @@ router.post(
 router.post(
   '/:id/characters/:characterIndex/portrait',
   requireAuth,
+  spendGate('cover'),
   validate({
     name: 'POST /api/books/:id/characters/:characterIndex/portrait',
     request: CharacterPortraitGenerateRequestSchema,
@@ -754,13 +771,18 @@ router.post(
   async (req: Request<{ id: string; characterIndex: string }>, res: Response) => {
     const user = res.locals.user as { id: string };
 
-    if (!isImageGenConfigured()) {
-      return res.status(501).json({ error: 'Image generation not configured' });
-    }
-
+    // Same ordering as /illustrate: ownership, then mutability, then
+    // capability. The 403 lands before any provider call.
     const book = await prisma.book.findFirst({ where: { id: req.params.id, deleted_at: null } });
     if (!book || book.created_by !== user.id) {
       return res.status(404).json({ error: 'Book not found' });
+    }
+    if (!isEditable(book)) {
+      return res.status(403).json({ error: PUBLISHED_IMMUTABLE_ERROR });
+    }
+
+    if (!isImageGenConfigured()) {
+      return res.status(501).json({ error: 'Image generation not configured' });
     }
 
     const characterIndex = parseInt(req.params.characterIndex, 10);
@@ -787,6 +809,11 @@ router.post(
       );
 
       if (url) {
+        // Provider call succeeded — charge it. spendGate reserved the headroom
+        // but only recordUsage writes the UsageLog row the global monthly
+        // ceiling sums, so a provider miss must not consume quota.
+        await recordUsage(user.id, 'cover');
+
         // Patch only this character's portrait_url; leave every other character
         // and every other book field untouched. Re-read the cast from the same
         // JSON we hydrated so we round-trip the blob faithfully.
@@ -873,6 +900,9 @@ router.put(
     const book = await prisma.book.findFirst({ where: { id: req.params.id, deleted_at: null } });
     if (!book || book.created_by !== user.id) {
       return res.status(404).json({ error: 'Book not found' });
+    }
+    if (!isEditable(book)) {
+      return res.status(403).json({ error: PUBLISHED_IMMUTABLE_ERROR });
     }
 
     const { url } = req.body as BookIllustrationRevertRequest;

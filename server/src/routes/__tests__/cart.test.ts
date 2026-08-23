@@ -168,6 +168,63 @@ describe('Cart API routes', () => {
     });
   });
 
+  describe('withdrawn (draft) book filtering (silent hide)', () => {
+    it('does not include a withdrawn book in cart hydration or the total', async () => {
+      // The author takes a book out of the catalog to edit it (#20) after a
+      // shopper has already added it. The row silently disappears, exactly as a
+      // soft-deleted one does — and, critically, the displayed total drops to
+      // match what POST /api/orders will actually charge.
+      await request(app)
+        .post(`/api/cart/${TEST_SESSION}/items`)
+        .send({ bookId: 'luna-star-garden', quantity: 1 });
+      await request(app)
+        .post(`/api/cart/${TEST_SESSION}/items`)
+        .send({ bookId: 'dinosaur-bakery', quantity: 2 });
+
+      await prisma.book.update({
+        where: { id: 'luna-star-garden' },
+        data: { status: 'draft' },
+      });
+
+      const res = await request(app).get(`/api/cart/${TEST_SESSION}`);
+      expect(res.status).toBe(200);
+      expect(res.body.items).toHaveLength(1);
+      expect(res.body.items[0].book_id).toBe('dinosaur-bakery');
+      expect(res.body.total).toBeCloseTo(17.99 * 2, 2);
+    });
+
+    it('refuses to add a draft book to the cart with the same 404 as a missing book', async () => {
+      await prisma.book.update({
+        where: { id: 'luna-star-garden' },
+        data: { status: 'draft' },
+      });
+
+      const res = await request(app)
+        .post(`/api/cart/${TEST_SESSION}/items`)
+        .send({ bookId: 'luna-star-garden' });
+
+      // Same status and same message as a nonexistent id: no information leak
+      // about whether someone else's unpublished draft exists.
+      expect(res.status).toBe(404);
+      expect(res.body).toMatchObject({ error: expect.any(String) });
+      expect(res.body.error).toBe('Book not found');
+    });
+
+    it('still adds and returns a published book', async () => {
+      const addRes = await request(app)
+        .post(`/api/cart/${TEST_SESSION}/items`)
+        .send({ bookId: 'luna-star-garden', quantity: 1 });
+
+      expect(addRes.status).toBe(200);
+      expect(addRes.body.success).toBe(true);
+
+      const res = await request(app).get(`/api/cart/${TEST_SESSION}`);
+      expect(res.status).toBe(200);
+      expect(res.body.items).toHaveLength(1);
+      expect(res.body.total).toBeCloseTo(19.99, 2);
+    });
+  });
+
   describe('DELETE /api/cart/:sessionId/items/:bookId', () => {
     it('removes a specific item from the cart', async () => {
       await request(app)
