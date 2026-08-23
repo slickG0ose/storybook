@@ -525,7 +525,7 @@ component for exactly that reason. Non-blocking for the task; flag it in the han
 
 ### Task 7 — E2E: the desktop loop and the immutability fence
 
-**Status:** Not started
+**Status:** Done (2026-08-23)
 
 **Zone:** e2e
 **Depends on:** Tasks 1, 3, 4, 5, 6
@@ -571,7 +571,7 @@ constraints pass **unmodified**.
 
 ### Task 8 — E2E: mobile x both themes
 
-**Status:** Not started
+**Status:** Done (2026-08-23)
 
 **Zone:** e2e
 **Depends on:** Task 7
