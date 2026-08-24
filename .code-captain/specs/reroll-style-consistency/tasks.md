@@ -454,6 +454,8 @@ const url = await generateIllustration(
 **Depends on:** Task 8
 **Parallel-safe with:** none
 
+**Status:** Done (2026-08-24)
+
 **Files to add or change:**
 - `client/src/components/BookSpread.tsx` — one hint line in `PageIllustration`, under the "What to change on re-roll" label (around line 703)
 - `client/src/components/__tests__/BookSpread.test.tsx` — extend
