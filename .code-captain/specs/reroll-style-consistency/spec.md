@@ -85,12 +85,13 @@ owner clicks "Redo (~$0.04)" on page N
   → POST /api/books/:id/illustrate { pageNumber: N, feedback? }
   → requireAuth → spendGate('illustration') → validate → handler
   → owner check (404) → isEditable (403)
-  → resolveImagePin(book):
-        book.image_provider set?           → use it
-        else earliest page-slot IllustrationVersion.created_at
-        else oldest page-*.png mtime
-        else current env default
-        → persist via ensureBookPinned() (updateMany where image_provider = null)
+  → resolveAndPinImagePin(book):
+        book.image_provider set?           → use it            (source: pin)
+        else earliest page-slot IllustrationVersion.created_at (source: evidence)
+        else oldest page-*.png mtime                           (source: evidence)
+        else current env default                               (source: default)
+        → persist via ensureBookPinned() ONLY when source = evidence
+          (updateMany where image_provider = null)
   → isImageGenConfigured(pin.provider)?
         no, and no provider configured at all → 501 (unchanged)
         no, but the default provider is     → 409 "pinned to <provider>, not configured here"
@@ -101,10 +102,14 @@ owner clicks "Redo (~$0.04)" on page N
         → getImageGenerator(pin) — the pinned generator, with its model forced
         → Fal: 1 ref → kontext, 2+ → kontext/multi;  OpenAI: /v1/images/edits
   → recordUsage(user, 'illustration', pin.provider)
+  → ensureBookPinned() on the first successful image — this is where a
+    book with NO prior art gets pinned, to what actually drew it
   → page.illustration_url updated, hydrated book returned
 ```
 
 State lives in the DB (`Book.image_provider` / `image_model`), on disk (the anchor image), and nowhere in client state. `IMAGE_PROVIDER` remains the default for unpinned books only.
+
+**The pin is written on evidence-based resolution, or on the first successful image — never on an env-default resolution.** An earlier draft of this block persisted unconditionally, which meant a book with no art kept whatever `IMAGE_PROVIDER` happened to be when a request *failed* (501, 409, quota denial). That is the same "records an intention rather than a fact" failure this spec rejects under *Alternatives considered → Pin at book-creation time*, and it re-creates the original bug: pin `fal` on a denied request, flip `IMAGE_PROVIDER` to `openai`, let openai draw the art, and every later re-roll routes to `fal`. Corrected in implementation and here; carry it into ADR-013.
 
 ### Files likely touched
 
