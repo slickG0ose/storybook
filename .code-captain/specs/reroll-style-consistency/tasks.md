@@ -85,6 +85,8 @@ Required-and-nullable, not `.optional()`: Prisma always returns the column, so a
 **Depends on:** Task 1
 **Parallel-safe with:** Task 4
 
+**Status:** Done (2026-08-23)
+
 **Files to add or change:**
 - `server/src/services/imagePin.ts` — **new**; the single choke point for "which model serves this book"
 - `server/src/services/__tests__/imagePin.test.ts` — **new**
