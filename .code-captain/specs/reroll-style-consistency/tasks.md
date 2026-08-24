@@ -358,6 +358,8 @@ export function composeReferenceImages(styleAnchor: string | null, portraitRefs:
 **Depends on:** Task 6
 **Parallel-safe with:** none
 
+**Status:** Done (2026-08-24)
+
 **Files to add or change:**
 - `server/src/services/illustrations.ts` — `generateIllustration` prompt assembly
 - `server/src/services/__tests__/illustrations.test.ts` — extend

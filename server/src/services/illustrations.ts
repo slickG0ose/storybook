@@ -180,9 +180,10 @@ export interface ImageGenOptions {
 //   pin         which provider + base model serves THIS book. Resolved by
 //               services/imagePin.ts. Absent = the environment default, which
 //               is exactly today's behaviour.
-//   styleAnchor the page's own existing illustration, used to shape the prompt.
-//               Threaded here but IGNORED until Task 7 — the no-anchor path
-//               must stay byte-identical (ADR-006 dec 3 / ADR-007 dec 3).
+//   styleAnchor the page's own existing illustration (reference slot 0). When
+//               set, generateIllustration adds the anchor prompt clauses; when
+//               absent the prompt is byte-identical to today's, which is the
+//               regression boundary (ADR-006 dec 3 / ADR-007 dec 3).
 export interface GenerationPin {
   pin?: ImagePin;
   styleAnchor?: string | null;
@@ -380,8 +381,44 @@ export async function generateIllustration(
   const style = styleDescriptor?.trim() || 'Whimsical, colorful, warm, suitable for young children';
   const castPrefix = formatCastPrefix(characters);
   let prompt = `${castPrefix}Children's book illustration, ${description}. ${style}. No text or words in the image.`;
+
+  // Mitigation B (ADR-013): shape the prompt around the page's own existing
+  // illustration when the route passes one as the style anchor. EVERY clause
+  // below is gated on `styleAnchor`, so a call without one produces a prompt
+  // byte-identical to today's — that is the regression boundary from ADR-006
+  // dec 3 / ADR-007 dec 3, not a nicety.
+  const styleAnchor = opts?.styleAnchor ?? null;
+  // How many of the references are character portraits, derived from what the
+  // caller actually passed rather than by re-deriving cast state here:
+  // composeReferenceImages() puts the anchor at slot 0 and the required
+  // portraits after it, so everything that is not the anchor is a portrait.
+  const portraitCount = styleAnchor
+    ? (referenceImages ?? []).filter(ref => ref !== styleAnchor).length
+    : 0;
+
+  if (styleAnchor) {
+    prompt += ` Reference image 1 is an existing illustration from this same book:`
+            + ` match its art style, colour palette, linework, shading, and character designs exactly.`;
+    if (portraitCount > 0) {
+      prompt += ` The remaining reference images are canonical character portraits.`;
+    }
+  }
   if (feedback) {
     prompt += ` Revision instructions: ${feedback}`;
+  }
+  // The two anchor clauses are MUTUALLY EXCLUSIVE. With feedback, Kontext is
+  // doing what it is built for: change one thing, hold everything else. Without
+  // feedback the opposite is wanted — an edit model handed its own output
+  // returns a near-copy, and the user has just paid for the same picture, so a
+  // bare re-roll asks explicitly for a fresh composition. A prompt carrying
+  // both clauses would tell the model to preserve and vary at the same time.
+  if (styleAnchor && feedback) {
+    prompt += ` Change only what the revision instructions ask for; keep the art style,`
+            + ` palette and overall composition as in reference image 1.`;
+  } else if (styleAnchor) {
+    prompt += ` Produce a fresh interpretation of this scene — a different composition,`
+            + ` pose and camera angle from reference image 1 — while keeping its art style,`
+            + ` palette and character designs identical.`;
   }
 
   // Forward referenceImages only when present, so callers that pass nothing

@@ -888,3 +888,163 @@ describe('composeReferenceImages', () => {
     expect(String(warnSpy.mock.calls[0][0])).toMatch(/MAX_REFERENCE_IMAGES/);
   });
 });
+
+// Mitigation B (ADR-013), prompt half: generateIllustration shapes the prompt
+// around the style anchor. Three properties are load-bearing here.
+//
+//  1. REGRESSION BOUNDARY (ADR-006 dec 3 / ADR-007 dec 3). With no anchor the
+//     prompt is byte-identical to today's — asserted with toBe against a
+//     literal, so any drift in the base wording fails here first.
+//  2. The two anchor clauses are MUTUALLY EXCLUSIVE, asserted in both
+//     directions. A prompt carrying both would tell the model to preserve and
+//     vary the composition at the same time.
+//  3. The portrait mention only appears when portraits actually travel with
+//     the anchor.
+//
+// Whether the bare re-roll's fresh-interpretation clause actually stops an edit
+// model returning a near-copy is perceptual and cannot be asserted here — that
+// is the manual step in Task 8.
+describe('generateIllustration anchor-aware prompt shaping', () => {
+  const BOOK_ID = 'luna-star-garden';
+  const BASE_DIR = join(import.meta.dirname, '../../../public/illustrations', BOOK_ID);
+  const ANCHOR = `/illustrations/${BOOK_ID}/page-4.png`;
+  const PORTRAIT_0 = `/illustrations/${BOOK_ID}/portrait-1000.png`;
+  const PORTRAIT_1 = `/illustrations/${BOOK_ID}/portrait-1001.png`;
+
+  // Today's prompt for (description, no style descriptor, no cast, no feedback).
+  // Do NOT edit this string to make a change pass — it IS the regression oracle.
+  const DESCRIPTION = 'A purple cat under the moon';
+  const BASE_PROMPT =
+    "Children's book illustration, A purple cat under the moon. " +
+    'Whimsical, colorful, warm, suitable for young children. No text or words in the image.';
+
+  const ANCHOR_CLAUSE =
+    'Reference image 1 is an existing illustration from this same book:' +
+    ' match its art style, colour palette, linework, shading, and character designs exactly.';
+  const PORTRAIT_CLAUSE = 'The remaining reference images are canonical character portraits.';
+  const CHANGE_ONLY_CLAUSE =
+    'Change only what the revision instructions ask for; keep the art style,' +
+    ' palette and overall composition as in reference image 1.';
+  const FRESH_CLAUSE =
+    'Produce a fresh interpretation of this scene — a different composition,' +
+    ' pose and camera angle from reference image 1 — while keeping its art style,' +
+    ' palette and character designs identical.';
+
+  let originalFetch: typeof fetch;
+  let originalFalKey: string | undefined;
+  let originalProvider: string | undefined;
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  // Runs the service and returns [requestUrl, prompt] from the Fal run leg.
+  async function runPrompt(
+    feedback: string | undefined,
+    referenceImages: string[] | undefined,
+    styleAnchor: string | null,
+  ): Promise<{ url: string; prompt: string }> {
+    await generateIllustration(
+      BOOK_ID,
+      4,
+      DESCRIPTION,
+      feedback,
+      null,
+      [],
+      referenceImages,
+      { styleAnchor },
+    );
+    const [url, init] = fetchMock.mock.calls[0] as [string, { body: string }];
+    return { url, prompt: JSON.parse(init.body).prompt };
+  }
+
+  beforeEach(async () => {
+    await resetDatabase();
+    originalFetch = globalThis.fetch;
+    originalFalKey = process.env.FAL_KEY;
+    originalProvider = process.env.IMAGE_PROVIDER;
+    process.env.IMAGE_PROVIDER = 'fal';
+    process.env.FAL_KEY = 'fal-test';
+
+    // Real bytes behind every reference — the Fal path inlines them as data URIs.
+    await mkdir(BASE_DIR, { recursive: true });
+    for (const f of ['page-4.png', 'portrait-1000.png', 'portrait-1001.png']) {
+      await writeFile(join(BASE_DIR, f), Buffer.from(FAKE_PNG_B64, 'base64'));
+    }
+
+    // Two-leg Fal flow, keyed on the URL so it survives more than one call.
+    fetchMock = vi.fn(async (url: string | URL) => {
+      if (String(url).startsWith('https://fal.run/')) {
+        return new Response(JSON.stringify({ images: [{ url: 'https://fal.example/out.png' }] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(Buffer.from(FAKE_PNG_B64, 'base64'), { status: 200 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+  });
+
+  afterEach(async () => {
+    globalThis.fetch = originalFetch;
+    if (originalFalKey === undefined) delete process.env.FAL_KEY;
+    else process.env.FAL_KEY = originalFalKey;
+    if (originalProvider === undefined) delete process.env.IMAGE_PROVIDER;
+    else process.env.IMAGE_PROVIDER = originalProvider;
+    try {
+      await rm(BASE_DIR, { recursive: true, force: true });
+    } catch {
+      // ignore
+    }
+  });
+
+  it('sends the byte-identical prompt-only request when there is no anchor', async () => {
+    const { url, prompt } = await runPrompt(undefined, undefined, null);
+
+    expect(url).toBe('https://fal.run/fal-ai/flux-pro/v1.1');
+    expect(prompt).toBe(BASE_PROMPT);
+  });
+
+  it('keeps the no-anchor feedback prompt byte-identical too', async () => {
+    const { prompt } = await runPrompt('make the moon bigger', undefined, null);
+
+    expect(prompt).toBe(`${BASE_PROMPT} Revision instructions: make the moon bigger`);
+    expect(prompt).not.toContain(ANCHOR_CLAUSE);
+    expect(prompt).not.toContain(CHANGE_ONLY_CLAUSE);
+    expect(prompt).not.toContain(FRESH_CLAUSE);
+  });
+
+  it('asks for a fresh interpretation — never change-only — on a bare re-roll with an anchor', async () => {
+    const { prompt } = await runPrompt(undefined, [ANCHOR], ANCHOR);
+
+    expect(prompt).toContain(ANCHOR_CLAUSE);
+    expect(prompt).toContain(FRESH_CLAUSE);
+    // Mutually exclusive: the change-only clause would pin the composition the
+    // user is asking to vary, and they have just paid for a new picture.
+    expect(prompt).not.toContain(CHANGE_ONLY_CLAUSE);
+    expect(prompt).not.toContain('Revision instructions:');
+    // Anchor alone: no portraits travelled, so nothing to point at.
+    expect(prompt).not.toContain(PORTRAIT_CLAUSE);
+  });
+
+  it('asks for a change-only edit — never a fresh interpretation — when feedback is present', async () => {
+    const { prompt } = await runPrompt('brighten the sky', [ANCHOR], ANCHOR);
+
+    expect(prompt).toContain(ANCHOR_CLAUSE);
+    // Feedback wording is unchanged from today.
+    expect(prompt).toContain('Revision instructions: brighten the sky');
+    expect(prompt).toContain(CHANGE_ONLY_CLAUSE);
+    // Mutually exclusive in the other direction.
+    expect(prompt).not.toContain(FRESH_CLAUSE);
+  });
+
+  it('mentions the remaining reference images when portraits travel with the anchor', async () => {
+    const { prompt } = await runPrompt(undefined, [ANCHOR, PORTRAIT_0, PORTRAIT_1], ANCHOR);
+
+    expect(prompt).toContain(ANCHOR_CLAUSE);
+    expect(prompt).toContain(PORTRAIT_CLAUSE);
+    expect(prompt).toContain(FRESH_CLAUSE);
+    // The portrait mention sits between the anchor clause and the variation
+    // directive, so the model reads "here is what the refs are" before "now
+    // vary the composition".
+    expect(prompt.indexOf(PORTRAIT_CLAUSE)).toBeGreaterThan(prompt.indexOf(ANCHOR_CLAUSE));
+    expect(prompt.indexOf(FRESH_CLAUSE)).toBeGreaterThan(prompt.indexOf(PORTRAIT_CLAUSE));
+  });
+});
