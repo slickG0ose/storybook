@@ -4,6 +4,13 @@ import prisma from '../db/prisma';
 import type { Character } from '../types';
 import { FalImageGenerator } from './providers/fal';
 import type { ImagePin, ImageProvider } from './imagePin';
+import { isUsableApiKey } from '../lib/apiKeys';
+
+// isUsableApiKey moved to `lib/apiKeys.ts` once story generation and the
+// style-reference upload needed the same predicate for ANTHROPIC_API_KEY —
+// three non-illustration routes importing it from here was the smell. Re-
+// exported so this module's public surface is unchanged.
+export { isUsableApiKey };
 
 const ILLUSTRATIONS_DIR = join(import.meta.dirname, '../../public/illustrations');
 
@@ -251,40 +258,6 @@ export function getImageGenerator(pin?: ImagePin): ImageGenerator {
     default:
       return new FalImageGenerator(pin?.model);
   }
-}
-
-// Is this env value a key we could plausibly authenticate with? Presence is not
-// usability: `.env.example` ships `OPENAI_API_KEY=your-api-key-here`, and a
-// developer who copies it to `.env` without filling it in has a key that is
-// *set* but guaranteed to 401. A presence-only check calls the provider anyway,
-// so the caller gets an opaque 500 carrying a vendor stack trace instead of the
-// 409 that ADR-013 dec 5 promises ("a book pinned to a provider this server has
-// no key for returns 409 — never a silent fallback").
-//
-// Deliberately conservative, and the asymmetry is the whole design: a FALSE
-// POSITIVE here locks a user out of a provider whose key is genuinely fine,
-// which is worse than the bug being fixed. So this matches only well-known
-// placeholder SHAPES and never validates real key formats — no `sk-` prefix
-// requirement, no length floor, no charset rule. Vendors change those; a
-// config template's filler text does not.
-const PLACEHOLDER_KEY_PATTERNS: readonly RegExp[] = [
-  /^<.*>$/, // <your-api-key>, <fill me in> — anything still in angle brackets
-  /^your-[a-z0-9-]*key(-here)?$/, // your-api-key-here (the .env.example literal), your-openai-key
-  /^change-?me(-here)?$/,
-  /^x{3,}$/, // xxx, xxxxxxxxxxxx
-  /^placeholder$/,
-  /^todo$/,
-];
-
-export function isUsableApiKey(value: string | undefined | null): boolean {
-  if (typeof value !== 'string') return false;
-  const trimmed = value.trim();
-  if (trimmed === '') return false;
-  // Underscores and inner whitespace fold to dashes so `YOUR_API_KEY_HERE` and
-  // `your-api-key-here` are one placeholder, which is how templates in the wild
-  // actually vary. Case is folded for the same reason.
-  const normalized = trimmed.toLowerCase().replace(/[\s_]+/g, '-');
-  return !PLACEHOLDER_KEY_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
 // Provider-aware replacement for the literal OPENAI_API_KEY route/service

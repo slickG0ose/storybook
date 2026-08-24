@@ -5,6 +5,7 @@ import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
 import type { Request, Response } from 'express';
+import { isUsableApiKey } from '../lib/apiKeys';
 
 const UPLOADS_DIR = join(import.meta.dirname, '../../public/uploads/style-refs');
 
@@ -38,7 +39,11 @@ router.post('/style-reference', upload.single('image'), async (req: Request, res
 
     let descriptor: string | null = null;
     const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (apiKey) {
+    // Describing the style is best-effort: no key means no descriptor, and the
+    // upload still succeeds. A placeholder key has to take that same branch —
+    // otherwise the copied-`.env.example` case calls Anthropic, 401s, and turns
+    // a perfectly good upload into a 500 through the catch below.
+    if (isUsableApiKey(apiKey)) {
       const client = new Anthropic({ apiKey });
       const message = await client.messages.create({
         model: 'claude-sonnet-4-6',

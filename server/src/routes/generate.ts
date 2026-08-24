@@ -13,6 +13,7 @@ import {
 } from '../services/illustrations';
 import { currentImagePin, ensureBookPinned } from '../services/imagePin';
 import { parseAiJson } from '../services/parseAiJson';
+import { isUsableApiKey } from '../lib/apiKeys';
 import type { Request, Response } from 'express';
 import type { Character, CharacterRole } from '../types';
 
@@ -122,7 +123,12 @@ router.post('/', requireAuth, spendGate('story'), async (req: Request, res: Resp
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
+  // A placeholder key is not a configured key: `.env.example` ships
+  // ANTHROPIC_API_KEY=your-api-key-here, and a copied-but-unfilled template
+  // used to sail past a bare `!apiKey` straight into a raw Anthropic 401 that
+  // surfaced as an opaque 500. Same status and message as the unset case —
+  // this changes WHEN the guard fires, not what it says.
+  if (!isUsableApiKey(apiKey)) {
     return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' });
   }
 
