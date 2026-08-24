@@ -36,6 +36,16 @@ interface BookSpreadProps {
   illustrationVersions?: IllustrationVersion[];
   showVersions?: boolean;
   onRevertIllustration?: (pageNumber: number, url: string) => Promise<void>;
+  /**
+   * Illustration history for pages whose `illustration_url` is null, keyed by page
+   * number (#95 item 2). A version restore nulls every page's `illustration_url`
+   * while the IllustrationVersion rows — and the files — survive, so the art is
+   * still there; the book just stopped pointing at it. The parent probes those
+   * pages' history and passes what it found, which is what lets an orphaned page
+   * offer a free re-attach instead of a paid regeneration. Pages with no history
+   * are absent from the map and render exactly as they always have.
+   */
+  orphanedVersions?: Record<number, IllustrationVersion[]>;
   theater: boolean;
   onToggleTheater: () => void;
 }
@@ -83,6 +93,7 @@ export default function BookSpread({
   illustrationVersions,
   showVersions,
   onRevertIllustration,
+  orphanedVersions,
   theater,
   onToggleTheater,
 }: BookSpreadProps) {
@@ -225,6 +236,7 @@ export default function BookSpread({
                     illustrationVersions={illustrationVersions}
                     showVersions={showVersions}
                     onRevertIllustration={onRevertIllustration}
+                    orphanVersions={orphanedVersions?.[spread.page.page_number]}
                   />
                   <StoryText
                     page={spread.page}
@@ -276,6 +288,7 @@ export default function BookSpread({
                       illustrationVersions={illustrationVersions}
                       showVersions={showVersions}
                       onRevertIllustration={onRevertIllustration}
+                      orphanVersions={orphanedVersions?.[spread.page.page_number]}
                     />
                   </PageCanvas>
                   <PageCanvas side="right">
@@ -639,6 +652,8 @@ interface PageIllustrationProps {
   illustrationVersions?: IllustrationVersion[];
   showVersions?: boolean;
   onRevertIllustration?: (pageNumber: number, url: string) => Promise<void>;
+  /** This page's surviving illustration history, when it has no current image. */
+  orphanVersions?: IllustrationVersion[];
 }
 
 function PageIllustration({
@@ -655,6 +670,7 @@ function PageIllustration({
   illustrationVersions,
   showVersions,
   onRevertIllustration,
+  orphanVersions,
 }: PageIllustrationProps) {
   const [draftPrompt, setDraftPrompt] = useState(page.illustration_description);
   const [savingPrompt, setSavingPrompt] = useState(false);
@@ -789,6 +805,18 @@ function PageIllustration({
   const canEditPrompt = isOwner && isDraft && !!onEditPrompt;
   const recentlySaved = promptSavedAt !== null && Date.now() - promptSavedAt < 3000;
 
+  /*
+   * Orphaned art (#95 item 2). This page has no current illustration, but earlier
+   * versions of it still exist on disk and in IllustrationVersion — a version
+   * restore drops the pointer, not the file. Re-attaching is the same free,
+   * unmetered revert the History strip above uses (PUT .../revert): no provider
+   * call, no spend gate, no charge. Owner + draft only, exactly like every other
+   * control in this panel. When the parent found no surviving versions the page
+   * renders as it always has, so a genuinely never-drawn page gains nothing to
+   * click on.
+   */
+  const restorableVersions = isOwner && isDraft && onRevertIllustration ? (orphanVersions ?? []) : [];
+
   return (
     <div className="flex-1 flex flex-col bg-gradient-to-br from-amber-100/60 to-amber-200/40 dark:from-gray-700 dark:to-gray-700/60 rounded-xl p-4 border-2 border-dashed border-amber-300 dark:border-gray-600">
       <div className="flex items-center justify-between mb-2">
@@ -834,6 +862,54 @@ function PageIllustration({
               {buildImagePromptPreview(draftPrompt, styleDescriptor ?? null)}
             </div>
           )}
+        </div>
+      )}
+      {restorableVersions.length > 0 && (
+        <div
+          data-testid="orphan-restore"
+          className="mb-3 rounded-lg border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-900/20 p-2"
+        >
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-purple-700 dark:text-purple-300">
+            <History size={12} />
+            Already drawn for this page
+          </div>
+          <p className="mt-0.5 mb-1.5 text-[10px] leading-snug text-purple-600 dark:text-purple-300/80">
+            Pick one to put it back. Free — the image already exists.
+          </p>
+          <div className="flex gap-3 overflow-x-auto pb-1">
+            {restorableVersions.map(v => {
+              const truncatedFeedback = v.feedback && v.feedback.length > 60
+                ? `${v.feedback.slice(0, 60).trimEnd()}…`
+                : v.feedback;
+              return (
+                <div key={v.url} className="shrink-0 flex flex-col gap-1 w-32">
+                  <button
+                    onClick={() => onRevertIllustration && void onRevertIllustration(page.page_number, v.url)}
+                    className="w-16 h-16 rounded-lg overflow-hidden border-2 cursor-pointer border-gray-200 dark:border-gray-600 hover:border-purple-300 dark:hover:border-purple-500 p-0"
+                    aria-label={`Restore page ${page.page_number} illustration version ${v.version}`}
+                  >
+                    <img src={api(v.url)} alt={`Version ${v.version}`} className="w-full h-full object-cover" />
+                  </button>
+                  <div className="flex items-center gap-1.5 text-[10px]">
+                    <span className="inline-flex items-center justify-center px-1.5 rounded-full font-bold bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300">
+                      v{v.version}
+                    </span>
+                    <span className="text-gray-500 dark:text-gray-400">
+                      {formatRelativeTime(v.created_at)}
+                    </span>
+                  </div>
+                  {truncatedFeedback && (
+                    <span
+                      className="text-[10px] italic text-gray-500 dark:text-gray-400 truncate"
+                      title={v.feedback ?? undefined}
+                    >
+                      “{truncatedFeedback}”
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
       {isOwner && isDraft && (
