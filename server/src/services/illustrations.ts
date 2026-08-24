@@ -253,10 +253,44 @@ export function getImageGenerator(pin?: ImagePin): ImageGenerator {
   }
 }
 
+// Is this env value a key we could plausibly authenticate with? Presence is not
+// usability: `.env.example` ships `OPENAI_API_KEY=your-api-key-here`, and a
+// developer who copies it to `.env` without filling it in has a key that is
+// *set* but guaranteed to 401. A presence-only check calls the provider anyway,
+// so the caller gets an opaque 500 carrying a vendor stack trace instead of the
+// 409 that ADR-013 dec 5 promises ("a book pinned to a provider this server has
+// no key for returns 409 — never a silent fallback").
+//
+// Deliberately conservative, and the asymmetry is the whole design: a FALSE
+// POSITIVE here locks a user out of a provider whose key is genuinely fine,
+// which is worse than the bug being fixed. So this matches only well-known
+// placeholder SHAPES and never validates real key formats — no `sk-` prefix
+// requirement, no length floor, no charset rule. Vendors change those; a
+// config template's filler text does not.
+const PLACEHOLDER_KEY_PATTERNS: readonly RegExp[] = [
+  /^<.*>$/, // <your-api-key>, <fill me in> — anything still in angle brackets
+  /^your-[a-z0-9-]*key(-here)?$/, // your-api-key-here (the .env.example literal), your-openai-key
+  /^change-?me(-here)?$/,
+  /^x{3,}$/, // xxx, xxxxxxxxxxxx
+  /^placeholder$/,
+  /^todo$/,
+];
+
+export function isUsableApiKey(value: string | undefined | null): boolean {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (trimmed === '') return false;
+  // Underscores and inner whitespace fold to dashes so `YOUR_API_KEY_HERE` and
+  // `your-api-key-here` are one placeholder, which is how templates in the wild
+  // actually vary. Case is folded for the same reason.
+  const normalized = trimmed.toLowerCase().replace(/[\s_]+/g, '-');
+  return !PLACEHOLDER_KEY_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
 // Provider-aware replacement for the literal OPENAI_API_KEY route/service
-// gates. Returns true iff a provider's key env var is present:
-//   provider 'openai' -> !!process.env.OPENAI_API_KEY
-//   provider 'fal'    -> !!process.env.FAL_KEY
+// gates. Returns true iff a provider's key env var is present AND usable:
+//   provider 'openai' -> isUsableApiKey(process.env.OPENAI_API_KEY)
+//   provider 'fal'    -> isUsableApiKey(process.env.FAL_KEY)
 //
 // With NO argument this reports on the ENVIRONMENT DEFAULT, exactly as it
 // always has — callers that predate the pin are unaffected. With an argument it
@@ -266,9 +300,9 @@ export function getImageGenerator(pin?: ImagePin): ImageGenerator {
 export function isImageGenConfigured(provider?: ImageProvider): boolean {
   const selected = provider ?? process.env.IMAGE_PROVIDER ?? 'fal';
   if (selected === 'openai') {
-    return !!process.env.OPENAI_API_KEY;
+    return isUsableApiKey(process.env.OPENAI_API_KEY);
   }
-  return !!process.env.FAL_KEY;
+  return isUsableApiKey(process.env.FAL_KEY);
 }
 
 export async function generateIllustration(
