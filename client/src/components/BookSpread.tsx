@@ -172,8 +172,14 @@ export default function BookSpread({
     flipping === 'prev' ? 'opacity-0 translate-x-4' :
     'opacity-100 translate-x-0'
 
+  // Horizontal padding is deliberately absent on the wrapper below. Its surface
+  // (amber-50 / gray-900) is within a hair of the app background in BOTH themes
+  // (#fffbf0 light, gray-900 dark), so it reads as invisible — and an invisible
+  // box with `md:p-8` just insets the book frame 32px on each side relative to
+  // the full-width cards above it (PublishStateBar, the detail header), which
+  // reads as broken alignment. Vertical padding stays: that rhythm is real.
   return (
-    <div className="bg-amber-50 dark:bg-gray-900 rounded-3xl shadow-lg p-4 md:p-8 transition-colors mb-8">
+    <div className="bg-amber-50 dark:bg-gray-900 rounded-3xl shadow-lg py-4 md:py-8 transition-colors mb-8">
       {/*
         * Spine + book frame. The centre-spine gradient only reads as a spine *between*
         * two panels; in single-page mode it would paint a seam down the middle of one
