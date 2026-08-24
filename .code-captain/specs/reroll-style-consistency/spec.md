@@ -179,6 +179,7 @@ State lives in the DB (`Book.image_provider` / `image_model`), on disk (the anch
 - `image_provider` and `image_model` appear in a `toMatchObject` pin on a `/illustrate` response (OPS.3 / Check 4).
 - Server, client, and e2e suites green; no new TypeScript errors.
 - **Manual (aesthetic half of done-criterion #2, per ADR-009):** re-roll page 4 of `b2fa23cf-3156-4b89-83e7-82d98c32c8b7` and confirm the result reads as the same art style as `page-4.png` v1. Re-roll it a second time with no feedback and confirm the result is not a near-copy. Verify the new hint text in both light and dark mode.
+  **NOT DISCHARGED for mitigation A** — `OPENAI_API_KEY`, `FAL_KEY` and `IMAGE_PROVIDER` are unset locally, so no paid call is possible and the 409 branch is unreachable (an unconfigured server returns 501). Resolution was confirmed read-only instead: the book resolves to `openai`/`gpt-image-1` against an env default of `fal`. Tracked as [#93](https://github.com/slickG0ose/storybook/issues/93), which also carries the consequence that fixing [#62](https://github.com/slickG0ose/storybook/issues/62) flips every pre-cutover book from "re-rolls, wrong style" to "409, cannot re-roll".
 
 ## Out of scope
 
