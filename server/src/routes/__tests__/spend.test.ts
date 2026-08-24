@@ -224,6 +224,14 @@ describe('provider-aware cost — costCentsFor', () => {
     expect(costCentsFor('illustration', 'openai')).toBe(OPENAI_IMAGE_COST_CENTS);
     expect(costCentsFor('cover', 'openai')).toBe(OPENAI_IMAGE_COST_CENTS);
     expect(OPENAI_IMAGE_COST_CENTS).toBeGreaterThan(COST_CENTS.illustration);
+
+    // The literal matters. Every other assertion here computes its expectation
+    // from OPENAI_IMAGE_COST_CENTS itself, so they all stay green if the
+    // constant is changed to 5 or 500 — the value would be untested. 25c is a
+    // specific owner ruling (Nick, 2026-08-23), the midpoint of ADR-006's
+    // documented $0.17-0.45 range for gpt-image-1. Changing it should require
+    // changing this line, deliberately.
+    expect(OPENAI_IMAGE_COST_CENTS).toBe(25);
   });
 
   it('ignores the provider for text generation', () => {

@@ -1491,7 +1491,17 @@ describe('Books API routes', () => {
         .send({});
 
       expect(res.status).toBe(503);
-      expect(res.body).toMatchObject({ error: expect.any(String), quota: { scope: 'monthly' } });
+      // Pinned as fully as the 429 case above — the whole envelope, not just
+      // the scope. Both denials come from the same sendQuotaDenied helper, so
+      // pinning one loosely would let the other drift unnoticed.
+      expect(res.body).toMatchObject({
+        error: expect.any(String),
+        quota: {
+          scope: 'monthly',
+          spentCents: expect.any(Number),
+          limitCents: expect.any(Number),
+        },
+      });
       expect(mockGenerateCharacterPortrait).not.toHaveBeenCalled();
       expect(await prisma.usageLog.count()).toBe(0);
     });
