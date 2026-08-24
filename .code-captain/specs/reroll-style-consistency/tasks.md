@@ -40,6 +40,8 @@ No files change. This task exists so the guardrail confirmations are visible at 
 **Depends on:** none — Task 0 is a read-only preamble and its gates are already satisfied
 **Parallel-safe with:** none (everything downstream needs the column and the type)
 
+**Status:** Done (2026-08-23)
+
 **Files to add or change:**
 - `server/prisma/schema.prisma` — two nullable columns on `Book`
 - `server/prisma/migrations/<ts>_add_book_image_pin/migration.sql` — generated, committed

@@ -65,6 +65,12 @@ export const BookSchema = z.object({
   characters: z.array(CharacterSchema),
   style_descriptor: z.string().nullable(),
   style_reference_url: z.string().nullable(),
+  // Which image provider + base model produced this book's art. Written lazily
+  // on the first successful image write, so null means "not yet pinned".
+  // Required-and-nullable, not `.optional()`: Prisma always returns the column
+  // and hydrateBook spreads the whole row, so an absent field is drift.
+  image_provider: z.string().nullable(),
+  image_model: z.string().nullable(),
   created_by: z.string().nullable(),
   deleted_at: z.string().nullable(),
   created_at: z.string(),

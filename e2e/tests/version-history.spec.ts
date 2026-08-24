@@ -88,6 +88,8 @@ test.describe('Version history — restore prior version', () => {
         characters: [{ role: 'primary', name: 'Wobble', descriptor: 'a tiny dragon' }],
         style_descriptor: null,
         style_reference_url: null,
+        image_provider: null,
+        image_model: null,
         created_by: user.id,
         created_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
         pages: V2_PAGES.map((p, i) => ({ id: i + 1, book_id: BOOK_ID, ...p })),
@@ -153,6 +155,8 @@ test.describe('Version history — restore prior version', () => {
         characters: [{ role: 'primary', name: 'Wobble', descriptor: 'a tiny dragon' }],
         style_descriptor: null,
         style_reference_url: null,
+        image_provider: null,
+        image_model: null,
         created_by: user.id,
         pages: V1_PAGES.map((p, i) => ({
           id: i + 10,

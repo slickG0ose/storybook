@@ -125,6 +125,8 @@ test.describe('Admin page', () => {
       characters: [],
       style_descriptor: null,
       style_reference_url: null,
+      image_provider: null,
+      image_model: null,
       created_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
     };
 
