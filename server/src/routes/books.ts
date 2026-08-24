@@ -49,6 +49,7 @@ import { validate } from '../middleware/validate';
 import { requireAuth } from '../middleware/requireAuth';
 import { STORY_MODEL, STORY_THINKING } from '../lib/models';
 import { isEditable, PUBLISHED_IMMUTABLE_ERROR } from '../lib/availability';
+import { isUsableApiKey } from '../lib/apiKeys';
 import { spendGate, sendQuotaDenied } from '../middleware/spendGate';
 import { recordUsage, checkQuota } from '../services/spend';
 
@@ -325,7 +326,11 @@ router.post(
     }
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
+    // Placeholder-aware, for the same reason as POST /api/generate: a copied
+    // `.env.example` leaves ANTHROPIC_API_KEY *set* and guaranteed to 401, and
+    // a bare `!apiKey` let that reach Anthropic and come back as an opaque 500.
+    // Status and message match the unset case exactly.
+    if (!isUsableApiKey(apiKey)) {
       return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' });
     }
 

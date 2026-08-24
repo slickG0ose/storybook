@@ -127,9 +127,18 @@ vi.mock('../../context/AuthContext', () => ({
 // real spread renderer. A stub button invokes `onToggleTheater` so the round
 // trip URL -> state -> child callback -> URL can be exercised.
 let capturedTheaterProp: boolean | undefined
+// #95 item 2: the per-page map of surviving history for pages with no current
+// image. Captured rather than rendered — the affordance it feeds is fenced in
+// BookSpread.test.tsx; what BookDetail owns is finding the history at all.
+let capturedOrphanedVersions: Record<number, IllustrationVersion[]> | undefined
 vi.mock('../../components/BookSpread', () => ({
-  default: (props: { theater: boolean; onToggleTheater: () => void }) => {
+  default: (props: {
+    theater: boolean
+    onToggleTheater: () => void
+    orphanedVersions?: Record<number, IllustrationVersion[]>
+  }) => {
     capturedTheaterProp = props.theater
+    capturedOrphanedVersions = props.orphanedVersions
     return (
       <div data-testid="book-spread">
         <button onClick={props.onToggleTheater} aria-label="theater-toggle-stub">
@@ -164,6 +173,7 @@ function setupFetchMock(opts: {
   versions?: BookVersion[]
   restored?: BookWithPages
   illustrationVersions?: IllustrationVersion[]
+  illustrationVersionsByPage?: Record<number, IllustrationVersion[]>
   revised?: BookWithPages
   versionsAfterRevise?: BookVersion[]
   pdfStatus?: number
@@ -238,9 +248,13 @@ function setupFetchMock(opts: {
         })
       )
     }
-    if (/^\/api\/books\/book-1\/illustrations\/\d+$/.test(url) && method === 'GET') {
+    const historyMatch = /^\/api\/books\/book-1\/illustrations\/(\d+)$/.exec(url)
+    if (historyMatch && method === 'GET') {
+      const pageNumber = Number(historyMatch[1])
+      const body =
+        opts.illustrationVersionsByPage?.[pageNumber] ?? opts.illustrationVersions ?? []
       return Promise.resolve(
-        new Response(JSON.stringify(opts.illustrationVersions ?? []), {
+        new Response(JSON.stringify(body), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         })
@@ -1287,5 +1301,101 @@ describe('BookDetail — publish state and the reader-view edit controls', () =>
       expect(screen.queryByRole('button', { name: /^regenerate$/i })).not.toBeInTheDocument()
     })
     expect(screen.queryByText(/published books cannot be edited/i)).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * Orphaned-illustration recovery (#95 item 2).
+ *
+ * `PUT /versions/:v/restore` nulls `illustration_url` on every restored page while the
+ * IllustrationVersion rows and the PNGs both survive, so the art is still there and the
+ * book has merely stopped pointing at it. The book payload carries no per-page version
+ * count, so BookDetail asks — once per page with no image — and hands what it finds to
+ * the spread. The probe is a read: no provider call, no spend, no charge.
+ */
+describe('BookDetail — orphaned illustration recovery', () => {
+  const orphanedPage1: IllustrationVersion[] = [
+    { url: '/illustrations/book-1/page-1.png', version: 1, created_at: new Date().toISOString(), feedback: null },
+    { url: '/illustrations/book-1/page-1-v2.png', version: 2, created_at: new Date().toISOString(), feedback: 'warmer' },
+  ]
+
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    capturedOrphanedVersions = undefined
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('probes every page with no image and passes the surviving versions down, keyed by page', async () => {
+    const { calls } = setupFetchMock({ illustrationVersionsByPage: { 1: orphanedPage1 } })
+    renderBookDetail()
+
+    await waitFor(() => {
+      expect(capturedOrphanedVersions).toEqual({ 1: orphanedPage1 })
+    })
+
+    // Both orphaned pages are asked about; the empty one just isn't offered.
+    const historyGets = calls.filter(c =>
+      /^\/api\/books\/book-1\/illustrations\/\d+$/.test(c.url) && (c.init?.method ?? 'GET') === 'GET'
+    )
+    expect(historyGets.map(c => c.url).sort()).toEqual([
+      '/api/books/book-1/illustrations/1',
+      '/api/books/book-1/illustrations/2',
+    ])
+    const headers = historyGets[0]?.init?.headers as Record<string, string> | undefined
+    expect(headers?.Authorization).toBe('Bearer test-token')
+  })
+
+  it('leaves a page with no surviving history out of the map', async () => {
+    setupFetchMock({ illustrationVersions: [] })
+    renderBookDetail()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('book-spread')).toBeInTheDocument()
+    })
+    await waitFor(() => {
+      expect(capturedOrphanedVersions).toEqual({})
+    })
+  })
+
+  it('never probes a page that already has its image', async () => {
+    const illustrated: BookWithPages = {
+      ...baseBook,
+      pages: [
+        { ...baseBook.pages[0]!, illustration_url: '/illustrations/book-1/page-1.png' },
+        { ...baseBook.pages[1]!, illustration_url: '/illustrations/book-1/page-2.png' },
+      ],
+    }
+    const { calls } = setupFetchMock({ book: illustrated })
+    renderBookDetail()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('book-spread')).toBeInTheDocument()
+    })
+    expect(calls.some(c => c.url.includes('/illustrations/'))).toBe(false)
+  })
+
+  it('does not probe for a non-owner', async () => {
+    const { calls } = setupFetchMock({ book: { ...baseBook, created_by: 'someone-else' } })
+    renderBookDetail()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('book-spread')).toBeInTheDocument()
+    })
+    expect(calls.some(c => c.url.includes('/illustrations/'))).toBe(false)
+    expect(capturedOrphanedVersions).toEqual({})
+  })
+
+  it('does not probe on a published book — revert is 403 there anyway', async () => {
+    const { calls } = setupFetchMock({ book: { ...baseBook, status: 'published' } })
+    renderBookDetail()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('book-spread')).toBeInTheDocument()
+    })
+    expect(calls.some(c => c.url.includes('/illustrations/'))).toBe(false)
+    expect(capturedOrphanedVersions).toEqual({})
   })
 })

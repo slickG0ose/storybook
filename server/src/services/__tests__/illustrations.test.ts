@@ -7,6 +7,7 @@ import {
   generateIllustration,
   generateCover,
   isImageGenConfigured,
+  isUsableApiKey,
   getImageGenerator,
   generateCharacterPortrait,
   listCharacterPortraitVersions,
@@ -257,6 +258,127 @@ describe('isImageGenConfigured', () => {
     expect(isImageGenConfigured('fal')).toBe(false);
     expect(isImageGenConfigured('openai')).toBe(true);
     expect(isImageGenConfigured()).toBe(false); // env default is still fal
+  });
+});
+
+// Presence is not usability. `.env.example` ships `OPENAI_API_KEY=your-api-key-here`
+// and a `.env` copied without editing counts as "configured" under a `!!` check,
+// so the 409 that ADR-013 dec 5 promises never fires and the caller gets a 500
+// with a raw provider stack trace instead.
+describe('isUsableApiKey', () => {
+  it('rejects missing, empty, and whitespace-only values', () => {
+    expect(isUsableApiKey(undefined)).toBe(false);
+    expect(isUsableApiKey(null)).toBe(false);
+    expect(isUsableApiKey('')).toBe(false);
+    expect(isUsableApiKey('   ')).toBe(false);
+    expect(isUsableApiKey('\t\n ')).toBe(false);
+  });
+
+  it('rejects the .env.example literal in every casing and separator it appears as', () => {
+    expect(isUsableApiKey('your-api-key-here')).toBe(false);
+    expect(isUsableApiKey('YOUR-API-KEY-HERE')).toBe(false);
+    expect(isUsableApiKey('your_api_key_here')).toBe(false);
+    expect(isUsableApiKey('  your-api-key-here  ')).toBe(false);
+  });
+
+  it('rejects the common placeholder families', () => {
+    // your-*-key
+    expect(isUsableApiKey('your-key')).toBe(false);
+    expect(isUsableApiKey('your-api-key')).toBe(false);
+    expect(isUsableApiKey('your-openai-key')).toBe(false);
+    expect(isUsableApiKey('your-fal-key-here')).toBe(false);
+    // changeme
+    expect(isUsableApiKey('changeme')).toBe(false);
+    expect(isUsableApiKey('change-me')).toBe(false);
+    expect(isUsableApiKey('CHANGEME')).toBe(false);
+    // all-x
+    expect(isUsableApiKey('xxx')).toBe(false);
+    expect(isUsableApiKey('xxxxxxxxxxxxxxxx')).toBe(false);
+    // angle brackets
+    expect(isUsableApiKey('<your-api-key>')).toBe(false);
+    expect(isUsableApiKey('<paste key here>')).toBe(false);
+    // misc template filler
+    expect(isUsableApiKey('placeholder')).toBe(false);
+    expect(isUsableApiKey('TODO')).toBe(false);
+  });
+
+  // The fence that matters most. A false positive here locks a user out of a
+  // provider whose key is genuinely fine — strictly worse than the bug this
+  // predicate fixes — so it matches whole-value placeholder SHAPES only and
+  // deliberately validates no vendor key format (no `sk-` requirement, no
+  // length floor, no charset rule).
+  it('accepts genuine keys, including ones that merely CONTAIN placeholder words', () => {
+    expect(isUsableApiKey('sk-test')).toBe(true);
+    expect(isUsableApiKey('fal-test')).toBe(true);
+    expect(isUsableApiKey('sk-proj-1a2B3c4D5e6F7g8H9i0J')).toBe(true);
+    // Fal's uuid:hex shape.
+    expect(isUsableApiKey('9f8e7d6c-1234-4abc-8def-0123456789ab:abcdef0123456789')).toBe(true);
+    // Substring matches must NOT trip the guard.
+    expect(isUsableApiKey('sk-changeme123')).toBe(true);
+    expect(isUsableApiKey('sk-your-api-key-here-but-actually-real')).toBe(true);
+    expect(isUsableApiKey('sk-xxxxQ7')).toBe(true);
+    expect(isUsableApiKey('placeholder-9f8e7d6c')).toBe(true);
+    // No format rule: a key that looks nothing like today's vendor prefixes is
+    // still usable, because vendor prefixes change and this must not guess.
+    expect(isUsableApiKey('abc')).toBe(true);
+    expect(isUsableApiKey('1234567890')).toBe(true);
+  });
+});
+
+// The gate composed with the predicate above: a placeholder key must read as
+// UNCONFIGURED for that provider, which is what turns the observed 500 into the
+// 409/501 pair the routes already implement.
+describe('isImageGenConfigured with placeholder keys', () => {
+  let originalProvider: string | undefined;
+  let originalOpenAiKey: string | undefined;
+  let originalFalKey: string | undefined;
+
+  beforeEach(() => {
+    originalProvider = process.env.IMAGE_PROVIDER;
+    originalOpenAiKey = process.env.OPENAI_API_KEY;
+    originalFalKey = process.env.FAL_KEY;
+    delete process.env.IMAGE_PROVIDER;
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.FAL_KEY;
+  });
+
+  afterEach(() => {
+    const restore = (name: string, value: string | undefined) => {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    };
+    restore('IMAGE_PROVIDER', originalProvider);
+    restore('OPENAI_API_KEY', originalOpenAiKey);
+    restore('FAL_KEY', originalFalKey);
+  });
+
+  it('treats a placeholder OPENAI_API_KEY as unconfigured', () => {
+    process.env.OPENAI_API_KEY = 'your-api-key-here';
+    expect(isImageGenConfigured('openai')).toBe(false);
+    process.env.OPENAI_API_KEY = 'sk-test';
+    expect(isImageGenConfigured('openai')).toBe(true);
+  });
+
+  it('treats a placeholder FAL_KEY as unconfigured, including via the env default', () => {
+    process.env.FAL_KEY = 'your-api-key-here';
+    expect(isImageGenConfigured('fal')).toBe(false);
+    expect(isImageGenConfigured()).toBe(false); // default provider is fal
+    process.env.FAL_KEY = '   ';
+    expect(isImageGenConfigured()).toBe(false);
+    process.env.FAL_KEY = 'fal-test';
+    expect(isImageGenConfigured()).toBe(true);
+  });
+
+  // The 409-vs-501 distinction depends on exactly this: one provider usable,
+  // the other only *present*.
+  it('reports a placeholder-keyed provider as unconfigured while a real-keyed one stays configured', () => {
+    process.env.IMAGE_PROVIDER = 'fal';
+    process.env.FAL_KEY = 'fal-test';
+    process.env.OPENAI_API_KEY = 'your-api-key-here';
+
+    expect(isImageGenConfigured('openai')).toBe(false);
+    expect(isImageGenConfigured('fal')).toBe(true);
+    expect(isImageGenConfigured()).toBe(true);
   });
 });
 

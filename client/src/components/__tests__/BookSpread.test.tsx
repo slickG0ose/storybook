@@ -1,7 +1,7 @@
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import BookSpread from '../BookSpread'
-import type { BookWithPages } from '../../types'
+import type { BookWithPages, IllustrationVersion } from '../../types'
 import { AUTO_ADVANCE_DELAY_MS } from '../../hooks/useNarration'
 import {
   installFakeSpeech,
@@ -401,6 +401,158 @@ describe('BookSpread — narration', () => {
     // hasNext is false on the last spread, so playback stops rather than requesting a turn.
     expect(screen.getByTestId('spread-position')).toHaveTextContent('End')
     expect(control.spoken()).toEqual(['The End.'])
+  })
+})
+
+/**
+ * Orphaned-illustration recovery (#95 item 2).
+ *
+ * A version restore nulls `illustration_url` on every page while the files and the
+ * IllustrationVersion rows survive, so a page can have real art and no pointer to it.
+ * The History strip lives inside the has-an-image branch, so before this the only path
+ * the placeholder offered was "Generate illustration (~$0.04)" — paying again for a PNG
+ * already on disk. The parent passes the surviving history down; this block fences the
+ * affordance that spends it, and the gates that must keep it out of everyone else's way.
+ */
+const orphanedHistory: IllustrationVersion[] = [
+  {
+    url: '/illustrations/book-1/page-1.png',
+    version: 1,
+    created_at: new Date(Date.now() - 1000 * 60 * 60 * 3).toISOString(),
+    feedback: null,
+  },
+  {
+    url: '/illustrations/book-1/page-1-v2.png',
+    version: 2,
+    created_at: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
+    feedback: 'warmer colors',
+  },
+]
+
+/** The reader opens on the cover; page 1 is one turn in. */
+async function turnToPageOne(): Promise<void> {
+  fireEvent.click(screen.getByRole('button', { name: 'Next spread' }))
+  await waitFor(() =>
+    expect(screen.getByTestId('spread-position')).toHaveTextContent('Page 1 of 2')
+  )
+}
+
+describe('BookSpread — orphaned illustration recovery', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('offers every surviving version of a page that has no current image', async () => {
+    renderSpread({
+      orphanedVersions: { 1: orphanedHistory },
+      onRevertIllustration: vi.fn(),
+    })
+    await turnToPageOne()
+
+    expect(screen.getByTestId('orphan-restore')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Restore page 1 illustration version 1' })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Restore page 1 illustration version 2' })
+    ).toBeInTheDocument()
+    // The re-roll feedback the version was generated with, so v2 is identifiable.
+    expect(screen.getByText(/warmer colors/)).toBeInTheDocument()
+  })
+
+  it('re-attaches through the free revert callback, never the paid generate path', async () => {
+    const onRevertIllustration = vi.fn().mockResolvedValue(undefined)
+    const onIllustratePage = vi.fn().mockResolvedValue(undefined)
+    renderSpread({
+      orphanedVersions: { 1: orphanedHistory },
+      onRevertIllustration,
+      onIllustratePage,
+    })
+    await turnToPageOne()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Restore page 1 illustration version 2' }))
+
+    expect(onRevertIllustration).toHaveBeenCalledTimes(1)
+    expect(onRevertIllustration).toHaveBeenCalledWith(1, '/illustrations/book-1/page-1-v2.png')
+    expect(onIllustratePage).not.toHaveBeenCalled()
+  })
+
+  it('says the restore is free and quotes no price', async () => {
+    renderSpread({
+      orphanedVersions: { 1: orphanedHistory },
+      onRevertIllustration: vi.fn(),
+    })
+    await turnToPageOne()
+
+    const panel = screen.getByTestId('orphan-restore')
+    expect(panel.textContent).toMatch(/free/i)
+    expect(panel.textContent).not.toMatch(/\$/)
+  })
+
+  it('carries a dark: partner on every coloured surface in the panel', async () => {
+    renderSpread({
+      orphanedVersions: { 1: orphanedHistory },
+      onRevertIllustration: vi.fn(),
+    })
+    await turnToPageOne()
+
+    const panel = screen.getByTestId('orphan-restore')
+    expect(panel.className).toContain('dark:bg-purple-900/20')
+    expect(panel.className).toContain('dark:border-purple-800')
+    const thumb = screen.getByRole('button', { name: 'Restore page 1 illustration version 1' })
+    expect(thumb.className).toContain('dark:border-gray-600')
+    expect(thumb.className).toContain('dark:hover:border-purple-500')
+  })
+
+  // The page the parent found nothing for must look exactly like it did before —
+  // an empty history affordance is worse than none.
+  it('renders the placeholder untouched when the page has no surviving history', async () => {
+    renderSpread({ onRevertIllustration: vi.fn() })
+    await turnToPageOne()
+
+    expect(screen.queryByTestId('orphan-restore')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Restore page/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /generate illustration/i })).toBeInTheDocument()
+  })
+
+  it('renders nothing for a non-owner even when history survives', async () => {
+    renderSpread({
+      isOwner: false,
+      orphanedVersions: { 1: orphanedHistory },
+      onRevertIllustration: vi.fn(),
+    })
+    await turnToPageOne()
+
+    expect(screen.queryByTestId('orphan-restore')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Restore page/ })).not.toBeInTheDocument()
+  })
+
+  it('renders nothing on a published book even when history survives', async () => {
+    renderSpread({
+      isDraft: false,
+      book: { ...mockBook, status: 'published' },
+      orphanedVersions: { 1: orphanedHistory },
+      onRevertIllustration: vi.fn(),
+    })
+    await turnToPageOne()
+
+    expect(screen.queryByTestId('orphan-restore')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Restore page/ })).not.toBeInTheDocument()
+  })
+
+  it('scopes the offer to the page it belongs to', async () => {
+    renderSpread({
+      orphanedVersions: { 1: orphanedHistory },
+      onRevertIllustration: vi.fn(),
+    })
+    await turnToPageOne()
+    expect(screen.getByTestId('orphan-restore')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next spread' }))
+    await waitFor(() =>
+      expect(screen.getByTestId('spread-position')).toHaveTextContent('Page 2 of 2')
+    )
+    expect(screen.queryByTestId('orphan-restore')).not.toBeInTheDocument()
   })
 })
 

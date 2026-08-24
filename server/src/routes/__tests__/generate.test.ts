@@ -225,3 +225,81 @@ describe('POST /api/generate — image pin on a new book', () => {
     expect(mockGenerateCover).not.toHaveBeenCalled();
   });
 });
+
+// A `.env` copied from `.env.example` used to ship
+// ANTHROPIC_API_KEY=your-api-key-here. The handler's guard was `if (!apiKey)`,
+// so a placeholder counted as configured: the request reached Anthropic, came
+// back 401, and the caller got an opaque 500 with a vendor stack trace instead
+// of the honest "not configured". These pin the two halves of the fix — a
+// placeholder fails EXACTLY like an unset key, and a real-looking key still
+// gets through untouched.
+describe('POST /api/generate — ANTHROPIC_API_KEY config gate', () => {
+  let app: Express;
+
+  beforeEach(async () => {
+    await resetDatabase();
+    app = createTestApp();
+    mockCreate.mockReset();
+    mockGenerateCover.mockReset();
+    mockGenerateIllustration.mockReset();
+    mockIsImageGenConfigured.mockReset();
+    mockIsImageGenConfigured.mockReturnValue(false);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('500s with the not-configured envelope when the key is unset (the oracle)', async () => {
+    vi.stubEnv('ANTHROPIC_API_KEY', undefined);
+    const token = await createUserAndGetToken(app);
+
+    const res = await request(app)
+      .post('/api/generate')
+      .set('Authorization', `Bearer ${token}`)
+      .send(VALID_BODY);
+
+    expect(res.status).toBe(500);
+    expect(res.body).toMatchObject({ error: 'ANTHROPIC_API_KEY not configured' });
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['your-api-key-here', 'the .env.example literal'],
+    ['YOUR_API_KEY_HERE', 'the same literal shouted'],
+    ['<your-anthropic-key>', 'still in angle brackets'],
+    ['changeme', 'the other common filler'],
+  ])('treats a placeholder key (%s — %s) exactly like an unset one', async (key) => {
+    vi.stubEnv('ANTHROPIC_API_KEY', key);
+    const token = await createUserAndGetToken(app);
+
+    const res = await request(app)
+      .post('/api/generate')
+      .set('Authorization', `Bearer ${token}`)
+      .send(VALID_BODY);
+
+    // Same status, same message as the unset case above — and, critically, the
+    // paid call never happens, so there is no 401 to leak as a 500.
+    expect(res.status).toBe(500);
+    expect(res.body).toMatchObject({ error: 'ANTHROPIC_API_KEY not configured' });
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(await prisma.usageLog.count()).toBe(0);
+  });
+
+  it('lets a real-looking key through to the Anthropic call', async () => {
+    // The false-positive guard: a key that merely CONTAINS a filler word is
+    // still a key. If this ever fails, the predicate has started locking people
+    // out of working credentials, which is worse than the bug it fixes.
+    vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-changeme123');
+    const token = await createUserAndGetToken(app);
+    mockCreate.mockRejectedValueOnce(new Error('stop before real work'));
+
+    const res = await request(app)
+      .post('/api/generate')
+      .set('Authorization', `Bearer ${token}`)
+      .send(VALID_BODY);
+
+    expect(res.body.error).not.toBe('ANTHROPIC_API_KEY not configured');
+    expect(mockCreate).toHaveBeenCalled();
+  });
+});
