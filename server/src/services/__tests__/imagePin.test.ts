@@ -288,11 +288,58 @@ describe('imagePin service', () => {
       expect(row?.image_model).toBe('gpt-image-1');
     });
 
-    it('pins an art-less book to the current environment default', async () => {
-      await resolveAndPinImagePin(unpinned);
+    // An art-less book resolves to the environment default, and that default is
+    // an INTENTION, not a fact: the request that asked may still die on a 501, a
+    // 409 or a quota denial and never draw anything. Writing it anyway is the
+    // failure the spec rejected under "Pin at book-creation time" — see the
+    // regression below for the bite. The pin is written by the first successful
+    // image instead (routes/generate.ts, routes/books.ts success paths).
+    it('does NOT write a pin for a book with no art', async () => {
+      const pin = await resolveAndPinImagePin(unpinned);
+
+      // The call still resolves — this request runs on the env default.
+      expect(pin).toEqual({ provider: 'fal', model: 'fal-ai/flux-pro/v1.1' });
+
       const row = await prisma.book.findUnique({ where: { id: BOOK_ID } });
-      expect(row?.image_provider).toBe('fal');
-      expect(row?.image_model).toBe('fal-ai/flux-pro/v1.1');
+      expect(row?.image_provider).toBeNull();
+      expect(row?.image_model).toBeNull();
+    });
+
+    it('regression: a denied request cannot pin an art-less book against the provider that later draws it', async () => {
+      // The reported bug, re-created end to end at the service level.
+      // 1. A draft with no art. A request resolves the pin and is then denied
+      //    (quota / 409 / 501), so no image is ever produced.
+      await resolveAndPinImagePin(unpinned);
+
+      // 2. The operator switches the environment default to openai...
+      process.env.IMAGE_PROVIDER = 'openai';
+
+      // 3. ...and art is genuinely made by openai, which pins the book.
+      const drawn = await prisma.book.findUniqueOrThrow({ where: { id: BOOK_ID } });
+      const pin = await resolveAndPinImagePin(drawn);
+      await ensureBookPinned(BOOK_ID, pin); // stands in for the success path
+      await addVersionRow(1, 1, AFTER_CUTOVER);
+
+      // 4. Every later re-roll must route to openai. Under the old
+      //    write-unconditionally behaviour step 1 left 'fal' on the row, the
+      //    anti-clobber WHERE in step 3 matched nothing, and this read 'fal' —
+      //    style drift, exactly the bug the pin exists to prevent.
+      const after = await prisma.book.findUniqueOrThrow({ where: { id: BOOK_ID } });
+      expect(after.image_provider).toBe('openai');
+      expect(await resolveImagePin(after)).toEqual({ provider: 'openai', model: 'gpt-image-1' });
+    });
+
+    it('still writes back when the pin came from real evidence', async () => {
+      // The other half of the guard: evidence-based resolution is a fact about
+      // art that exists, so it back-fills on the very first resolve.
+      await writePageFile('page-1.png', BEFORE_CUTOVER);
+
+      const pin = await resolveAndPinImagePin(unpinned);
+      expect(pin).toEqual({ provider: 'openai', model: 'gpt-image-1' });
+
+      const row = await prisma.book.findUnique({ where: { id: BOOK_ID } });
+      expect(row?.image_provider).toBe('openai');
+      expect(row?.image_model).toBe('gpt-image-1');
     });
   });
 

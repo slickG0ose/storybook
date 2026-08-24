@@ -107,6 +107,44 @@ export async function earliestArtAt(bookId: string): Promise<Date | null> {
   return oldest;
 }
 
+export interface PinResolution {
+  pin: ImagePin;
+  /**
+   * Where the pin came from:
+   *   'pin'      — the Book row already carries a valid provider.
+   *   'evidence' — inferred from real art (an IllustrationVersion page row, or
+   *                a page-*.png on disk). A fact about art that exists.
+   *   'default'  — the book has NO art, so this is merely today's environment
+   *                default. An intention, not a fact. Never written back.
+   */
+  source: 'pin' | 'evidence' | 'default';
+}
+
+/**
+ * The one resolver. Returns the pin *and* what it was based on, in a single
+ * pass, so callers that write back can tell a fact from a guess without paying
+ * for a second earliestArtAt() walk.
+ */
+async function resolvePin(
+  book: { id: string; image_provider: string | null; image_model: string | null },
+): Promise<PinResolution> {
+  if (isImageProvider(book.image_provider)) {
+    return {
+      pin: {
+        provider: book.image_provider,
+        model: book.image_model || DEFAULT_MODEL[book.image_provider],
+      },
+      source: 'pin',
+    };
+  }
+
+  const artAt = await earliestArtAt(book.id);
+  if (!artAt) return { pin: currentImagePin(), source: 'default' };
+
+  const provider: ImageProvider = artAt < PROVIDER_CUTOVER_AT ? 'openai' : 'fal';
+  return { pin: { provider, model: DEFAULT_MODEL[provider] }, source: 'evidence' };
+}
+
 /**
  * Pure resolution — never writes.
  *
@@ -121,18 +159,7 @@ export async function earliestArtAt(bookId: string): Promise<Date | null> {
 export async function resolveImagePin(
   book: { id: string; image_provider: string | null; image_model: string | null },
 ): Promise<ImagePin> {
-  if (isImageProvider(book.image_provider)) {
-    return {
-      provider: book.image_provider,
-      model: book.image_model || DEFAULT_MODEL[book.image_provider],
-    };
-  }
-
-  const artAt = await earliestArtAt(book.id);
-  if (!artAt) return currentImagePin();
-
-  const provider: ImageProvider = artAt < PROVIDER_CUTOVER_AT ? 'openai' : 'fal';
-  return { provider, model: DEFAULT_MODEL[provider] };
+  return (await resolvePin(book)).pin;
 }
 
 /**
@@ -149,15 +176,27 @@ export async function ensureBookPinned(bookId: string, pin: ImagePin): Promise<v
 }
 
 /**
- * What routes call: resolve, then back-fill, so inference runs at most once per
- * book and the system self-heals without a migration script or a
- * filesystem-walking backfill that Prisma's SQL-only migrations cannot express.
+ * What routes call: resolve, then back-fill **only when the resolution was
+ * based on real art**, so inference runs at most once per book and the system
+ * self-heals without a migration script or a filesystem-walking backfill that
+ * Prisma's SQL-only migrations cannot express.
+ *
+ * The `source === 'evidence'` guard is load-bearing. A book with NO art
+ * resolves to the environment default, which is an *intention* — and the
+ * request that triggered the resolve may still die on a 501, a 409 or a quota
+ * denial and never draw anything. Writing that intention to the row is the
+ * failure mode the spec rejected under "Pin at book-creation time": flip
+ * IMAGE_PROVIDER afterwards, let openai actually draw the art, and every later
+ * re-roll routes back to the fal that a denied request wrote. So an art-less
+ * book stays null here and is pinned by the first *successful* image write
+ * instead (routes/generate.ts, and the success paths in routes/books.ts),
+ * which records what actually made the art.
  */
 export async function resolveAndPinImagePin(
   book: { id: string; image_provider: string | null; image_model: string | null },
 ): Promise<ImagePin> {
-  const pin = await resolveImagePin(book);
-  if (!isImageProvider(book.image_provider)) {
+  const { pin, source } = await resolvePin(book);
+  if (source === 'evidence') {
     await ensureBookPinned(book.id, pin);
   }
   return pin;

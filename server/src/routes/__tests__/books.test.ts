@@ -960,6 +960,55 @@ describe('Books API routes', () => {
       expect(res.body.image_provider).toBe('openai');
     });
 
+    // The pin must describe art that EXISTS. A book with no art resolves to the
+    // environment default for the current call only — writing that default to
+    // the row on a request that never draws anything records an intention, and
+    // if the operator later flips IMAGE_PROVIDER the art gets made by one
+    // provider while the row says another: the reported style-drift bug,
+    // re-created by the fix meant to prevent it. (Spec, "Alternatives
+    // considered → Pin at book-creation time".)
+    it('does not pin an art-less book when the request never draws anything (501)', async () => {
+      delete process.env.OPENAI_API_KEY;
+      const token = await setupOwnedDraft();
+
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/illustrate')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ pageNumber: 1 });
+
+      expect(res.status).toBe(501);
+      const after = await prisma.book.findUnique({ where: { id: 'luna-star-garden' } });
+      expect(after?.image_provider).toBeNull();
+      expect(after?.image_model).toBeNull();
+    });
+
+    it('does not pin an art-less book when quota blocks the only page', async () => {
+      const token = await setupOwnedDraft();
+      const user = await prisma.user.findFirst({ where: { email: 'author@example.com' } });
+
+      // 40c already spent against the default 50c daily cap: spendGate reserves
+      // at the default 4c and lets the request through, then the handler's
+      // provider-aware check prices this openai-pinned page at 25c and denies.
+      await prisma.usageLog.create({
+        data: { user_id: user!.id, kind: 'story', cost_cents: 40 },
+      });
+
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/illustrate')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ pageNumber: 1 });
+
+      expect(res.status).toBe(200);
+      expect(res.body.quotaHitAfterPage).toBe(0);
+      expect(mockGenerateIllustration).not.toHaveBeenCalled();
+      expect(await prisma.usageLog.count()).toBe(1);
+
+      // Nothing was drawn, so nothing may be pinned.
+      const after = await prisma.book.findUnique({ where: { id: 'luna-star-garden' } });
+      expect(after?.image_provider).toBeNull();
+      expect(res.body.image_provider).toBeNull();
+    });
+
     it('infers openai from pre-cutover illustration history and threads the pin to the generator', async () => {
       // This is the reported bug in miniature: a book drawn in May must re-roll
       // on gpt-image-1 even though IMAGE_PROVIDER now says fal.
@@ -1387,6 +1436,100 @@ describe('Books API routes', () => {
       // nothing new was charged.
       expect(mockGenerateCharacterPortrait).not.toHaveBeenCalled();
       expect(await prisma.usageLog.count()).toBe(1);
+    });
+
+    // The middleware alone is not a gate for this route: spendGate('cover')
+    // runs before the book — and therefore the pin — is loaded, so it reserves
+    // at the default 4c while an openai-pinned portrait records 25c. Checked at
+    // one price and charged at another, the difference escapes both ceilings
+    // one portrait at a time. The handler-level checkQuota is what closes it.
+    it('429s at the PINNED provider rate that spendGate could not price', async () => {
+      const token = await setupOwnedDraftWithCast();
+      const user = await prisma.user.findFirst({ where: { email: 'author@example.com' } });
+
+      // 40c spent against the default 50c daily cap. spendGate's 4c reservation
+      // fits (44 <= 50) and lets the request through; the pinned 25c does not
+      // (65 > 50), so only the handler check can stop it.
+      await prisma.usageLog.create({
+        data: { user_id: user!.id, kind: 'story', cost_cents: 40 },
+      });
+
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/characters/0/portrait')
+        .set('Authorization', `Bearer ${token}`)
+        .send({});
+
+      expect(res.status).toBe(429);
+      // Same envelope spendGate itself produces — one shape for the client.
+      expect(res.body).toMatchObject({
+        error: expect.any(String),
+        quota: {
+          scope: 'daily',
+          spentCents: expect.any(Number),
+          limitCents: expect.any(Number),
+        },
+      });
+      expect(res.headers['retry-after']).toBeDefined();
+
+      // Zero provider calls, zero new UsageLog rows: the check sits after the
+      // pin and before the paid call, so a denial costs nothing.
+      expect(mockGenerateCharacterPortrait).not.toHaveBeenCalled();
+      expect(await prisma.usageLog.count()).toBe(1);
+      expect(await prisma.usageLog.findMany({ where: { kind: 'cover' } })).toHaveLength(0);
+    });
+
+    it('503s on the monthly ceiling at the pinned rate, which no admin bypasses', async () => {
+      const token = await setupOwnedDraftWithCast();
+
+      // Monthly ceiling low enough that the pinned 25c overruns it but the
+      // middleware's 4c reservation does not.
+      vi.stubEnv('QUOTA_MONTHLY_GLOBAL_CENTS', '10');
+
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/characters/0/portrait')
+        .set('Authorization', `Bearer ${token}`)
+        .send({});
+
+      expect(res.status).toBe(503);
+      expect(res.body).toMatchObject({ error: expect.any(String), quota: { scope: 'monthly' } });
+      expect(mockGenerateCharacterPortrait).not.toHaveBeenCalled();
+      expect(await prisma.usageLog.count()).toBe(0);
+    });
+
+    it('pins an art-less book on the first successful portrait', async () => {
+      // The pin is written on the image that actually succeeds, never on the
+      // resolve — see the /illustrate "does not pin an art-less book" tests.
+      const token = await setupOwnedDraftWithCast();
+      const before = await prisma.book.findUnique({ where: { id: 'luna-star-garden' } });
+      expect(before?.image_provider).toBeNull();
+
+      mockGenerateCharacterPortrait.mockResolvedValueOnce(
+        '/illustrations/luna-star-garden/portrait-1000.png',
+      );
+
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/characters/0/portrait')
+        .set('Authorization', `Bearer ${token}`)
+        .send({});
+      expect(res.status).toBe(200);
+
+      const after = await prisma.book.findUnique({ where: { id: 'luna-star-garden' } });
+      expect(after?.image_provider).toBe('openai');
+      expect(after?.image_model).toBe('gpt-image-1');
+    });
+
+    it('does not pin an art-less book when the portrait is never drawn', async () => {
+      const token = await setupOwnedDraftWithCast();
+      mockGenerateCharacterPortrait.mockResolvedValueOnce(null);
+
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/characters/0/portrait')
+        .set('Authorization', `Bearer ${token}`)
+        .send({});
+      expect(res.status).toBe(200);
+
+      const after = await prisma.book.findUnique({ where: { id: 'luna-star-garden' } });
+      expect(after?.image_provider).toBeNull();
     });
   });
 

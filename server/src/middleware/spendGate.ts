@@ -1,6 +1,42 @@
 import { checkQuota } from '../services/spend';
-import type { UsageKind } from '../services/spend';
+import type { QuotaDecision, UsageKind } from '../services/spend';
 import type { Request, Response, NextFunction } from 'express';
+
+/**
+ * Write the quota-denied envelope. Exported so a handler-level `checkQuota`
+ * (the routes that must price at the book's *pinned* provider, which the
+ * middleware cannot know) answers with byte-identical status codes, headers and
+ * body to this gate. Two hand-rolled copies of this envelope would drift, and
+ * the client parses `quota.scope` to decide what to say.
+ */
+export function sendQuotaDenied(res: Response, decision: QuotaDecision): void {
+  if (decision.reason === 'monthly') {
+    res.status(503).json({
+      error:
+        'This project has reached its monthly AI spending limit. Generation is paused until next month.',
+      quota: {
+        scope: 'monthly',
+        spentCents: decision.globalSpentCents,
+        limitCents: decision.monthlyLimitCents,
+      },
+    });
+    return;
+  }
+
+  const secondsUntilUtcMidnight = Math.max(
+    1,
+    Math.ceil((startOfNextUtcDay().getTime() - Date.now()) / 1000),
+  );
+  res.setHeader('Retry-After', String(secondsUntilUtcMidnight));
+  res.status(429).json({
+    error: "You've reached your daily generation limit. It resets at midnight UTC.",
+    quota: {
+      scope: 'daily',
+      spentCents: decision.userSpentCents,
+      limitCents: decision.dailyLimitCents,
+    },
+  });
+}
 
 /**
  * Spend gate (F4b / #6). Mount AFTER requireAuth — it needs `res.locals.user`.
@@ -46,32 +82,7 @@ export function spendGate(kind: UsageKind) {
       return;
     }
 
-    if (decision.reason === 'monthly') {
-      res.status(503).json({
-        error:
-          'This project has reached its monthly AI spending limit. Generation is paused until next month.',
-        quota: {
-          scope: 'monthly',
-          spentCents: decision.globalSpentCents,
-          limitCents: decision.monthlyLimitCents,
-        },
-      });
-      return;
-    }
-
-    const secondsUntilUtcMidnight = Math.max(
-      1,
-      Math.ceil((startOfNextUtcDay().getTime() - Date.now()) / 1000),
-    );
-    res.setHeader('Retry-After', String(secondsUntilUtcMidnight));
-    res.status(429).json({
-      error: "You've reached your daily generation limit. It resets at midnight UTC.",
-      quota: {
-        scope: 'daily',
-        spentCents: decision.userSpentCents,
-        limitCents: decision.dailyLimitCents,
-      },
-    });
+    sendQuotaDenied(res, decision);
   };
 }
 
