@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';
 import type { Express } from 'express';
 import { createTestApp, resetDatabase, allowEmail } from '../../__tests__/setup';
+import prisma from '../../db/prisma';
+import { currentImagePin } from '../../services/imagePin';
 
 // Mock the Anthropic SDK the same way books.test.ts does. The point of most
 // assertions below is that mockCreate is NEVER reached — an unauthenticated
@@ -15,15 +17,21 @@ vi.mock('@anthropic-ai/sdk', () => {
 });
 
 // Stub illustrations so cover/full preview modes can't reach a paid image API.
+// isImageGenConfigured is a mock rather than a hard `() => false` so the
+// pinning test below can let the (mocked) image path actually run; it defaults
+// to false in beforeEach, which is what every other test in this file assumes.
+const mockGenerateCover = vi.fn();
+const mockGenerateIllustration = vi.fn();
+const mockIsImageGenConfigured = vi.fn((..._args: unknown[]) => false);
 vi.mock('../../services/illustrations', async () => {
   const actual = await vi.importActual<typeof import('../../services/illustrations')>(
     '../../services/illustrations',
   );
   return {
     ...actual,
-    generateCover: vi.fn(),
-    generateIllustration: vi.fn(),
-    isImageGenConfigured: () => false,
+    generateCover: (...args: unknown[]) => mockGenerateCover(...args),
+    generateIllustration: (...args: unknown[]) => mockGenerateIllustration(...args),
+    isImageGenConfigured: (...args: unknown[]) => mockIsImageGenConfigured(...args),
   };
 });
 
@@ -51,6 +59,10 @@ describe('POST /api/generate — auth gate', () => {
     await resetDatabase();
     app = createTestApp();
     mockCreate.mockReset();
+    mockGenerateCover.mockReset();
+    mockGenerateIllustration.mockReset();
+    mockIsImageGenConfigured.mockReset();
+    mockIsImageGenConfigured.mockReturnValue(false);
     // The handler 500s on a missing key before it ever constructs the client.
     // Stub one so the authed case actually exercises the path past the gate —
     // the SDK itself is mocked, so nothing leaves the process.
@@ -123,5 +135,93 @@ describe('POST /api/generate — auth gate', () => {
 
     expect(res.status).toBe(400);
     expect(mockCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/generate — image pin on a new book', () => {
+  let app: Express;
+
+  beforeEach(async () => {
+    await resetDatabase();
+    app = createTestApp();
+    mockCreate.mockReset();
+    mockGenerateCover.mockReset();
+    mockGenerateIllustration.mockReset();
+    mockIsImageGenConfigured.mockReset();
+    mockIsImageGenConfigured.mockReturnValue(true);
+    vi.stubEnv('ANTHROPIC_API_KEY', 'test-key-not-real');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  function mockStory(pageCount: number) {
+    mockCreate.mockResolvedValueOnce({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            title: 'Luna and the Test Suite',
+            description: 'A story about assertions.',
+            coverEmoji: '⭐',
+            coverColor: '#7c3aed',
+            coverDescription: 'Luna under a sky of green checkmarks.',
+            pages: Array.from({ length: pageCount }, (_, i) => ({
+              text: `Page ${i + 1} text`,
+              illustrationDescription: `Illustration ${i + 1}`,
+            })),
+          }),
+        },
+      ],
+    });
+  }
+
+  it('pins a full-preview book to the current environment default on the first image', async () => {
+    // A new book has no art, so its pin is simply today's default — but it is
+    // written on the first successful IMAGE, not at row-create time, so a
+    // text-only book stays unpinned until something actually draws it.
+    const token = await createUserAndGetToken(app);
+    mockStory(3);
+    mockGenerateCover.mockResolvedValue('/illustrations/new-book/cover.png');
+    mockGenerateIllustration.mockResolvedValue('/illustrations/new-book/page.png');
+
+    const res = await request(app)
+      .post('/api/generate')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ...VALID_BODY, previewMode: 'full', pageCount: 3 });
+
+    expect(res.status).toBe(200);
+    const pin = currentImagePin();
+    expect(res.body).toMatchObject({
+      id: expect.any(String),
+      image_provider: pin.provider,
+      image_model: pin.model,
+    });
+
+    const book = await prisma.book.findUnique({ where: { id: res.body.id } });
+    expect(book?.image_provider).toBe(pin.provider);
+    expect(book?.image_model).toBe(pin.model);
+
+    // The pin also rides into the generator, so the image that establishes it is
+    // drawn by the provider it names.
+    expect(mockGenerateCover.mock.calls[0][6]).toMatchObject({ pin });
+    expect(mockGenerateIllustration.mock.calls[0][7]).toMatchObject({ pin });
+  });
+
+  it('leaves a quick-preview book unpinned — the pin records art, not intent', async () => {
+    const token = await createUserAndGetToken(app);
+    mockStory(3);
+
+    const res = await request(app)
+      .post('/api/generate')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ...VALID_BODY, previewMode: 'quick', pageCount: 3 });
+
+    expect(res.status).toBe(200);
+    expect(res.body.image_provider).toBeNull();
+    const book = await prisma.book.findUnique({ where: { id: res.body.id } });
+    expect(book?.image_provider).toBeNull();
+    expect(mockGenerateCover).not.toHaveBeenCalled();
   });
 });

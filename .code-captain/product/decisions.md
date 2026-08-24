@@ -4,6 +4,58 @@ Append-only log. Newest entries on top. Each entry should answer: *what was deci
 
 ---
 
+## ADR-013 — A book's art is pinned to the image model that made it; `IMAGE_PROVIDER` is only the default for books with no art
+
+**Date:** 2026-08-23
+**Status:** Accepted — mitigation A shipped; mitigation B (the Flux Kontext style anchor) deferred to a second PR, which amends this entry rather than opening ADR-014.
+**Scope:** `reroll-style-consistency` Tasks 1–5 plus one follow-up fix. Spec at [.code-captain/specs/reroll-style-consistency/spec.md](../specs/reroll-style-consistency/spec.md), plan at [tasks.md](../specs/reroll-style-consistency/tasks.md). No backlog issue — reported by the repo owner in manual review of [PR #83](https://github.com/slickG0ose/storybook/pull/83). **Partially supersedes ADR-006 decision 2** (`IMAGE_PROVIDER` selects the generator) and depends on ADR-003 (Zod wire shapes). Related: [#91](https://github.com/slickG0ose/storybook/issues/91) (user-facing style override), [#62](https://github.com/slickG0ose/storybook/issues/62) (`FAL_KEY` unset in Render).
+
+### The bug this exists to fix
+
+Re-rolling a page illustration on "A Spot for Sunny" returned art that did not match the book. The tempting explanation — a missing style descriptor — was wrong, and worth naming so nobody re-derives it: `Book.style_descriptor` was stored correctly (*"Classic storybook illustration, soft ink outlines with watercolor washes…"*) and passed correctly to `generateIllustration`. The real cause is that **`style_descriptor` is a prompt string, not a style guarantee.** The book's pages were drawn on 2026-05-19 by OpenAI `gpt-image-1`; the re-rolls ran on 2026-08-23 against Fal Flux Pro 1.1, the default since [#60](https://github.com/slickG0ose/storybook/pull/60) merged on 2026-06-05. Same words, different model, visibly different art — flat colored-pencil watercolor became glossy digital painting with bloom lighting. Nothing in the schema recorded which model made a book's art, so every re-roll silently adopted whatever today's default was.
+
+### Decision
+
+Six coupled decisions, captured as a set per the ADR-004/006/007/008/010/011/012 grouped precedent.
+
+1. **`Book.image_provider` + `Book.image_model` pin a book to the model that drew it, and the pin beats `IMAGE_PROVIDER`.** This is the partial supersession of ADR-006 decision 2: the env var no longer selects the generator for any book that has art. It degrades to *the default for books with no art yet*. **Trade-off:** an operator who flips `IMAGE_PROVIDER` will find it does nothing for existing books, which is surprising until you know why — hence the new section in [docs/conventions/server.md](../../docs/conventions/server.md).
+
+2. **The pin is written lazily, on the first successful image — never at book creation.** The pin's job is to describe art that exists, not an intention. A book created before the cutover with `previewMode: 'text'` and first illustrated today should pin to *today's* provider, because it has no established style to match. Creation-time pinning would record the environment's mood at `INSERT` time and then strand that book on a provider its art never came from.
+
+3. **Legacy books are back-filled by runtime inference with write-back, not by a data migration.** Order: earliest page-slot `IllustrationVersion.created_at` → oldest `page-*.png` mtime on disk → current environment default. Art dated before `PROVIDER_CUTOVER_AT` (2026-06-05, the merge of #60 in `1babb2d`) infers `openai`/`gpt-image-1`; on or after infers `fal`/`flux-pro/v1.1`. **Why not a migration:** for pre-`IllustrationVersion` books the only evidence is file mtimes, which SQL inside a Prisma migration cannot read, and `Book.created_at` as the SQL proxy would mis-pin *exactly the book that motivated this work* (created 2026-05-19, re-rolled 2026-08-23). A one-off script would have to be run on every environment and would silently skip any it missed. Runtime inference is self-healing and correct on first read. **Trade-off:** it is a heuristic, not a record. It is keyed on the earliest *art* timestamp, never on `Book.created_at`, and written back once so it cannot silently re-decide.
+
+4. **Inference reads page slots only (`page_number < 1000`), and the pin is persisted only on evidence-based resolution or on the first successful image — never on an env-default resolution.** Both halves are load-bearing and both were verified by deliberately breaking them and watching named tests fail. The first stops a portrait drawn today from dragging a legacy book's pin forward. The second closes a defect found during implementation: persisting unconditionally meant a book with *no* art kept whatever `IMAGE_PROVIDER` happened to be when a request **failed** (501, 409, quota denial) — the "records an intention" failure of decision 2, re-entering through the back door and re-creating the original bug (pin `fal` on a denied request → operator switches to `openai` → openai draws the art → every later re-roll routes to `fal`).
+
+5. **A book pinned to a provider this server has no key for returns 409 — never a silent fallback to the configured default.** 501 remains distinct and unchanged: nothing is configured at all. **A fix whose failure mode is the original bug is not a fix.** Given #62, the silent fallback would have been the *common* path in production, not an edge case. A 409 makes zero provider calls and writes zero `UsageLog` rows. **Trade-off, and it is a real one:** the moment #62 is fixed by setting `FAL_KEY`, every pre-cutover book flips from "re-rolls, wrong style" to "cannot re-roll at all", because they infer to `openai` and no `OPENAI_API_KEY` exists anywhere. That is the honest answer rather than the quiet-wrong one, and [#91](https://github.com/slickG0ose/storybook/issues/91) is the intended unblock.
+
+6. **Spend is provider-aware: `costCentsFor(kind, provider)`, with `OPENAI_IMAGE_COST_CENTS = 25`.** Owner ruling by Nick on 2026-08-23 — the midpoint of ADR-006's documented $0.17–0.45 range for `gpt-image-1`. `COST_CENTS` stays the default table for Fal. Without this, pinning would make `gpt-image-1` calls reachable again while still metering them at 4¢, i.e. **4–11× under cost**; a spend guard that under-estimates is a guard that does not guard. `checkQuota` and `recordUsage` both price through the single `costCentsFor`, so a 25¢-check paired with a 4¢-record is structurally impossible and is pinned by a test. The same pass closed a real leak on the portrait route, which gated at 4¢ via `spendGate('cover')` while recording 25¢.
+
+### Guardrail confirmations
+
+- **Paid-model swap approved by Nick, repo owner, 2026-08-23**: routing the common single-page re-roll from Flux Pro 1.1 to Flux Kontext. That swap lands in mitigation B; recorded here so the audit trail shows the CLAUDE.md guardrail was discharged rather than skipped.
+- **`gpt-image-1` becomes reachable again** for every pre-cutover book — it has been unreachable since #60. The 25¢ ruling is the acknowledgment of exactly this.
+
+### Consequences
+
+- `IMAGE_PROVIDER` changes meaning. Documented in [docs/conventions/server.md](../../docs/conventions/server.md); an operator who does not read it will flip the var and wonder why nothing changed.
+- `Book` gains two columns that ship on **every** Book-returning route, because `hydrateBook` spreads the whole row. Both are declared in `BookSchema` and pinned by `toMatchObject` on `/illustrate` and `/generate`. Per the plan's scoping, other routes' assertions were not widened.
+- `resolveAndPinImagePin` can perform a DB write (the evidence back-fill) *before* a 409 is returned. That records a fact about art that exists, not spend, and it is what makes the 409 stable across retries — but 409 is not fully side-effect-free, and should not be read as such.
+- **Manual verification of a real re-roll has never been performed.** `OPENAI_API_KEY`, `FAL_KEY` and `IMAGE_PROVIDER` are unset locally, so no paid call is possible and the 409 path is unreachable (an unconfigured server returns 501). Resolution was confirmed read-only against `dev.db`: "A Spot for Sunny" resolves to `openai`/`gpt-image-1` against an env default of `fal`. The paid path remains unverified.
+
+### Deferred to the mitigation-B PR
+
+- **Style anchor = the page's own current illustration**, on targeted re-rolls only, applied with or without feedback, with a variation directive when feedback is absent. Accepts that a bare "Redo" becomes *less* different than it is today — the direct price of "match the original".
+- **Reference precedence: anchor at index 0, required portraits after, capped at 3.** Extends ADR-007 decisions 4 and 7.
+- **Open: does `fal-ai/flux-pro/kontext/multi` have a documented maximum reference count?** The cap of 3 is our own ceiling (anchor + primary + antagonist), not a published limit.
+- **Open, blocking that PR's merge: current Fal Kontext and `kontext/multi` pricing.** ADR-007 dec 4 pinned a flat $0.04 from docs dated 2026-06-05 and never verified `kontext/multi` separately. It does not block mitigation A, which routes nothing new to Kontext.
+
+### Deferred indefinitely
+
+- **An unrecognised `image_provider` value re-infers on every call and is never repaired.** The anti-clobber `where: { image_provider: null }` cannot match a junk value. Correctness is unaffected (inference returns the right answer every time) and nothing in the codebase writes such a value; widening the clause would re-open the clobber it exists to prevent.
+- **The full positional→options refactor** of the illustration service signatures. Worth doing, not worth doing inside a bug fix that would have had to rewrite the route tests' positional-index assertions.
+
+---
+
 ## ADR-012 — "Withdraw to edit": a published book is immutable, and editing one takes it out of the catalog
 
 **Date:** 2026-08-23

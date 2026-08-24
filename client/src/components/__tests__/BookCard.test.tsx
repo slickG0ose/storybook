@@ -43,6 +43,8 @@ const mockBook: Book = {
   characters_json: null,
   style_descriptor: null,
   style_reference_url: null,
+  image_provider: null,
+  image_model: null,
   created_by: null,
   created_at: new Date().toISOString(),
   deleted_at: null,

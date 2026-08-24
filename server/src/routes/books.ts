@@ -40,13 +40,14 @@ import {
   collectRequiredPortraitRefs,
   isImageGenConfigured,
 } from '../services/illustrations';
+import { resolveAndPinImagePin, ensureBookPinned, pinnedProviderUnavailableError } from '../services/imagePin';
 import { parseAiJson } from '../services/parseAiJson';
 import { renderBookPdf } from '../services/pdf';
 import { validate } from '../middleware/validate';
 import { requireAuth } from '../middleware/requireAuth';
 import { STORY_MODEL, STORY_THINKING } from '../lib/models';
 import { isEditable, PUBLISHED_IMMUTABLE_ERROR } from '../lib/availability';
-import { spendGate } from '../middleware/spendGate';
+import { spendGate, sendQuotaDenied } from '../middleware/spendGate';
 import { recordUsage, checkQuota } from '../services/spend';
 
 const router = Router();
@@ -672,8 +673,27 @@ router.post(
       return res.status(403).json({ error: PUBLISHED_IMMUTABLE_ERROR });
     }
 
-    if (!isImageGenConfigured()) {
-      return res.status(501).json({ error: 'Image generation not configured' });
+    // Which provider + base model actually produced THIS book's art. Resolved
+    // here, before any provider call, so a re-roll runs on the model the rest of
+    // the book was drawn on. IMAGE_PROVIDER no longer governs a book that
+    // already has art — partial supersession of ADR-006 dec 2. The back-fill
+    // inside only fires when the resolution came from real art; a book with no
+    // art resolves to the env default and is pinned below, on the first image
+    // that actually succeeds. See services/imagePin.ts.
+    const pin = await resolveAndPinImagePin(book);
+
+    if (!isImageGenConfigured(pin.provider)) {
+      // Two different failures, deliberately kept distinct:
+      //   501 — nothing is configured on this server at all (unchanged).
+      //   409 — this book needs a provider this server has no key for, while
+      //         some other provider IS configured.
+      // The 409 never falls back to the default provider: that silent fallback
+      // is precisely the style-drift bug this pin exists to fix, and with
+      // OPENAI_API_KEY unset in most environments it would be the common path,
+      // not an edge case.
+      return isImageGenConfigured()
+        ? res.status(409).json({ error: pinnedProviderUnavailableError(pin.provider) })
+        : res.status(501).json({ error: 'Image generation not configured' });
     }
 
     const { pageNumber, feedback } = req.body as BookIllustrateRequest;
@@ -707,7 +727,13 @@ router.post(
 
     try {
       for (const page of pagesToIllustrate) {
-        const decision = await checkQuota(requester.id, 'illustration', isAdmin);
+        // Priced at the PINNED provider's rate: an openai-pinned image costs
+        // 4-11x a Fal one, so checking at the default table would let the
+        // difference escape both ceilings. spendGate only reserved the first
+        // image at the default rate (it runs before the book is loaded), so
+        // this is the real gate — and recordUsage below must be given the same
+        // provider or the check and the charge disagree.
+        const decision = await checkQuota(requester.id, 'illustration', isAdmin, new Date(), pin.provider);
         if (!decision.allowed) {
           quotaHitAfterPage = page.page_number - 1;
           break;
@@ -721,10 +747,16 @@ router.post(
           book.style_descriptor,
           hydratedBook.characters,
           referenceImages,
+          { pin },
         );
 
         if (url) {
-          await recordUsage(requester.id, 'illustration');
+          await recordUsage(requester.id, 'illustration', pin.provider);
+          // First successful image for a book that had none: NOW the pin is a
+          // fact, so record it. Idempotent (updateMany WHERE image_provider IS
+          // NULL), so a book that was already pinned — by evidence above, or by
+          // generate.ts — no-ops here, as does every later page in this loop.
+          await ensureBookPinned(book.id, pin);
           await prisma.page.update({
             where: { id: page.id },
             data: { illustration_url: url },
@@ -781,8 +813,15 @@ router.post(
       return res.status(403).json({ error: PUBLISHED_IMMUTABLE_ERROR });
     }
 
-    if (!isImageGenConfigured()) {
-      return res.status(501).json({ error: 'Image generation not configured' });
+    // Same pin treatment as /illustrate: a portrait for a book drawn on
+    // gpt-image-1 must be drawn on gpt-image-1, or the cast stops matching the
+    // pages. 409 vs 501 for the same reasons documented there.
+    const pin = await resolveAndPinImagePin(book);
+
+    if (!isImageGenConfigured(pin.provider)) {
+      return isImageGenConfigured()
+        ? res.status(409).json({ error: pinnedProviderUnavailableError(pin.provider) })
+        : res.status(501).json({ error: 'Image generation not configured' });
     }
 
     const characterIndex = parseInt(req.params.characterIndex, 10);
@@ -798,6 +837,23 @@ router.post(
 
     const { feedback } = req.body as CharacterPortraitGenerateRequest;
 
+    // The real gate. spendGate('cover') runs before the book — and therefore
+    // the pin — is loaded, so it can only reserve at the default 4c, while an
+    // openai-pinned portrait records 25c: checked at one price, charged at
+    // another, and the difference escapes both ceilings one portrait at a time.
+    // This mirrors the per-iteration check /illustrate already does. It lands
+    // after the pin and before any provider call, so a denial costs nothing.
+    const isAdmin = (res.locals.user as { role?: string }).role === 'admin';
+    const decision = await checkQuota(user.id, 'cover', isAdmin, undefined, pin.provider);
+    if (!decision.allowed) {
+      // Same envelope, status and Retry-After the spendGate on this very route
+      // produces, so the client has one shape to handle. A portrait is a single
+      // image, so there is no partial result to return the way a bulk
+      // illustrate has — nothing was drawn and nothing was charged.
+      sendQuotaDenied(res, decision);
+      return;
+    }
+
     try {
       const url = await generateCharacterPortrait(
         book.id,
@@ -806,13 +862,24 @@ router.post(
         character.descriptor,
         feedback,
         book.style_descriptor,
+        { pin },
       );
 
       if (url) {
-        // Provider call succeeded — charge it. spendGate reserved the headroom
-        // but only recordUsage writes the UsageLog row the global monthly
-        // ceiling sums, so a provider miss must not consume quota.
-        await recordUsage(user.id, 'cover');
+        // Provider call succeeded — charge it, at the same provider rate the
+        // checkQuota above authorised it at. spendGate reserved the headroom but
+        // only recordUsage writes the UsageLog row the global monthly ceiling
+        // sums, so a provider miss must not consume quota.
+        await recordUsage(user.id, 'cover', pin.provider);
+
+        // A portrait is real art on this book's account. If the book had none
+        // until now, the pin is a fact rather than an intention, so record it.
+        // Idempotent: a book already pinned (by evidence, by generate.ts, or by
+        // an earlier page) no-ops. Note this deliberately differs from
+        // *inference*, which ignores portrait slots — a portrait drawn today
+        // must not drag a legacy book's pin forward, but for a book with no
+        // page art at all the portrait is the only art there is.
+        await ensureBookPinned(book.id, pin);
 
         // Patch only this character's portrait_url; leave every other character
         // and every other book field untouched. Re-read the cast from the same

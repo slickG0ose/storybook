@@ -39,6 +39,12 @@ model Book {
   characters_json String?
   style_descriptor String?
   style_reference_url String?
+  // Which image provider + base model produced this book's art. Written lazily
+  // on the first successful image write (see services/imagePin.ts), NOT at
+  // creation time — the pin describes art that exists, not an intention.
+  // Null means "not yet pinned"; resolveImagePin() infers and back-fills.
+  image_provider  String?  // 'openai' | 'fal'
+  image_model     String?  // 'gpt-image-1' | 'fal-ai/flux-pro/v1.1'
   created_by      String?
   deleted_at      DateTime?
   created_at      DateTime @default(now())

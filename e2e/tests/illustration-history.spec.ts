@@ -109,6 +109,8 @@ test.describe('Illustration history — revert prior version', () => {
         characters: [{ role: 'primary', name: 'Wobble', descriptor: 'a tiny dragon' }],
         style_descriptor: null,
         style_reference_url: null,
+        image_provider: null,
+        image_model: null,
         created_by: user.id,
         created_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
         pages: PAGES.map(p => ({
@@ -185,6 +187,8 @@ test.describe('Illustration history — revert prior version', () => {
         characters: [{ role: 'primary', name: 'Wobble', descriptor: 'a tiny dragon' }],
         style_descriptor: null,
         style_reference_url: null,
+        image_provider: null,
+        image_model: null,
         created_by: user.id,
         pages: PAGES.map(p => ({
           ...p,
