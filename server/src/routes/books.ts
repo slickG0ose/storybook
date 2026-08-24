@@ -40,6 +40,7 @@ import {
   collectRequiredPortraitRefs,
   isImageGenConfigured,
 } from '../services/illustrations';
+import { resolveAndPinImagePin, pinnedProviderUnavailableError } from '../services/imagePin';
 import { parseAiJson } from '../services/parseAiJson';
 import { renderBookPdf } from '../services/pdf';
 import { validate } from '../middleware/validate';
@@ -672,8 +673,25 @@ router.post(
       return res.status(403).json({ error: PUBLISHED_IMMUTABLE_ERROR });
     }
 
-    if (!isImageGenConfigured()) {
-      return res.status(501).json({ error: 'Image generation not configured' });
+    // Which provider + base model actually produced THIS book's art. Resolved
+    // (and lazily back-filled) here, before any provider call, so a re-roll runs
+    // on the model the rest of the book was drawn on. IMAGE_PROVIDER no longer
+    // governs a book that already has art — partial supersession of ADR-006
+    // dec 2. See services/imagePin.ts.
+    const pin = await resolveAndPinImagePin(book);
+
+    if (!isImageGenConfigured(pin.provider)) {
+      // Two different failures, deliberately kept distinct:
+      //   501 — nothing is configured on this server at all (unchanged).
+      //   409 — this book needs a provider this server has no key for, while
+      //         some other provider IS configured.
+      // The 409 never falls back to the default provider: that silent fallback
+      // is precisely the style-drift bug this pin exists to fix, and with
+      // OPENAI_API_KEY unset in most environments it would be the common path,
+      // not an edge case.
+      return isImageGenConfigured()
+        ? res.status(409).json({ error: pinnedProviderUnavailableError(pin.provider) })
+        : res.status(501).json({ error: 'Image generation not configured' });
     }
 
     const { pageNumber, feedback } = req.body as BookIllustrateRequest;
@@ -707,7 +725,13 @@ router.post(
 
     try {
       for (const page of pagesToIllustrate) {
-        const decision = await checkQuota(requester.id, 'illustration', isAdmin);
+        // Priced at the PINNED provider's rate: an openai-pinned image costs
+        // 4-11x a Fal one, so checking at the default table would let the
+        // difference escape both ceilings. spendGate only reserved the first
+        // image at the default rate (it runs before the book is loaded), so
+        // this is the real gate — and recordUsage below must be given the same
+        // provider or the check and the charge disagree.
+        const decision = await checkQuota(requester.id, 'illustration', isAdmin, new Date(), pin.provider);
         if (!decision.allowed) {
           quotaHitAfterPage = page.page_number - 1;
           break;
@@ -721,10 +745,11 @@ router.post(
           book.style_descriptor,
           hydratedBook.characters,
           referenceImages,
+          { pin },
         );
 
         if (url) {
-          await recordUsage(requester.id, 'illustration');
+          await recordUsage(requester.id, 'illustration', pin.provider);
           await prisma.page.update({
             where: { id: page.id },
             data: { illustration_url: url },
@@ -781,8 +806,15 @@ router.post(
       return res.status(403).json({ error: PUBLISHED_IMMUTABLE_ERROR });
     }
 
-    if (!isImageGenConfigured()) {
-      return res.status(501).json({ error: 'Image generation not configured' });
+    // Same pin treatment as /illustrate: a portrait for a book drawn on
+    // gpt-image-1 must be drawn on gpt-image-1, or the cast stops matching the
+    // pages. 409 vs 501 for the same reasons documented there.
+    const pin = await resolveAndPinImagePin(book);
+
+    if (!isImageGenConfigured(pin.provider)) {
+      return isImageGenConfigured()
+        ? res.status(409).json({ error: pinnedProviderUnavailableError(pin.provider) })
+        : res.status(501).json({ error: 'Image generation not configured' });
     }
 
     const characterIndex = parseInt(req.params.characterIndex, 10);
@@ -806,13 +838,23 @@ router.post(
         character.descriptor,
         feedback,
         book.style_descriptor,
+        { pin },
       );
 
       if (url) {
-        // Provider call succeeded — charge it. spendGate reserved the headroom
-        // but only recordUsage writes the UsageLog row the global monthly
-        // ceiling sums, so a provider miss must not consume quota.
-        await recordUsage(user.id, 'cover');
+        // Provider call succeeded — charge it, at the pinned provider's rate.
+        // spendGate reserved the headroom but only recordUsage writes the
+        // UsageLog row the global monthly ceiling sums, so a provider miss must
+        // not consume quota.
+        //
+        // KNOWN GAP: this route has no handler-level checkQuota — it makes one
+        // paid call, so spendGate('cover') is its only pre-check, and that runs
+        // before the book (and therefore the pin) is known, reserving at the
+        // default 4c rate while an openai-pinned portrait records 25c. The
+        // overshoot is bounded at one call (the next request's spendGate sums
+        // the 25c row this writes). Adding the check is a plan change, not a
+        // silent fixup — surfaced for the owner rather than done here.
+        await recordUsage(user.id, 'cover', pin.provider);
 
         // Patch only this character's portrait_url; leave every other character
         // and every other book field untouched. Re-read the cast from the same

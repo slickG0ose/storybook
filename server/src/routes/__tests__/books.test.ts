@@ -4,7 +4,7 @@ import type { Express } from 'express';
 import { createTestApp, resetDatabase, allowEmail } from '../../__tests__/setup';
 import prisma from '../../db/prisma';
 import { PUBLISHED_IMMUTABLE_ERROR } from '../../lib/availability';
-import { COST_CENTS } from '../../services/spend';
+import { COST_CENTS, costCentsFor } from '../../services/spend';
 
 // Stub the Anthropic SDK at module boundary so /revise tests can drive the
 // handler past the API key check without making real network calls.
@@ -655,13 +655,26 @@ describe('Books API routes', () => {
   });
 
   describe('POST /api/books/:id/illustrate', () => {
-    let originalApiKey: string | undefined;
-    let originalProvider: string | undefined;
+    // Every env var the pin + provider selection reads. Snapshotted as a set so
+    // a test that flips one (the 409 case needs FAL_KEY present and
+    // OPENAI_API_KEY absent) can't leak into the next, and so a developer
+    // machine that happens to export FAL_KEY or *_IMAGE_MODEL gets the same
+    // result as CI.
+    const IMAGE_ENV_VARS = [
+      'IMAGE_PROVIDER',
+      'OPENAI_API_KEY',
+      'FAL_KEY',
+      'OPENAI_IMAGE_MODEL',
+      'FAL_IMAGE_MODEL',
+    ] as const;
+    let originalImageEnv: Record<string, string | undefined>;
 
     beforeEach(() => {
       mockGenerateIllustration.mockReset();
-      originalApiKey = process.env.OPENAI_API_KEY;
-      originalProvider = process.env.IMAGE_PROVIDER;
+      originalImageEnv = Object.fromEntries(
+        IMAGE_ENV_VARS.map((k) => [k, process.env[k]]),
+      );
+      for (const k of IMAGE_ENV_VARS) delete process.env[k];
       // Pin the provider to openai so isImageGenConfigured() gates on
       // OPENAI_API_KEY — this suite exercises the OpenAI path. (The service
       // default is now 'fal', which would otherwise gate on FAL_KEY.)
@@ -670,15 +683,10 @@ describe('Books API routes', () => {
     });
 
     afterEach(() => {
-      if (originalApiKey === undefined) {
-        delete process.env.OPENAI_API_KEY;
-      } else {
-        process.env.OPENAI_API_KEY = originalApiKey;
-      }
-      if (originalProvider === undefined) {
-        delete process.env.IMAGE_PROVIDER;
-      } else {
-        process.env.IMAGE_PROVIDER = originalProvider;
+      for (const k of IMAGE_ENV_VARS) {
+        const original = originalImageEnv[k];
+        if (original === undefined) delete process.env[k];
+        else process.env[k] = original;
       }
     });
 
@@ -889,6 +897,169 @@ describe('Books API routes', () => {
       expect(res.body.error.length).toBeGreaterThan(0);
       expect(res.body.error).toMatch(/Failed to generate illustrations/);
     });
+
+    // ---------------------------------------------------------------------
+    // Per-book image pin (spec: reroll-style-consistency, mitigation A).
+    // generateIllustration's trailing options object is the 8th positional
+    // arg → mock.calls[n][7].
+    // ---------------------------------------------------------------------
+    const OPTS_ARG = 7;
+
+    it('pins image_provider and image_model on the illustrate response (wire shape)', async () => {
+      const token = await setupOwnedDraft();
+      mockGenerateIllustration.mockResolvedValueOnce('/illustrations/luna-star-garden/page-2.png');
+
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/illustrate')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ pageNumber: 2 });
+
+      expect(res.status).toBe(200);
+      // OPS.3 / ADR-003: pin every field the client depends on by name. The two
+      // pin columns ship on every Book response because hydrateBook spreads the
+      // whole Prisma row, so they need pinning here or a rename ships silently.
+      expect(res.body).toMatchObject({
+        id: 'luna-star-garden',
+        title: expect.any(String),
+        status: expect.any(String),
+        version: expect.any(Number),
+        characters: expect.any(Array),
+        style_descriptor: null,
+        image_provider: expect.any(String),
+        image_model: expect.any(String),
+        created_at: expect.any(String),
+        pages: expect.any(Array),
+      });
+      expect(res.body.pages[0]).toMatchObject({
+        id: expect.any(Number),
+        book_id: 'luna-star-garden',
+        page_number: expect.any(Number),
+        text: expect.any(String),
+        illustration_description: expect.any(String),
+      });
+    });
+
+    it('persists the pin on a successful illustrate of an unpinned, unillustrated book', async () => {
+      const token = await setupOwnedDraft();
+      const before = await prisma.book.findUnique({ where: { id: 'luna-star-garden' } });
+      expect(before?.image_provider).toBeNull();
+
+      mockGenerateIllustration.mockResolvedValueOnce('/illustrations/luna-star-garden/page-1.png');
+
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/illustrate')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ pageNumber: 1 });
+
+      expect(res.status).toBe(200);
+      // No prior art → the pin is the current environment default, and it is
+      // written back so inference never runs for this book again.
+      const after = await prisma.book.findUnique({ where: { id: 'luna-star-garden' } });
+      expect(after?.image_provider).toBe('openai');
+      expect(after?.image_model).toBe('gpt-image-1');
+      expect(res.body.image_provider).toBe('openai');
+    });
+
+    it('infers openai from pre-cutover illustration history and threads the pin to the generator', async () => {
+      // This is the reported bug in miniature: a book drawn in May must re-roll
+      // on gpt-image-1 even though IMAGE_PROVIDER now says fal.
+      process.env.IMAGE_PROVIDER = 'fal';
+      process.env.FAL_KEY = 'fal-test';
+      process.env.OPENAI_API_KEY = 'sk-test';
+
+      const token = await setupOwnedDraft();
+      await prisma.illustrationVersion.create({
+        data: {
+          book_id: 'luna-star-garden',
+          page_number: 4,
+          version: 1,
+          url: '/illustrations/luna-star-garden/page-4.png',
+          created_at: new Date('2026-05-19T10:00:00.000Z'),
+        },
+      });
+
+      mockGenerateIllustration.mockResolvedValueOnce('/illustrations/luna-star-garden/page-4-v2.png');
+
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/illustrate')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ pageNumber: 4 });
+
+      expect(res.status).toBe(200);
+      expect(mockGenerateIllustration.mock.calls[0][OPTS_ARG]).toMatchObject({
+        pin: { provider: 'openai', model: 'gpt-image-1' },
+      });
+      const after = await prisma.book.findUnique({ where: { id: 'luna-star-garden' } });
+      expect(after?.image_provider).toBe('openai');
+    });
+
+    it('409s a book pinned to a provider this server has no key for, without generating or charging', async () => {
+      // The alternative — silently falling back to the configured default — is
+      // the exact style drift this whole change exists to remove.
+      process.env.IMAGE_PROVIDER = 'fal';
+      process.env.FAL_KEY = 'fal-test';
+      delete process.env.OPENAI_API_KEY;
+
+      const token = await setupOwnedDraft();
+      await prisma.book.update({
+        where: { id: 'luna-star-garden' },
+        data: { image_provider: 'openai', image_model: 'gpt-image-1' },
+      });
+
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/illustrate')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ pageNumber: 2 });
+
+      expect(res.status).toBe(409);
+      expect(res.body.error).toMatch(/openai/);
+      // Zero provider calls and zero spend: the gate sits before both.
+      expect(mockGenerateIllustration).not.toHaveBeenCalled();
+      expect(await prisma.usageLog.count()).toBe(0);
+    });
+
+    it('409 loses to the 404 for a non-owner and to the 403 for a published book', async () => {
+      // Ordering per docs/conventions/server.md: ownership, then mutability,
+      // then capability. A stranger must never learn that a book exists and is
+      // pinned to a provider we lack.
+      process.env.IMAGE_PROVIDER = 'fal';
+      process.env.FAL_KEY = 'fal-test';
+      delete process.env.OPENAI_API_KEY;
+
+      const token = await setupOwnedDraft();
+      await prisma.book.update({
+        where: { id: 'luna-star-garden' },
+        data: { image_provider: 'openai', image_model: 'gpt-image-1' },
+      });
+
+      // Non-owner: 404, not 409.
+      await allowEmail('stranger@example.com');
+      const strangerRes = await request(app).post('/api/auth/register').send({
+        email: 'stranger@example.com',
+        name: 'Stranger',
+        password: 'pass1234',
+      });
+      const stranger = await request(app)
+        .post('/api/books/luna-star-garden/illustrate')
+        .set('Authorization', `Bearer ${strangerRes.body.token}`)
+        .send({ pageNumber: 2 });
+      expect(stranger.status).toBe(404);
+
+      // Owner, but published: 403, not 409.
+      await prisma.book.update({
+        where: { id: 'luna-star-garden' },
+        data: { status: 'published' },
+      });
+      const published = await request(app)
+        .post('/api/books/luna-star-garden/illustrate')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ pageNumber: 2 });
+      expect(published.status).toBe(403);
+      expect(published.body.error).toBe(PUBLISHED_IMMUTABLE_ERROR);
+
+      expect(mockGenerateIllustration).not.toHaveBeenCalled();
+      expect(await prisma.usageLog.count()).toBe(0);
+    });
   });
 
   describe('GET /api/books/:id/illustrations/:pageNumber', () => {
@@ -970,14 +1141,20 @@ describe('Books API routes', () => {
     let originalApiKey: string | undefined;
     let originalProvider: string | undefined;
 
+    let originalFalKey: string | undefined;
+
     beforeEach(() => {
       mockGenerateCharacterPortrait.mockReset();
       originalApiKey = process.env.OPENAI_API_KEY;
       originalProvider = process.env.IMAGE_PROVIDER;
+      originalFalKey = process.env.FAL_KEY;
       // Pin to the openai provider so isImageGenConfigured() gates on
       // OPENAI_API_KEY (the service default is 'fal' → FAL_KEY).
       process.env.IMAGE_PROVIDER = 'openai';
       process.env.OPENAI_API_KEY = 'sk-test';
+      // Deterministic regardless of what the developer's shell exports: the
+      // 409 case needs FAL_KEY present and OPENAI_API_KEY absent.
+      delete process.env.FAL_KEY;
     });
 
     afterEach(() => {
@@ -990,6 +1167,11 @@ describe('Books API routes', () => {
         delete process.env.IMAGE_PROVIDER;
       } else {
         process.env.IMAGE_PROVIDER = originalProvider;
+      }
+      if (originalFalKey === undefined) {
+        delete process.env.FAL_KEY;
+      } else {
+        process.env.FAL_KEY = originalFalKey;
       }
       // Quota limits are stubbed per-test via vi.stubEnv; restore them here so
       // a cap set for the 429 case can't leak into the next test.
@@ -1131,8 +1313,40 @@ describe('Books API routes', () => {
 
       const rows = await prisma.usageLog.findMany();
       expect(rows).toHaveLength(1);
-      // Charged at the existing `cover` rate — no fourth COST_CENTS kind.
-      expect(rows[0]).toMatchObject({ kind: 'cover', cost_cents: COST_CENTS.cover });
+      // Still the `cover` kind — no fourth COST_CENTS entry was added. The rate
+      // is now provider-aware: this suite runs with IMAGE_PROVIDER=openai, so
+      // the book pins to openai and the portrait is priced at
+      // OPENAI_IMAGE_COST_CENTS rather than the 4c Fal rate. Priced through
+      // costCentsFor so the assertion can't drift from the implementation.
+      expect(rows[0]).toMatchObject({
+        kind: 'cover',
+        cost_cents: costCentsFor('cover', 'openai'),
+      });
+      expect(costCentsFor('cover', 'openai')).not.toBe(COST_CENTS.cover);
+    });
+
+    it('409s when the book is pinned to a provider this server has no key for', async () => {
+      // Same gate as /illustrate: a portrait drawn on the wrong model stops
+      // matching the pages it is supposed to keep consistent.
+      process.env.IMAGE_PROVIDER = 'fal';
+      process.env.FAL_KEY = 'fal-test';
+      delete process.env.OPENAI_API_KEY;
+
+      const token = await setupOwnedDraftWithCast();
+      await prisma.book.update({
+        where: { id: 'luna-star-garden' },
+        data: { image_provider: 'openai', image_model: 'gpt-image-1' },
+      });
+
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/characters/0/portrait')
+        .set('Authorization', `Bearer ${token}`)
+        .send({});
+
+      expect(res.status).toBe(409);
+      expect(res.body.error).toMatch(/openai/);
+      expect(mockGenerateCharacterPortrait).not.toHaveBeenCalled();
+      expect(await prisma.usageLog.count()).toBe(0);
     });
 
     it('records no usage when the provider returns no url', async () => {

@@ -257,6 +257,8 @@ export async function recordUsage(userId, kind, provider?: ImageProvider): Promi
 
 This is the last task of **mitigation A**. At the end of it the reported bug is fixed and the branch is shippable on its own.
 
+**Status:** Done (2026-08-23)
+
 **Files to add or change:**
 - `server/src/routes/books.ts` — `/illustrate` and the portrait route resolve and thread the pin
 - `server/src/routes/generate.ts` — pin the book on the first successful cover/page image

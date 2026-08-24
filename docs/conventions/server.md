@@ -143,6 +143,36 @@ Reasoning, rejected alternatives, and accepted costs:
 - Structured output: request JSON via the schema-shaped system prompt, parse with `JSON.parse`, validate the parsed object before persisting.
 - **Always confirm with the user** before swapping the Claude model or upgrading the SDK major version (CLAUDE.md guardrail).
 
+## Image generation — `IMAGE_PROVIDER` is only the default for books with no art
+
+`IMAGE_PROVIDER` (`'openai' | 'fal'`, default `'fal'`) selects the image provider — but **only
+for a book that has never been illustrated**. Once a book has art, the provider and base model
+that produced it are pinned on the row (`Book.image_provider` / `Book.image_model`) and that pin
+wins forever. This is a partial supersession of ADR-006 decision 2.
+
+Why: re-rolling a page used to silently adopt today's default, so a book drawn on `gpt-image-1`
+in May came back as glossy Flux Pro digital painting in August — same prompt, same
+`style_descriptor`, different model. Flipping `IMAGE_PROVIDER` today will **not** change how an
+existing book re-rolls, and that is the point.
+
+- **The single choke point is `server/src/services/imagePin.ts`.** Routes call
+  `resolveAndPinImagePin(book)` and thread the result: `{ pin }` into the generate functions,
+  `pin.provider` into **both** `checkQuota` and `recordUsage`. Passing it to one and not the
+  other lets the price difference escape the ceilings.
+- **The pin is written lazily**, on the first successful image write (`generate.ts`), never at
+  row-create time — it records art that exists, not an intention.
+- **An unpinned legacy book is inferred, then backfilled**: earliest page-slot
+  `IllustrationVersion.created_at` → oldest `page-*.png` mtime → current env default, against
+  `PROVIDER_CUTOVER_AT = 2026-06-05` (the merge date of #60, which made Fal the default).
+- **A pinned-but-unconfigured provider returns 409, never a silent fallback.** Keep the two
+  failure modes distinct: **501** = no image provider is configured at all; **409** = this book
+  needs a provider this server has no key for, while another one is configured. Falling back to
+  the default re-creates the original bug, on exactly the books most vulnerable to it.
+- **Cost is provider-aware.** `costCentsFor(kind, provider)` charges an openai-pinned image
+  25¢ (`OPENAI_IMAGE_COST_CENTS`) against Fal's 4¢, because `gpt-image-1` genuinely costs
+  4–11× more. `spendGate(kind)` still reserves at the default rate — it runs before the book is
+  loaded — so the handler's per-call `checkQuota(..., pin.provider)` is the real gate.
+
 ## Cross-cutting server setup (`server/src/index.ts`)
 
 - **`loadEnv.ts` MUST be imported before anything else.** It populates `process.env.DATABASE_URL` before the Prisma client instantiates. Re-ordering imports breaks this — keep `import './loadEnv'` as the first line.

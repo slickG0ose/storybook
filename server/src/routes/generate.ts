@@ -11,6 +11,7 @@ import {
   collectRequiredPortraitRefs,
   isImageGenConfigured,
 } from '../services/illustrations';
+import { currentImagePin, ensureBookPinned } from '../services/imagePin';
 import { parseAiJson } from '../services/parseAiJson';
 import type { Request, Response } from 'express';
 import type { Character, CharacterRole } from '../types';
@@ -239,13 +240,23 @@ Make the story warm, engaging, and age-appropriate. Use vivid but simple languag
     const portraitRefs = collectRequiredPortraitRefs(characters);
     const referenceImages = portraitRefs.length > 0 ? portraitRefs : undefined;
 
+    // A brand-new book has no art, so its pin is simply today's environment
+    // default. It is written on the FIRST successful image (cover or page),
+    // never at row-create time: the pin must describe art that exists, not an
+    // intention. A book created with previewMode 'text' today and illustrated
+    // months from now should pin to the provider that actually draws it — see
+    // the "Pin at book-creation time" alternative in the spec, rejected for
+    // exactly that reason.
+    const pin = currentImagePin();
+    let pinned = false;
+
     // Each image is a separate paid call, so each is separately gated. The
     // spendGate middleware only reserved the story; without these checks a
     // single previewMode:'full' request could blow past the ceiling by 16x.
     let quotaExhausted = false;
 
-    if ((previewMode === 'cover' || previewMode === 'full') && isImageGenConfigured()) {
-      const coverDecision = await checkQuota(user.id, 'cover', isAdmin);
+    if ((previewMode === 'cover' || previewMode === 'full') && isImageGenConfigured(pin.provider)) {
+      const coverDecision = await checkQuota(user.id, 'cover', isAdmin, new Date(), pin.provider);
       if (!coverDecision.allowed) {
         quotaExhausted = true;
       } else {
@@ -256,21 +267,25 @@ Make the story warm, engaging, and age-appropriate. Use vivid but simple languag
         styleDescriptor,
         characters,
         referenceImages,
+        { pin },
       );
       if (coverUrl) {
-        await recordUsage(user.id, 'cover');
+        await recordUsage(user.id, 'cover', pin.provider);
+        // Fold the pin into the update that persists the cover, so the returned
+        // body carries the real pin rather than a stale null.
         book = await prisma.book.update({
           where: { id: book.id },
-          data: { cover_url: coverUrl },
+          data: { cover_url: coverUrl, image_provider: pin.provider, image_model: pin.model },
           include: { pages: { orderBy: { page_number: 'asc' } } },
         });
+        pinned = true;
       }
       }
     }
 
-    if (previewMode === 'full' && isImageGenConfigured() && !quotaExhausted) {
+    if (previewMode === 'full' && isImageGenConfigured(pin.provider) && !quotaExhausted) {
       for (const page of book.pages) {
-        const pageDecision = await checkQuota(user.id, 'illustration', isAdmin);
+        const pageDecision = await checkQuota(user.id, 'illustration', isAdmin, new Date(), pin.provider);
         if (!pageDecision.allowed) {
           // Partial result rather than a hard failure: the user keeps the
           // story and whatever images were generated. Surfaced via
@@ -286,9 +301,17 @@ Make the story warm, engaging, and age-appropriate. Use vivid but simple languag
           styleDescriptor,
           characters,
           referenceImages,
+          { pin },
         );
         if (url) {
-          await recordUsage(user.id, 'illustration');
+          await recordUsage(user.id, 'illustration', pin.provider);
+          // First successful image for this book (the cover may have failed or
+          // been skipped) — record what drew it. Idempotent, so the second page
+          // through here is a no-op.
+          if (!pinned) {
+            await ensureBookPinned(book.id, pin);
+            pinned = true;
+          }
           await prisma.page.update({ where: { id: page.id }, data: { illustration_url: url } });
         }
       }
