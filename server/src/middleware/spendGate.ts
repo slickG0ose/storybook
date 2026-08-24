@@ -16,6 +16,14 @@ import type { Request, Response, NextFunction } from 'express';
  * This gate only reserves the *first* unit of work for a request. Routes that
  * loop over several paid calls (e.g. bulk illustrate) must re-check per
  * iteration; see `checkQuota`/`recordUsage` usage in books.ts.
+ *
+ * It also reserves at the DEFAULT rate, never the provider-aware one: it runs
+ * before the book is loaded, so the book's image pin isn't known yet and an
+ * openai-pinned image is reserved here at 4c rather than 25c. That is fine and
+ * deliberate — the handler's per-iteration `checkQuota(..., provider)` prices
+ * the call correctly and runs before any provider call, so nothing paid gets
+ * through underpriced. Don't move pin resolution into the middleware to "fix"
+ * it; that would mean loading the book twice on every metered request.
  */
 export function spendGate(kind: UsageKind) {
   return async function spendGateMiddleware(

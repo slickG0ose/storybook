@@ -1,4 +1,5 @@
 import prisma from '../db/prisma';
+import type { ImageProvider } from './imagePin';
 
 /**
  * Spend gates (F4b / #6).
@@ -39,6 +40,33 @@ export const COST_CENTS: Record<UsageKind, number> = {
   illustration: 4,
   cover: 4,
 };
+
+/**
+ * Cost of one image generated on OpenAI, in whole cents.
+ *
+ * `gpt-image-1` runs ~$0.17–0.45/image (ADR-006) against Fal's flat ~$0.04.
+ * Pinning legacy books to their original provider makes those calls reachable
+ * again, and charging them at `COST_CENTS.illustration` would undercount by
+ * 4–11x — a spend guard that under-estimates is not a guard. 25c is the mid of
+ * that range, ruled by the repo owner on 2026-08-23 (ADR-013). Deliberately
+ * coarse, like `COST_CENTS` itself: this is a budget guard, not billing.
+ */
+export const OPENAI_IMAGE_COST_CENTS = 25;
+
+/**
+ * Price one call. `provider` only matters for image kinds — text generation
+ * runs on Claude regardless of which image provider a book is pinned to.
+ *
+ * Every caller that meters a call MUST price it through here, so `checkQuota`
+ * and `recordUsage` can never disagree about what a call cost: a check at 25c
+ * followed by a record at 4c would leak 21c per image past the monthly ceiling.
+ */
+export function costCentsFor(kind: UsageKind, provider?: ImageProvider): number {
+  if (provider === 'openai' && (kind === 'illustration' || kind === 'cover')) {
+    return OPENAI_IMAGE_COST_CENTS;
+  }
+  return COST_CENTS[kind];
+}
 
 const DEFAULT_DAILY_PER_USER_CENTS = 50;
 const DEFAULT_MONTHLY_GLOBAL_CENTS = 2000;
@@ -114,14 +142,21 @@ export interface QuotaDecision {
  * Checks the monthly ceiling FIRST so an admin bypassing their daily cap still
  * gets stopped by the global one — the bypass must never be able to reorder
  * itself past the ceiling that protects the bill.
+ *
+ * `provider` is optional and additive: omitting it prices at the default table,
+ * which is what `spendGate` does (it runs before the book — and therefore the
+ * pin — is known, so it can only reserve at the default rate). The handler's
+ * per-iteration `checkQuota` with the resolved provider is the real gate, and
+ * it runs before any provider call. Pass the same provider to `recordUsage`.
  */
 export async function checkQuota(
   userId: string,
   kind: UsageKind,
   isAdmin: boolean,
   now: Date = new Date(),
+  provider?: ImageProvider,
 ): Promise<QuotaDecision> {
-  const costCents = COST_CENTS[kind];
+  const costCents = costCentsFor(kind, provider);
   const dailyLimitCents = dailyPerUserLimitCents();
   const monthlyLimitCents = monthlyGlobalLimitCents();
 
@@ -150,9 +185,19 @@ export async function checkQuota(
   return { allowed: true, ...base };
 }
 
-/** Record a completed paid call. Call only after the provider call succeeds. */
-export async function recordUsage(userId: string, kind: UsageKind): Promise<void> {
+/**
+ * Record a completed paid call. Call only after the provider call succeeds.
+ *
+ * Pass the SAME `provider` that was passed to the `checkQuota` which authorised
+ * the call. Checking at one price and recording at another lets the difference
+ * escape both ceilings, one call at a time.
+ */
+export async function recordUsage(
+  userId: string,
+  kind: UsageKind,
+  provider?: ImageProvider,
+): Promise<void> {
   await prisma.usageLog.create({
-    data: { user_id: userId, kind, cost_cents: COST_CENTS[kind] },
+    data: { user_id: userId, kind, cost_cents: costCentsFor(kind, provider) },
   });
 }

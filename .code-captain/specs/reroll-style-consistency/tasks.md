@@ -211,6 +211,8 @@ Notes:
 **Depends on:** Task 2 (for the `ImageProvider` type)
 **Parallel-safe with:** Task 3
 
+**Status:** Done (2026-08-23)
+
 **Files to add or change:**
 - `server/src/services/spend.ts` — `costCentsFor`, optional provider on `checkQuota` / `recordUsage`
 - `server/src/services/__tests__/spend.test.ts` — extend (or add, if absent)

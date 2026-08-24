@@ -5,6 +5,8 @@ import { createTestApp, resetDatabase, allowEmail } from '../../__tests__/setup'
 import prisma from '../../db/prisma';
 import {
   COST_CENTS,
+  OPENAI_IMAGE_COST_CENTS,
+  costCentsFor,
   checkQuota,
   recordUsage,
   startOfUtcDay,
@@ -200,6 +202,111 @@ describe('checkQuota', () => {
 
     await seedSpend(userId, 1);
     expect((await checkQuota(userId, 'story', false)).allowed).toBe(false);
+  });
+});
+
+describe('provider-aware cost — costCentsFor', () => {
+  it('prices images at the default table when no provider is given', () => {
+    // Every pre-existing caller passes no provider and must keep today's price.
+    expect(costCentsFor('illustration')).toBe(4);
+    expect(costCentsFor('cover')).toBe(4);
+    expect(costCentsFor('illustration')).toBe(COST_CENTS.illustration);
+  });
+
+  it('prices fal images at the default table', () => {
+    expect(costCentsFor('illustration', 'fal')).toBe(COST_CENTS.illustration);
+    expect(costCentsFor('cover', 'fal')).toBe(COST_CENTS.cover);
+  });
+
+  it('prices openai images at OPENAI_IMAGE_COST_CENTS', () => {
+    // gpt-image-1 runs 4-11x a Fal image; metering it at 4c would let a
+    // pinned-openai book walk straight through the ceilings.
+    expect(costCentsFor('illustration', 'openai')).toBe(OPENAI_IMAGE_COST_CENTS);
+    expect(costCentsFor('cover', 'openai')).toBe(OPENAI_IMAGE_COST_CENTS);
+    expect(OPENAI_IMAGE_COST_CENTS).toBeGreaterThan(COST_CENTS.illustration);
+  });
+
+  it('ignores the provider for text generation', () => {
+    // The image pin says nothing about which model writes the story.
+    expect(costCentsFor('story', 'openai')).toBe(COST_CENTS.story);
+    expect(costCentsFor('story', 'fal')).toBe(COST_CENTS.story);
+  });
+});
+
+describe('provider-aware cost — checkQuota / recordUsage', () => {
+  let app: Express;
+  let userId: string;
+  let adminId: string;
+
+  beforeEach(async () => {
+    await resetDatabase();
+    app = createTestApp();
+    ({ id: userId } = await makeUser(app, 'openai-user@example.com'));
+    ({ id: adminId } = await makeUser(app, 'openai-admin@example.com', 'admin'));
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('recordUsage writes the openai rate when the provider is openai', async () => {
+    await recordUsage(userId, 'illustration', 'openai');
+    expect(await userSpendTodayCents(userId)).toBe(OPENAI_IMAGE_COST_CENTS);
+  });
+
+  it('recordUsage keeps the default rate when no provider is passed', async () => {
+    await recordUsage(userId, 'illustration');
+    expect(await userSpendTodayCents(userId)).toBe(COST_CENTS.illustration);
+  });
+
+  it('checkQuota and recordUsage agree on what a call cost', async () => {
+    // The leak this guards: checking at 25c and recording at 4c would let 21c
+    // per image escape both ceilings, one call at a time.
+    const decision = await checkQuota(userId, 'illustration', false, new Date(), 'openai');
+    expect(decision.allowed).toBe(true);
+    expect(decision.costCents).toBe(OPENAI_IMAGE_COST_CENTS);
+
+    await recordUsage(userId, 'illustration', 'openai');
+    expect(await userSpendTodayCents(userId)).toBe(decision.costCents);
+  });
+
+  it('denies an openai image at a daily headroom where a fal one still fits', async () => {
+    vi.stubEnv('QUOTA_DAILY_PER_USER_CENTS', '10');
+
+    expect((await checkQuota(userId, 'illustration', false, new Date(), 'fal')).allowed).toBe(true);
+
+    const openai = await checkQuota(userId, 'illustration', false, new Date(), 'openai');
+    expect(openai.allowed).toBe(false);
+    expect(openai.reason).toBe('daily');
+  });
+
+  it('denies an openai image at a monthly headroom where a fal one still fits', async () => {
+    vi.stubEnv('QUOTA_MONTHLY_GLOBAL_CENTS', '10');
+
+    expect((await checkQuota(userId, 'illustration', false, new Date(), 'fal')).allowed).toBe(true);
+
+    const openai = await checkQuota(userId, 'illustration', false, new Date(), 'openai');
+    expect(openai.allowed).toBe(false);
+    expect(openai.reason).toBe('monthly');
+  });
+
+  it('still lets an admin past the DAILY cap at the openai rate', async () => {
+    vi.stubEnv('QUOTA_DAILY_PER_USER_CENTS', '5');
+    await seedSpend(adminId, 5);
+
+    expect((await checkQuota(adminId, 'illustration', true, new Date(), 'openai')).allowed).toBe(
+      true,
+    );
+  });
+
+  it('does NOT let an admin past the MONTHLY ceiling at the openai rate', async () => {
+    // The higher price must not open a bypass on the ceiling that protects the
+    // bill — routing through a pinned-openai book cannot be an escape hatch.
+    vi.stubEnv('QUOTA_MONTHLY_GLOBAL_CENTS', '5');
+
+    const d = await checkQuota(adminId, 'illustration', true, new Date(), 'openai');
+    expect(d.allowed).toBe(false);
+    expect(d.reason).toBe('monthly');
   });
 });
 
