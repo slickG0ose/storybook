@@ -42,10 +42,27 @@ Six coupled decisions, captured as a set per the ADR-004/006/007/008/010/011/012
 - `resolveAndPinImagePin` can perform a DB write (the evidence back-fill) *before* a 409 is returned. That records a fact about art that exists, not spend, and it is what makes the 409 stable across retries — but 409 is not fully side-effect-free, and should not be read as such.
 - **Manual verification of a real re-roll has never been performed.** `OPENAI_API_KEY`, `FAL_KEY` and `IMAGE_PROVIDER` are unset locally, so no paid call is possible and the 409 path is unreachable (an unconfigured server returns 501). Resolution was confirmed read-only against `dev.db`: "A Spot for Sunny" resolves to `openai`/`gpt-image-1` against an env default of `fal`. The paid path remains unverified.
 
-### Deferred to the mitigation-B PR
+### Amendment, 2026-08-24 — mitigation B (the style anchor), implemented
 
-- **Style anchor = the page's own current illustration**, on targeted re-rolls only, applied with or without feedback, with a variation directive when feedback is absent. Accepts that a bare "Redo" becomes *less* different than it is today — the direct price of "match the original".
-- **Reference precedence: anchor at index 0, required portraits after, capped at 3.** Extends ADR-007 decisions 4 and 7.
+Tasks 6–9 on `fix/reroll-style-anchor`. These were deferred when this entry was written; they are now decided and built, and are recorded here rather than in a separate ADR, per the plan's instruction that the second PR amends this entry.
+
+7. **Style anchor = the page's own current illustration, on targeted re-rolls only.** `POST /:id/illustrate` with a `pageNumber` passes that page's existing image as reference 0, routing Fal to `flux-pro/kontext` (1 ref) or `kontext/multi` (2+). A bulk illustrate gets no anchor on any page, because bulk targets pages that have no prior image by definition. `resolveStyleAnchor` returns the path only when the file is genuinely readable — it checks `stat().isFile()`, not merely that `stat` succeeded, because a directory at the anchor path stats fine and then makes `readFile` throw `EISDIR` and 500 the re-roll.
+
+8. **Reference precedence: anchor at index 0, required portraits after, capped at `MAX_REFERENCE_IMAGES = 3`.** Extends ADR-007 decisions 4 and 7. Three is the natural ceiling because required portraits are at most primary + antagonist; truncation only bites when a cast declares multiple primaries, and warns when it does.
+
+9. **The prompt splits on whether feedback is present, and the two clauses are mutually exclusive.** With feedback: keep the style, palette and composition, change only what was asked. Without feedback: keep the style and character designs but produce a fresh composition, pose and camera angle. A prompt carrying both would tell the model to preserve and vary the same thing at once, so both directions are asserted.
+
+   **The accepted cost, stated plainly: a bare "Redo" now returns something *less* different than it does today.** That is the direct price of "match the original", not a side effect. The variation directive is a prompt-level mitigation and **no test can judge it perceptually** — if a bare re-roll comes back a near-copy, the documented fallback is to switch `resolveStyleAnchor` to cover-anchoring rather than ship a 4¢ button that returns the same picture. **That check has never been performed** (see below).
+
+### Does mitigation B still earn its place?
+
+Worth recording honestly, because the answer changed after this entry was first written. **Mitigation A closed the reported bug on its own**, verified on 2026-08-24: "A Spot for Sunny" regenerated on `gpt-image-1` and page 5 v3 reads as the same book as the May original ([#93 comment](https://github.com/slickG0ose/storybook/issues/93#issuecomment-5402574808)).
+
+Mitigation B therefore does **not** fix the reported bug — that is already fixed. It tightens style-lock for **Fal-pinned books**, where the pin alone cannot help because Flux was always the model and drift comes from sampling rather than from a model swap. Its cost is the less-varied bare Redo above, and its central risk has never been observed. Merging it is a genuine judgment call, not a formality.
+
+### Open questions on the anchor, and the verification that has never run
+
+- **UNVERIFIED, and it is the one that decides the design: does a bare "Redo" come back a near-copy?** Task 8's manual step is two re-rolls of `b2fa23cf-…` — one with feedback, one with the box empty. Neither has been done, because reaching the Kontext path needs a Fal-pinned book and a `FAL_KEY`, and the book that motivated all of this is pinned to `openai`. Until someone looks at two images side by side, decision 9's variation directive is an untested hypothesis. Tracked in [#93](https://github.com/slickG0ose/storybook/issues/93).
 - **Still open: does `fal-ai/flux-pro/kontext/multi` have a documented maximum reference count?** Re-checked 2026-08-24 alongside the pricing: fal's model page states **no** maximum. So `MAX_REFERENCE_IMAGES = 3` remains our own ceiling (anchor + primary + antagonist), not a published limit — which means it is safe from the direction that matters (we cannot exceed a limit that is not documented), but it is also unverified from the other direction, so a cast declaring multiple primaries still truncates by our rule rather than theirs.
 - ~~**Open, blocking that PR's merge: current Fal Kontext and `kontext/multi` pricing.**~~ **RESOLVED 2026-08-24 — re-checked against fal.ai, no code change needed.** `fal-ai/flux-pro/kontext` is **$0.04 per image**, unchanged from the figure ADR-007 dec 4 pinned on 2026-06-05. `fal-ai/flux-pro/kontext/multi`, never verified before, is **also $0.04 per image** — a multi-reference call costs the same as a single-reference one, so reference count does not affect spend. `COST_CENTS.illustration = 4` is therefore correct for the Kontext re-roll path and stays as-is.
 

@@ -2,7 +2,7 @@
 
 > Status: Draft
 > Last updated: 2026-08-23
-> Backlog: no dedicated issue — reported by the repo owner in manual review of [PR #83](https://github.com/slickG0ose/storybook/pull/83). Related: [#91](https://github.com/slickG0ose/storybook/issues/91) (user-facing style override, explicitly out of scope here), [#62](https://github.com/slickG0ose/storybook/issues/62) (FAL_KEY unset in Render).
+> Backlog: [#101](https://github.com/slickG0ose/storybook/issues/101) (filed retrospectively per Task 10; the bug was reported by the repo owner in manual review of [PR #83](https://github.com/slickG0ose/storybook/pull/83)). Related: [#91](https://github.com/slickG0ose/storybook/issues/91) (user-facing style override, explicitly out of scope here), [#62](https://github.com/slickG0ose/storybook/issues/62) (FAL_KEY unset in Render).
 
 ## Problem
 

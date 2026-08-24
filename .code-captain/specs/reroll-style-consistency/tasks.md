@@ -481,6 +481,8 @@ No fetch change: `handleIllustrate` in `BookDetail.tsx` already renders any `{ e
 
 ### Task 10 — Pre-merge follow-ups
 
+**Status:** Done (2026-08-24)
+
 **Zone:** docs (harness) · **Depends on:** none (run last)
 
 For each ADR-worthy item in the spec, ensure exactly one tracking action exists — a matching ADR, a linked issue, or an explicit `Deferred:` line with reasoning.
