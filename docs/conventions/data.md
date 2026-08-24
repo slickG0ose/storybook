@@ -42,17 +42,20 @@ So you almost always already have a recent backup without doing anything.
 Before a planned `db:reset`, a migration test, or any one-off destructive operation:
 
 ```bash
-cp server/prisma/dev.db server/prisma/dev.db.local-backup
+cp server/prisma/dev.db server/prisma/dev.db.bak.db
 ```
 
-`*.db` is gitignored at the root, so any naming works (`.bak`, `.local-backup`, etc.).
+**The suffix has to keep ending in `.db`.** The root `.gitignore` has `*.db`, which matches on the
+*end* of the filename — so `dev.db.bak.db` is ignored but `dev.db.local-backup` and `dev.db.bak`
+are **not**. Name a backup either of those ways and it lands as an untracked ~256 KB binary that
+the next `git add -A` will happily commit. Verify with `git check-ignore -v <path>` if unsure.
 
 ## Restore from backup
 
 Stop the dev server first (the running process holds an open handle to `dev.db`), then reverse the copy:
 
 ```bash
-cp server/prisma/dev.db.local-backup server/prisma/dev.db
+cp server/prisma/dev.db.bak.db server/prisma/dev.db
 ```
 
 ### Schema-drift safety rule
