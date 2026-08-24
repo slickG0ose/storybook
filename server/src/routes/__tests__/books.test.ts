@@ -652,6 +652,82 @@ describe('Books API routes', () => {
       const after = await prisma.book.findUnique({ where: { id: 'luna-star-garden' } });
       expect(after?.version).toBe(5);
     });
+
+    // Same trap as POST /api/generate: a `.env` copied from `.env.example`
+    // leaves ANTHROPIC_API_KEY=your-api-key-here, which a bare `!apiKey` guard
+    // read as configured. The request then reached Anthropic, 401'd, and the
+    // author got an opaque 500 on a revision instead of "not configured".
+    describe('ANTHROPIC_API_KEY config gate', () => {
+      async function setupOwnedDraft(): Promise<string> {
+        const token = await createUserAndGetToken(app);
+        const user = await prisma.user.findFirst({ where: { email: 'author@example.com' } });
+        await prisma.book.update({
+          where: { id: 'luna-star-garden' },
+          data: { status: 'draft', created_by: user!.id },
+        });
+        return token;
+      }
+
+      afterEach(() => {
+        vi.unstubAllEnvs();
+      });
+
+      it('500s with the not-configured envelope when the key is unset (the oracle)', async () => {
+        vi.stubEnv('ANTHROPIC_API_KEY', undefined);
+        const token = await setupOwnedDraft();
+
+        const res = await request(app)
+          .post('/api/books/luna-star-garden/revise')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ feedback: 'make it more fun' });
+
+        expect(res.status).toBe(500);
+        expect(res.body).toMatchObject({ error: 'ANTHROPIC_API_KEY not configured' });
+        expect(mockCreate).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        ['your-api-key-here', 'the .env.example literal'],
+        ['<your-anthropic-key>', 'still in angle brackets'],
+      ])('treats a placeholder key (%s — %s) exactly like an unset one', async (key) => {
+        vi.stubEnv('ANTHROPIC_API_KEY', key);
+        const token = await setupOwnedDraft();
+
+        const res = await request(app)
+          .post('/api/books/luna-star-garden/revise')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ feedback: 'make it more fun' });
+
+        expect(res.status).toBe(500);
+        expect(res.body).toMatchObject({ error: 'ANTHROPIC_API_KEY not configured' });
+        // The gate sits before the paid call and before recordUsage, so a
+        // misconfigured server bills nobody.
+        expect(mockCreate).not.toHaveBeenCalled();
+        expect(await prisma.usageLog.count()).toBe(0);
+      });
+
+      it('lets a real key that merely contains a filler word through to Claude', async () => {
+        // The false-positive guard. A predicate that rejected this would lock
+        // an author out of a working key, which is worse than the bug fixed.
+        vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-placeholder-9f8e7d6c');
+        const token = await setupOwnedDraft();
+        mockClaudeReviseResponse([
+          { text: 'Page 1 text', illustrationDescription: 'Illustration 1' },
+          { text: 'Page 2 text', illustrationDescription: 'Illustration 2' },
+          { text: 'Page 3 text', illustrationDescription: 'Illustration 3' },
+          { text: 'Page 4 text', illustrationDescription: 'Illustration 4' },
+          { text: 'Page 5 text', illustrationDescription: 'Illustration 5' },
+        ]);
+
+        const res = await request(app)
+          .post('/api/books/luna-star-garden/revise')
+          .set('Authorization', `Bearer ${token}`)
+          .send({ feedback: 'make it more fun' });
+
+        expect(res.status).toBe(200);
+        expect(mockCreate).toHaveBeenCalled();
+      });
+    });
   });
 
   describe('POST /api/books/:id/illustrate', () => {
@@ -1063,6 +1139,62 @@ describe('Books API routes', () => {
       expect(res.status).toBe(409);
       expect(res.body.error).toMatch(/openai/);
       // Zero provider calls and zero spend: the gate sits before both.
+      expect(mockGenerateIllustration).not.toHaveBeenCalled();
+      expect(await prisma.usageLog.count()).toBe(0);
+    });
+
+    // Observed live: a `.env` copied from `.env.example` leaves
+    // OPENAI_API_KEY=your-api-key-here. Under a presence-only check that counts
+    // as configured, so the 409 never fires, the request reaches OpenAI, and
+    // the caller gets a 500 carrying the provider's 401 stack trace. The
+    // placeholder must read as "no key for this provider" — same 409, same zero
+    // side effects, as an unset key.
+    it('409s when the pinned provider has only a PLACEHOLDER key and another provider is real', async () => {
+      process.env.IMAGE_PROVIDER = 'fal';
+      process.env.FAL_KEY = 'fal-test';
+      process.env.OPENAI_API_KEY = 'your-api-key-here'; // the .env.example literal
+
+      const token = await setupOwnedDraft();
+      await prisma.book.update({
+        where: { id: 'luna-star-garden' },
+        data: { image_provider: 'openai', image_model: 'gpt-image-1' },
+      });
+
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/illustrate')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ pageNumber: 2 });
+
+      expect(res.status).toBe(409);
+      expect(res.body).toMatchObject({ error: expect.any(String) });
+      expect(res.body.error).toMatch(/openai/);
+      // Never a silent fallback to the real Fal key, and never a provider call:
+      // ADR-013 dec 5.
+      expect(mockGenerateIllustration).not.toHaveBeenCalled();
+      expect(await prisma.usageLog.count()).toBe(0);
+    });
+
+    it('501s when EVERY provider key is a placeholder', async () => {
+      process.env.IMAGE_PROVIDER = 'fal';
+      process.env.FAL_KEY = 'your-api-key-here';
+      process.env.OPENAI_API_KEY = 'changeme';
+
+      const token = await setupOwnedDraft();
+      await prisma.book.update({
+        where: { id: 'luna-star-garden' },
+        data: { image_provider: 'openai', image_model: 'gpt-image-1' },
+      });
+
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/illustrate')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ pageNumber: 2 });
+
+      // 501, not 409: nothing on this server is usable, which is the same
+      // situation as nothing being set.
+      expect(res.status).toBe(501);
+      expect(res.body).toMatchObject({ error: expect.any(String) });
+      expect(res.body.error).toMatch(/Image generation not configured/);
       expect(mockGenerateIllustration).not.toHaveBeenCalled();
       expect(await prisma.usageLog.count()).toBe(0);
     });

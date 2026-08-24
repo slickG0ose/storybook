@@ -4,6 +4,13 @@ import prisma from '../db/prisma';
 import type { Character } from '../types';
 import { FalImageGenerator } from './providers/fal';
 import type { ImagePin, ImageProvider } from './imagePin';
+import { isUsableApiKey } from '../lib/apiKeys';
+
+// isUsableApiKey moved to `lib/apiKeys.ts` once story generation and the
+// style-reference upload needed the same predicate for ANTHROPIC_API_KEY —
+// three non-illustration routes importing it from here was the smell. Re-
+// exported so this module's public surface is unchanged.
+export { isUsableApiKey };
 
 const ILLUSTRATIONS_DIR = join(import.meta.dirname, '../../public/illustrations');
 
@@ -254,9 +261,9 @@ export function getImageGenerator(pin?: ImagePin): ImageGenerator {
 }
 
 // Provider-aware replacement for the literal OPENAI_API_KEY route/service
-// gates. Returns true iff a provider's key env var is present:
-//   provider 'openai' -> !!process.env.OPENAI_API_KEY
-//   provider 'fal'    -> !!process.env.FAL_KEY
+// gates. Returns true iff a provider's key env var is present AND usable:
+//   provider 'openai' -> isUsableApiKey(process.env.OPENAI_API_KEY)
+//   provider 'fal'    -> isUsableApiKey(process.env.FAL_KEY)
 //
 // With NO argument this reports on the ENVIRONMENT DEFAULT, exactly as it
 // always has — callers that predate the pin are unaffected. With an argument it
@@ -266,9 +273,9 @@ export function getImageGenerator(pin?: ImagePin): ImageGenerator {
 export function isImageGenConfigured(provider?: ImageProvider): boolean {
   const selected = provider ?? process.env.IMAGE_PROVIDER ?? 'fal';
   if (selected === 'openai') {
-    return !!process.env.OPENAI_API_KEY;
+    return isUsableApiKey(process.env.OPENAI_API_KEY);
   }
-  return !!process.env.FAL_KEY;
+  return isUsableApiKey(process.env.FAL_KEY);
 }
 
 export async function generateIllustration(
