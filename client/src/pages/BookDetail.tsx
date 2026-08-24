@@ -102,6 +102,11 @@ export default function BookDetail() {
   const [illustrationFeedback, setIllustrationFeedback] = useState('')
   const [illustrationVersions, setIllustrationVersions] = useState<IllustrationVersion[]>([])
   const [showVersions, setShowVersions] = useState(false)
+  // Surviving illustration history for pages that currently have no image,
+  // keyed by page number (#95 item 2). Separate from `illustrationVersions`
+  // above — that one is the single open History panel, this one is a per-page
+  // map the spread reads without the user having to open anything.
+  const [orphanedVersions, setOrphanedVersions] = useState<Record<number, IllustrationVersion[]>>({})
   const [viewMode, setViewMode] = useState<'spread' | 'reader'>('spread')
   const [versions, setVersions] = useState<BookVersion[]>([])
   const [versionsLoading, setVersionsLoading] = useState(false)
@@ -179,6 +184,60 @@ export default function BookDetail() {
       void fetchVersions(book.id, user.token)
     }
   }, [book, user, fetchVersions])
+
+  /*
+   * Probe the illustration history of every page that has no current image
+   * (#95 item 2). `PUT /versions/:v/restore` nulls `illustration_url` on every
+   * restored page while the IllustrationVersion rows and the PNGs on disk both
+   * survive — so the art is recoverable, for free, via the existing per-page
+   * revert. The spread can only offer that if it knows a history exists, and
+   * the book payload doesn't carry one (PageSchema has no version count), so
+   * we ask per orphaned page. Reads only: no provider call, no spend.
+   *
+   * Owner + draft only, matching the revert route's own gate — nobody else can
+   * act on the result. Pages that come back empty are left out of the map so a
+   * never-illustrated page renders exactly as before.
+   */
+  useEffect(() => {
+    if (!book || !user?.token) return
+    const owner = book.created_by === user.id
+    const draft = book.status === 'draft'
+    const orphaned = (book.pages || []).filter(p => !p.illustration_url).map(p => p.page_number)
+    if (!owner || !draft || orphaned.length === 0) {
+      setOrphanedVersions(prev => (Object.keys(prev).length === 0 ? prev : {}))
+      return
+    }
+
+    let cancelled = false
+    const token = user.token
+    const bookId = book.id
+    void (async () => {
+      const entries = await Promise.all(orphaned.map(async pageNumber => {
+        try {
+          const res = await fetch(api(`/api/books/${bookId}/illustrations/${pageNumber}`), {
+            headers: { 'Authorization': `Bearer ${token}` },
+          })
+          if (!res.ok) return [pageNumber, [] as IllustrationVersion[]] as const
+          return [pageNumber, await res.json() as IllustrationVersion[]] as const
+        } catch {
+          return [pageNumber, [] as IllustrationVersion[]] as const
+        }
+      }))
+      if (cancelled) return
+      const next: Record<number, IllustrationVersion[]> = {}
+      for (const [pageNumber, found] of entries) {
+        if (found.length > 0) next[pageNumber] = found
+      }
+      // Keep the previous object identity when nothing was found and nothing
+      // was there before — the common case for a book that has simply never
+      // been illustrated, which would otherwise re-render on every book update.
+      setOrphanedVersions(prev =>
+        Object.keys(prev).length === 0 && Object.keys(next).length === 0 ? prev : next
+      )
+    })()
+
+    return () => { cancelled = true }
+  }, [book, user])
 
   if (loading) return <div className="text-center py-20 text-gray-400 text-lg">Loading...</div>
   if (!book) return <div className="text-center py-20 text-gray-400 text-lg">Book not found</div>
@@ -900,6 +959,7 @@ export default function BookDetail() {
           illustrationVersions={illustrationVersions}
           showVersions={showVersions}
           onRevertIllustration={revertIllustration}
+          orphanedVersions={orphanedVersions}
           theater={theater}
           onToggleTheater={toggleTheater}
         />
