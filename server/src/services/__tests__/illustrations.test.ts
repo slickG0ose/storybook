@@ -10,6 +10,9 @@ import {
   getImageGenerator,
   generateCharacterPortrait,
   listCharacterPortraitVersions,
+  resolveStyleAnchor,
+  composeReferenceImages,
+  MAX_REFERENCE_IMAGES,
 } from '../illustrations';
 import { FalImageGenerator } from '../providers/fal';
 
@@ -768,5 +771,120 @@ describe('OpenAIImageGenerator image-input reference path', () => {
     // The image-input path must NOT set Content-Type (FormData sets the
     // multipart boundary itself).
     expect(init.headers['Content-Type']).toBeUndefined();
+  });
+});
+
+// Mitigation B (ADR-013): a targeted re-roll is anchored on the page's OWN
+// existing illustration, and that anchor takes reference slot 0.
+//
+// These tests use the REAL filesystem on purpose. The whole point of
+// resolveStyleAnchor is what happens when a URL has no bytes behind it — a
+// mocked `fs` would assert the mock, not the behaviour that stops a re-roll
+// from 500ing on a book restored from another machine.
+describe('resolveStyleAnchor', () => {
+  const BOOK_ID = 'style-anchor-fixture-book';
+  const BASE_DIR = join(import.meta.dirname, '../../../public/illustrations', BOOK_ID);
+  const EXISTING = `/illustrations/${BOOK_ID}/page-4.png`;
+  const MISSING = `/illustrations/${BOOK_ID}/page-9.png`;
+
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(async () => {
+    await mkdir(BASE_DIR, { recursive: true });
+    await writeFile(join(BASE_DIR, 'page-4.png'), Buffer.from(FAKE_PNG_B64, 'base64'));
+    // A directory sitting where an image is expected — readFile would throw
+    // EISDIR, so this must be dropped like a missing file.
+    await mkdir(join(BASE_DIR, 'page-7.png'), { recursive: true });
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(async () => {
+    warnSpy.mockRestore();
+    try {
+      await rm(BASE_DIR, { recursive: true, force: true });
+    } catch {
+      // ignore
+    }
+  });
+
+  it('returns null for a null or empty url without touching the disk', async () => {
+    await expect(resolveStyleAnchor(null)).resolves.toBeNull();
+    await expect(resolveStyleAnchor(undefined)).resolves.toBeNull();
+    await expect(resolveStyleAnchor('')).resolves.toBeNull();
+    await expect(resolveStyleAnchor('   ')).resolves.toBeNull();
+    // Nothing was dropped, so nothing was warned about.
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('returns the same web path back when the file really exists on disk', async () => {
+    await expect(resolveStyleAnchor(EXISTING)).resolves.toBe(EXISTING);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('returns null and warns — never throws — when the file is not on disk', async () => {
+    // A book restored from another machine: the URL is in the DB, the bytes
+    // are not on this filesystem. toDataUri() would throw and 500 the re-roll.
+    await expect(resolveStyleAnchor(MISSING)).resolves.toBeNull();
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(String(warnSpy.mock.calls[0][0])).toMatch(/not found on disk/);
+  });
+
+  it('returns null when the path resolves to a directory rather than a file', async () => {
+    await expect(
+      resolveStyleAnchor(`/illustrations/${BOOK_ID}/page-7.png`),
+    ).resolves.toBeNull();
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('composeReferenceImages', () => {
+  const ANCHOR = '/illustrations/b/page-4.png';
+  const PRIMARY = '/illustrations/b/portrait-1000.png';
+  const ANTAGONIST = '/illustrations/b/portrait-1001.png';
+
+  let warnSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+  });
+
+  it('returns just the anchor when there are no portraits', () => {
+    expect(composeReferenceImages(ANCHOR, [])).toEqual([ANCHOR]);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('puts the anchor first and the required portraits after it', () => {
+    expect(composeReferenceImages(ANCHOR, [PRIMARY, ANTAGONIST])).toEqual([
+      ANCHOR,
+      PRIMARY,
+      ANTAGONIST,
+    ]);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('passes portraits through unchanged when there is no anchor', () => {
+    expect(composeReferenceImages(null, [PRIMARY])).toEqual([PRIMARY]);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  // REGRESSION BOUNDARY (ADR-006 dec 3 / ADR-007 dec 3): no anchor and no
+  // portraits must stay exactly today's prompt-only path. The empty array is
+  // what routes map back to `undefined` before calling the generators.
+  it('returns an empty array when there is neither an anchor nor a portrait', () => {
+    expect(composeReferenceImages(null, [])).toEqual([]);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('caps at MAX_REFERENCE_IMAGES, keeps the anchor first, and warns', () => {
+    const refs = composeReferenceImages(ANCHOR, ['a.png', 'b.png', 'c.png', 'd.png']);
+    expect(refs).toHaveLength(MAX_REFERENCE_IMAGES);
+    expect(refs[0]).toBe(ANCHOR);
+    expect(refs).toEqual([ANCHOR, 'a.png', 'b.png']);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(String(warnSpy.mock.calls[0][0])).toMatch(/MAX_REFERENCE_IMAGES/);
   });
 });

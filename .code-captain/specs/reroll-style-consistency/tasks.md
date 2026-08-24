@@ -317,6 +317,8 @@ server. Re-rolling on a different image model would not match the rest of the bo
 **Depends on:** Task 5
 **Parallel-safe with:** none
 
+**Status:** Done (2026-08-24)
+
 **Files to add or change:**
 - `server/src/services/illustrations.ts` — anchor resolution + reference composition
 - `server/src/services/__tests__/illustrations.test.ts` — extend
