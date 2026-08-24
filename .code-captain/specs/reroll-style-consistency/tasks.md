@@ -155,6 +155,8 @@ Notes for the implementer:
 **Depends on:** Task 2
 **Parallel-safe with:** Task 4
 
+**Status:** Done (2026-08-23)
+
 **Files to add or change:**
 - `server/src/services/illustrations.ts` — `getImageGenerator(pin?)`, `isImageGenConfigured(provider?)`, `GenerationPin` threaded into the three public generators
 - `server/src/services/providers/fal.ts` — base model comes from the pin when supplied

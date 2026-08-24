@@ -7,6 +7,7 @@ import {
   generateIllustration,
   generateCover,
   isImageGenConfigured,
+  getImageGenerator,
   generateCharacterPortrait,
   listCharacterPortraitVersions,
 } from '../illustrations';
@@ -232,6 +233,233 @@ describe('isImageGenConfigured', () => {
     expect(isImageGenConfigured()).toBe(false);
     process.env.OPENAI_API_KEY = 'sk-test';
     expect(isImageGenConfigured()).toBe(true);
+  });
+
+  // Pin-aware overload. The no-argument form above is the regression oracle and
+  // is left untouched; these cover the explicit-provider form the 409 gate needs
+  // (Task 5) to tell "nothing configured" from "not THIS book's provider".
+  it('gates on the NAMED provider key when given an argument, ignoring IMAGE_PROVIDER', () => {
+    process.env.IMAGE_PROVIDER = 'fal';
+    process.env.FAL_KEY = 'fal-test';
+
+    expect(isImageGenConfigured('fal')).toBe(true);
+    expect(isImageGenConfigured('openai')).toBe(false);
+    // ...and the env default is unaffected by asking about another provider.
+    expect(isImageGenConfigured()).toBe(true);
+
+    process.env.OPENAI_API_KEY = 'sk-test';
+    expect(isImageGenConfigured('openai')).toBe(true);
+
+    delete process.env.FAL_KEY;
+    expect(isImageGenConfigured('fal')).toBe(false);
+    expect(isImageGenConfigured('openai')).toBe(true);
+    expect(isImageGenConfigured()).toBe(false); // env default is still fal
+  });
+});
+
+// Re-roll style consistency: the BOOK's pin decides which provider serves it,
+// not IMAGE_PROVIDER. A book drawn on gpt-image-1 before the 2026-06-05 Fal
+// cutover must keep re-rolling on gpt-image-1 even though the environment now
+// defaults to Fal — that silent provider swap is the reported bug.
+describe('pin-aware provider selection', () => {
+  const BOOK_ID = 'luna-star-garden';
+  const BASE_DIR = join(import.meta.dirname, '../../../public/illustrations', BOOK_ID);
+  const ENV_KEYS = [
+    'IMAGE_PROVIDER',
+    'OPENAI_API_KEY',
+    'FAL_KEY',
+    'OPENAI_IMAGE_MODEL',
+    'FAL_IMAGE_MODEL',
+  ] as const;
+
+  let originalFetch: typeof fetch;
+  let originalEnv: Record<string, string | undefined>;
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(async () => {
+    await resetDatabase();
+    originalFetch = globalThis.fetch;
+    originalEnv = Object.fromEntries(ENV_KEYS.map(k => [k, process.env[k]]));
+    for (const k of ENV_KEYS) delete process.env[k];
+
+    // The environment default is Fal, with BOTH keys present: so if a pinned
+    // book routed to the env default rather than its pin, the call would
+    // succeed against the wrong provider instead of failing loudly.
+    process.env.IMAGE_PROVIDER = 'fal';
+    process.env.FAL_KEY = 'fal-test';
+    process.env.OPENAI_API_KEY = 'sk-test';
+
+    // Serve both provider response shapes off one mock, keyed on the URL.
+    fetchMock = vi.fn(async (input: unknown) => {
+      const u = typeof input === 'string' ? input : String(input);
+      if (u.startsWith('https://api.openai.com/')) {
+        return new Response(JSON.stringify({ data: [{ b64_json: FAKE_PNG_B64 }] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (u.startsWith('https://fal.run/')) {
+        return new Response(JSON.stringify({ images: [{ url: 'https://fal.example/out.png' }] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(Buffer.from(FAKE_PNG_B64, 'base64'), { status: 200 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+  });
+
+  afterEach(async () => {
+    globalThis.fetch = originalFetch;
+    for (const k of ENV_KEYS) {
+      const v = originalEnv[k];
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    try {
+      await rm(BASE_DIR, { recursive: true, force: true });
+    } catch {
+      // ignore
+    }
+  });
+
+  it('getImageGenerator returns the pinned provider, overriding IMAGE_PROVIDER', () => {
+    expect(getImageGenerator().name).toBe('fal');
+    expect(getImageGenerator({ provider: 'openai', model: 'gpt-image-1' }).name).toBe('openai');
+    expect(getImageGenerator({ provider: 'fal', model: 'fal-ai/flux-pro/v1.1' }).name).toBe('fal');
+  });
+
+  it('generates a pinned-openai book through the OpenAI endpoint with the pinned model', async () => {
+    // The env model override points elsewhere: the pin must beat it, or a legacy
+    // book would re-roll on whatever model the server is configured for today.
+    process.env.OPENAI_IMAGE_MODEL = 'gpt-image-9';
+
+    const url = await generateIllustration(
+      BOOK_ID, 1, 'a scene', undefined, null, [], undefined,
+      { pin: { provider: 'openai', model: 'gpt-image-1' } },
+    );
+
+    expect(url).toMatch(/^\/illustrations\/luna-star-garden\/page-1(-v\d+)?\.png$/);
+
+    const [requestUrl, init] = fetchMock.mock.calls[0];
+    expect(requestUrl).toBe('https://api.openai.com/v1/images/generations');
+    const body = JSON.parse((init as { body: string }).body);
+    expect(body.model).toBe('gpt-image-1');
+    // Nothing was sent to Fal, despite IMAGE_PROVIDER=fal and FAL_KEY being set.
+    for (const call of fetchMock.mock.calls) {
+      expect(String(call[0])).not.toContain('fal.run');
+    }
+  });
+
+  it('returns null without calling any provider when the PINNED provider is unconfigured', async () => {
+    // Fal is configured and is the env default — the pre-pin code would have
+    // happily generated here, on the wrong model. That is the bug.
+    delete process.env.OPENAI_API_KEY;
+
+    const url = await generateIllustration(
+      BOOK_ID, 1, 'a scene', undefined, null, [], undefined,
+      { pin: { provider: 'openai', model: 'gpt-image-1' } },
+    );
+
+    expect(url).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('threads the pin through generateCover and generateCharacterPortrait too', async () => {
+    const pin = { provider: 'openai' as const, model: 'gpt-image-1' };
+
+    await generateCover(BOOK_ID, 'Luna', 'a cover scene', null, [], undefined, { pin });
+    expect(String(fetchMock.mock.calls[0][0])).toBe('https://api.openai.com/v1/images/generations');
+
+    fetchMock.mockClear();
+    await generateCharacterPortrait(BOOK_ID, 0, 'Luna', 'a purple cat', undefined, null, { pin });
+    expect(String(fetchMock.mock.calls[0][0])).toBe('https://api.openai.com/v1/images/generations');
+  });
+});
+
+// The pin carries a base model, and on the prompt-only path Fal must use it
+// instead of FAL_IMAGE_MODEL. The reference-bearing path is deliberately NOT
+// pin-driven: Kontext is the only Fal model that accepts an input image
+// (ADR-007 dec 4), so the pin selects the provider family and the reference
+// count still selects the model within it.
+describe('FalImageGenerator base model from the pin', () => {
+  const BOOK_ID = 'fal-pin-fixture-book';
+  const BASE_DIR = join(import.meta.dirname, '../../../public/illustrations', BOOK_ID);
+  const PORTRAIT = `/illustrations/${BOOK_ID}/portrait-1000.png`;
+  const PINNED_MODEL = 'fal-ai/flux-pro/v1.1-ultra';
+
+  let originalFetch: typeof fetch;
+  let originalFalKey: string | undefined;
+  let originalFalModel: string | undefined;
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(async () => {
+    originalFetch = globalThis.fetch;
+    originalFalKey = process.env.FAL_KEY;
+    originalFalModel = process.env.FAL_IMAGE_MODEL;
+    process.env.FAL_KEY = 'fal-test';
+    delete process.env.FAL_IMAGE_MODEL;
+
+    await mkdir(BASE_DIR, { recursive: true });
+    await writeFile(join(BASE_DIR, 'portrait-1000.png'), Buffer.from(FAKE_PNG_B64, 'base64'));
+
+    fetchMock = vi.fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ images: [{ url: 'https://fal.example/out.png' }] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(Buffer.from(FAKE_PNG_B64, 'base64'), { status: 200 }),
+      );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+  });
+
+  afterEach(async () => {
+    globalThis.fetch = originalFetch;
+    if (originalFalKey === undefined) delete process.env.FAL_KEY;
+    else process.env.FAL_KEY = originalFalKey;
+    if (originalFalModel === undefined) delete process.env.FAL_IMAGE_MODEL;
+    else process.env.FAL_IMAGE_MODEL = originalFalModel;
+    try {
+      await rm(BASE_DIR, { recursive: true, force: true });
+    } catch {
+      // ignore
+    }
+  });
+
+  it('posts to the constructor base model on the prompt-only path', async () => {
+    await new FalImageGenerator(PINNED_MODEL).generate('a purple cat under the moon');
+
+    expect(fetchMock.mock.calls[0][0]).toBe(`https://fal.run/${PINNED_MODEL}`);
+  });
+
+  it('beats FAL_IMAGE_MODEL when both are set', async () => {
+    process.env.FAL_IMAGE_MODEL = 'fal-ai/flux-pro/v1.1';
+
+    await new FalImageGenerator(PINNED_MODEL).generate('a purple cat under the moon');
+
+    expect(fetchMock.mock.calls[0][0]).toBe(`https://fal.run/${PINNED_MODEL}`);
+  });
+
+  it('still routes to Kontext with exactly one reference, base model notwithstanding', async () => {
+    await new FalImageGenerator(PINNED_MODEL).generate('a hero on a hill', {
+      referenceImages: [PORTRAIT],
+    });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('https://fal.run/fal-ai/flux-pro/kontext');
+    const body = JSON.parse((init as { body: string }).body);
+    expect(body.image_url).toMatch(/^data:image\/png;base64,/);
+  });
+
+  it('falls back to FAL_IMAGE_MODEL then the default when no base model is pinned', async () => {
+    // Unpinned construction is exactly today's behaviour — this is the
+    // regression guard for callers that pass no pin at all.
+    await new FalImageGenerator().generate('a purple cat under the moon');
+
+    expect(fetchMock.mock.calls[0][0]).toBe('https://fal.run/fal-ai/flux-pro/v1.1');
   });
 });
 

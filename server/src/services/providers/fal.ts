@@ -59,12 +59,20 @@ interface FalRunResponse {
  * we read the bytes and inline them as a data:image/png;base64,... URI so Fal
  * needn't reach localhost in dev.
  *
- * FAL_IMAGE_MODEL env override: applies ONLY to the prompt-only (no-reference)
- * path; the reference-bearing path always selects Kontext regardless, since the
- * override default (Flux Pro 1.1) cannot take an input image.
+ * Base-model precedence on the prompt-only path:
+ *   constructor baseModel (the book's pin)  >  FAL_IMAGE_MODEL  >  Flux Pro 1.1
+ * The pin wins because a book that already has art must keep re-rolling on the
+ * model that made it, whatever the environment currently defaults to.
+ *
+ * Neither the pin nor FAL_IMAGE_MODEL touches the reference-bearing path: it
+ * always selects Kontext (ADR-007 dec 4, unchanged), because the prompt-only
+ * base models cannot take an input image. The pin picks the provider FAMILY;
+ * the reference count still picks the model within it.
  */
 export class FalImageGenerator implements ImageGenerator {
   readonly name = 'fal' as const;
+
+  constructor(private readonly baseModel?: string) {}
 
   async generate(prompt: string, opts?: ImageGenOptions): Promise<Buffer> {
     const apiKey = process.env.FAL_KEY!;
@@ -75,7 +83,9 @@ export class FalImageGenerator implements ImageGenerator {
     let modelId: string;
     let body: Record<string, unknown>;
     if (references.length === 0) {
-      modelId = process.env.FAL_IMAGE_MODEL || 'fal-ai/flux-pro/v1.1';
+      // `||` rather than `??` throughout, so an empty-string override falls
+      // through to the default exactly as it does today.
+      modelId = this.baseModel || process.env.FAL_IMAGE_MODEL || 'fal-ai/flux-pro/v1.1';
       body = {
         prompt,
         image_size: 'square_hd',

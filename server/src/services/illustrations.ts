@@ -3,9 +3,9 @@ import { join } from 'path';
 import prisma from '../db/prisma';
 import type { Character } from '../types';
 import { FalImageGenerator } from './providers/fal';
+import type { ImagePin, ImageProvider } from './imagePin';
 
 const ILLUSTRATIONS_DIR = join(import.meta.dirname, '../../public/illustrations');
-const IMAGE_MODEL = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1';
 
 // PORTRAIT SLOT SENTINEL (IV2 Phase 2).
 // Per-character portrait version history is stored in the SAME
@@ -80,6 +80,23 @@ export interface ImageGenOptions {
   referenceImages?: string[];
 }
 
+// Per-call generation context, threaded from the route into the public service
+// functions as a TRAILING options object rather than a 9th positional argument.
+// The existing positional arguments are deliberately left alone so the route
+// tests' `mock.calls[n][6]` reference-image assertions keep holding; the options
+// land at [7] (or [6] for generateCharacterPortrait).
+//
+//   pin         which provider + base model serves THIS book. Resolved by
+//               services/imagePin.ts. Absent = the environment default, which
+//               is exactly today's behaviour.
+//   styleAnchor the page's own existing illustration, used to shape the prompt.
+//               Threaded here but IGNORED until Task 7 — the no-anchor path
+//               must stay byte-identical (ADR-006 dec 3 / ADR-007 dec 3).
+export interface GenerationPin {
+  pin?: ImagePin;
+  styleAnchor?: string | null;
+}
+
 // Resolve a reference web path ('/illustrations/<bookId>/<file>.png') to raw
 // bytes, read from the same on-disk base illustrations are written to. Used by
 // the OpenAI image-input path (the Fal path has its own data-URI resolver).
@@ -119,6 +136,13 @@ const OPENAI_IMAGE_TIMEOUT_MS = 120_000;
 class OpenAIImageGenerator implements ImageGenerator {
   readonly name = 'openai' as const;
 
+  // The model id is a constructor argument so a pinned book can force the model
+  // that actually produced its art (see services/imagePin.ts). It defaults to
+  // the same OPENAI_IMAGE_MODEL || 'gpt-image-1' expression the module-level
+  // constant used to hold — one source of truth, read per construction rather
+  // than once at import.
+  constructor(private readonly model: string = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-1') {}
+
   // Model selection (IV2 Phase 2 — gpt-image-1):
   //   - no references  -> POST /v1/images/generations  (JSON body, UNCHANGED)
   //   - with refs      -> POST /v1/images/edits         (multipart/form-data;
@@ -139,7 +163,7 @@ class OpenAIImageGenerator implements ImageGenerator {
       if (references.length > 0) {
         // Image-input path: gpt-image-1 edit endpoint, multipart form-data.
         const form = new FormData();
-        form.append('model', IMAGE_MODEL);
+        form.append('model', this.model);
         form.append('prompt', prompt);
         form.append('n', '1');
         form.append('size', '1024x1024');
@@ -164,7 +188,7 @@ class OpenAIImageGenerator implements ImageGenerator {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            model: IMAGE_MODEL,
+            model: this.model,
             prompt,
             n: 1,
             size: '1024x1024',
@@ -183,7 +207,7 @@ class OpenAIImageGenerator implements ImageGenerator {
 
     if (!res.ok) {
       const err = await res.text();
-      console.error(`OpenAI image error (${IMAGE_MODEL}):`, err);
+      console.error(`OpenAI image error (${this.model}):`, err);
       const snippet = err.slice(0, 500);
       throw new Error(`OpenAI image API returned ${res.status} ${res.statusText || ''}: ${snippet}`);
     }
@@ -209,28 +233,39 @@ class OpenAIImageGenerator implements ImageGenerator {
   }
 }
 
-// Provider selection, resolved once per call from the environment. The
-// selector env var is IMAGE_PROVIDER and defaults to 'fal' (ADR decision 2).
-// 'openai' resolves to OpenAIImageGenerator; 'fal' (and the default) resolves
-// to FalImageGenerator (raw fetch to Flux Pro 1.1, see providers/fal.ts).
-export function getImageGenerator(): ImageGenerator {
-  const provider = process.env.IMAGE_PROVIDER || 'fal';
+// Provider selection. With NO pin this is unchanged: the selector env var is
+// IMAGE_PROVIDER and defaults to 'fal' (ADR-006 decision 2). 'openai' resolves
+// to OpenAIImageGenerator; 'fal' (and the default) resolves to
+// FalImageGenerator (raw fetch to Flux Pro 1.1, see providers/fal.ts).
+//
+// With a pin, the BOOK decides — IMAGE_PROVIDER no longer governs a book that
+// already has art (partial supersession of ADR-006 dec 2). The pin's model is
+// handed to the generator's constructor so a book drawn on gpt-image-1 in May
+// re-rolls on gpt-image-1, not on whatever today's env happens to default to.
+export function getImageGenerator(pin?: ImagePin): ImageGenerator {
+  const provider = pin?.provider ?? process.env.IMAGE_PROVIDER ?? 'fal';
   switch (provider) {
     case 'openai':
-      return new OpenAIImageGenerator();
+      return new OpenAIImageGenerator(pin?.model);
     case 'fal':
     default:
-      return new FalImageGenerator();
+      return new FalImageGenerator(pin?.model);
   }
 }
 
 // Provider-aware replacement for the literal OPENAI_API_KEY route/service
-// gates. Returns true iff the SELECTED provider's key env var is present:
+// gates. Returns true iff a provider's key env var is present:
 //   provider 'openai' -> !!process.env.OPENAI_API_KEY
 //   provider 'fal'    -> !!process.env.FAL_KEY
-export function isImageGenConfigured(): boolean {
-  const provider = process.env.IMAGE_PROVIDER || 'fal';
-  if (provider === 'openai') {
+//
+// With NO argument this reports on the ENVIRONMENT DEFAULT, exactly as it
+// always has — callers that predate the pin are unaffected. With an argument it
+// reports on THAT provider, which is what lets a route distinguish "nothing is
+// configured" (501) from "this book needs a provider this server doesn't have"
+// (409, wired in Task 5).
+export function isImageGenConfigured(provider?: ImageProvider): boolean {
+  const selected = provider ?? process.env.IMAGE_PROVIDER ?? 'fal';
+  if (selected === 'openai') {
     return !!process.env.OPENAI_API_KEY;
   }
   return !!process.env.FAL_KEY;
@@ -244,8 +279,12 @@ export async function generateIllustration(
   styleDescriptor?: string | null,
   characters?: Character[],
   referenceImages?: string[],
+  opts?: GenerationPin,
 ): Promise<string | null> {
-  if (!isImageGenConfigured()) return null;
+  // Gate on the PINNED provider when there is one: a book pinned to a provider
+  // this server has no key for must return null rather than quietly generating
+  // on the wrong model — that silent fallback is the reported bug.
+  if (!isImageGenConfigured(opts?.pin?.provider)) return null;
 
   const style = styleDescriptor?.trim() || 'Whimsical, colorful, warm, suitable for young children';
   const castPrefix = formatCastPrefix(characters);
@@ -257,7 +296,7 @@ export async function generateIllustration(
   // Forward referenceImages only when present, so callers that pass nothing
   // get the byte-identical no-reference path (regression-safe). The provider
   // ignores empty/absent references in this task.
-  const buffer = await getImageGenerator().generate(prompt, { referenceImages });
+  const buffer = await getImageGenerator(opts?.pin).generate(prompt, { referenceImages });
 
   const dir = join(ILLUSTRATIONS_DIR, bookId);
   await mkdir(dir, { recursive: true });
@@ -414,8 +453,10 @@ export async function generateCharacterPortrait(
   descriptor?: string,
   feedback?: string,
   styleDescriptor?: string | null,
+  opts?: GenerationPin,
 ): Promise<string | null> {
-  if (!isImageGenConfigured()) return null;
+  // See generateIllustration: the pinned provider gates, not the env default.
+  if (!isImageGenConfigured(opts?.pin?.provider)) return null;
 
   const style = styleDescriptor?.trim() || 'Whimsical, colorful, warm, suitable for young children';
   let prompt = formatPortraitPrompt(name, descriptor, style);
@@ -424,7 +465,7 @@ export async function generateCharacterPortrait(
   }
 
   // Prompt-only on purpose — no referenceImages passed (regression-safe path).
-  const buffer = await getImageGenerator().generate(prompt);
+  const buffer = await getImageGenerator(opts?.pin).generate(prompt);
 
   const dir = join(ILLUSTRATIONS_DIR, bookId);
   await mkdir(dir, { recursive: true });
@@ -479,8 +520,10 @@ export async function generateCover(
   styleDescriptor?: string | null,
   characters?: Character[],
   referenceImages?: string[],
+  opts?: GenerationPin,
 ): Promise<string | null> {
-  if (!isImageGenConfigured()) return null;
+  // See generateIllustration: the pinned provider gates, not the env default.
+  if (!isImageGenConfigured(opts?.pin?.provider)) return null;
 
   const style = styleDescriptor?.trim() || 'Whimsical, colorful, warm, suitable for young children';
   const castPrefix = formatCastPrefix(characters);
@@ -488,7 +531,7 @@ export async function generateCover(
 
   // See generateIllustration: forward references only when present; absent/empty
   // keeps the no-reference path byte-identical.
-  const buffer = await getImageGenerator().generate(prompt, { referenceImages });
+  const buffer = await getImageGenerator(opts?.pin).generate(prompt, { referenceImages });
 
   const dir = join(ILLUSTRATIONS_DIR, bookId);
   await mkdir(dir, { recursive: true });
