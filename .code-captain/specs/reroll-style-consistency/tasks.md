@@ -409,6 +409,8 @@ The bare-redo variation directive is the mitigation for "an edit model handed it
 **Depends on:** Task 7
 **Parallel-safe with:** none
 
+**Status:** Done (2026-08-24)
+
 **Files to add or change:**
 - `server/src/routes/books.ts` — build the anchor for targeted re-rolls only
 - `server/src/routes/__tests__/books.test.ts` — extend
