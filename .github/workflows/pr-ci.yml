@@ -105,12 +105,22 @@ jobs:
         working-directory: server
       - run: npm run db:seed && npm run db:seed-demo
         working-directory: server
+      # Key the browser cache on the Playwright version actually installed.
+      # It used to hash e2e/package-lock.json — but e2e is an npm workspace, so
+      # its deps resolve from the ROOT lockfile and nothing ever installs from
+      # e2e/package-lock.json. That file sat at 1.60.0 while the root lockfile
+      # moved to 1.62.1, so the key never changed on a Playwright bump: CI would
+      # restore stale browsers, skip the install because cache-hit was true, and
+      # run the new Playwright against binaries it does not recognise.
+      - name: Resolve installed Playwright version
+        id: pw-version
+        run: echo "version=$(node -p "require('./node_modules/@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
       - name: Cache Playwright browsers
         id: pw-cache
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: pw-${{ runner.os }}-${{ hashFiles('e2e/package-lock.json') }}
+          key: pw-${{ runner.os }}-${{ steps.pw-version.outputs.version }}
       - run: npx playwright install --with-deps chromium
         working-directory: e2e
         if: steps.pw-cache.outputs.cache-hit != 'true'
