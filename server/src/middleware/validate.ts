@@ -92,7 +92,11 @@ export function validate<TReq extends ZodTypeAny, TRes extends ZodTypeAny>(
 }
 
 interface ZodIssueLike {
-  path: (string | number)[];
+  // Zod 4 widened issue paths from `(string | number)[]` to `PropertyKey[]`,
+  // which admits symbols. Join via String() rather than Array.join — an
+  // implicit symbol-to-string conversion throws, and this runs on the error
+  // path of every request, where a throw would be the worst place for one.
+  path: PropertyKey[];
   message: string;
 }
 
@@ -100,7 +104,7 @@ function summarizeIssues(issues: ZodIssueLike[]): string {
   return issues
     .slice(0, 5)
     .map(i => {
-      const path = i.path.length > 0 ? i.path.join('.') : '<root>';
+      const path = i.path.length > 0 ? i.path.map(String).join('.') : '<root>';
       return `${path}: ${i.message}`;
     })
     .join('; ');

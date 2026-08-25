@@ -60,10 +60,9 @@ export type AdminBookMutationResponse = z.infer<typeof AdminBookMutationResponse
 // PUT /api/admin/books/:id/featured
 // ---------------------------------------------------------------------------
 export const AdminBookFeaturedRequestSchema = z.object({
-  is_featured: z.boolean({
-    required_error: 'is_featured must be a boolean',
-    invalid_type_error: 'is_featured must be a boolean',
-  }),
+  // Zod 4 folds required_error + invalid_type_error into one `error`. Both
+  // were already the same string here, so this is a literal translation.
+  is_featured: z.boolean({ error: 'is_featured must be a boolean' }),
 });
 export type AdminBookFeaturedRequest = z.infer<typeof AdminBookFeaturedRequestSchema>;
 
@@ -111,9 +110,10 @@ export type AllowlistResponse = z.infer<typeof AllowlistResponseSchema>;
 
 export const AllowlistAddRequestSchema = z.object({
   email: z
+    // The only field that gave missing and wrong-type their own messages, so
+    // it needs the function form of `error` to keep both intact under Zod 4.
     .string({
-      required_error: 'email is required',
-      invalid_type_error: 'email must be a string',
+      error: issue => (issue.input === undefined ? 'email is required' : 'email must be a string'),
     })
     .trim()
     .min(1, 'email is required')

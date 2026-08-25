@@ -31,7 +31,7 @@ export type CartGetResponse = z.infer<typeof CartGetResponseSchema>;
 // ---------------------------------------------------------------------------
 export const CartAddItemRequestSchema = z.object({
   bookId: z
-    .string({ required_error: 'bookId is required' })
+    .string({ error: 'bookId is required' })
     .min(1, 'bookId is required'),
   quantity: z.number().int().positive().optional().default(1),
 });

@@ -28,7 +28,7 @@
     "prisma": "^5.22.0",
     "react": "^19.2.6",
     "uuid": "^11.1.0",
-    "zod": "^3.23.8"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
