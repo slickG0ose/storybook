@@ -72,10 +72,14 @@ app.get('/api/health', (_req: Request, res: Response) => {
 
 // Final error handler. Express recognises this as an error middleware
 // because of the four-arg signature — do NOT drop `_next` even though
-// it's unused on the response path. Without this, an async-handler
-// rejection that escapes a route's try/catch hangs the request
-// indefinitely (Express 4 doesn't auto-await), and the client sees the
-// `Unexpected end of JSON input` empty-body symptom.
+// it's unused on the response path.
+//
+// Express 5 awaits async handlers and forwards a rejection here, so an
+// error escaping a route's try/catch now lands on this handler and the
+// caller gets a 500 envelope. Under Express 4 the same rejection hung the
+// request indefinitely and the client saw the `Unexpected end of JSON
+// input` empty-body symptom — that failure mode is gone, but this handler
+// is what turns the rejection into a response, so it is still required.
 //
 // We deliberately do NOT leak err.message or err.stack to the client —
 // callers get a generic envelope, the full detail is in the server log.
