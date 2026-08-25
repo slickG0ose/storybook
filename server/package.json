@@ -15,7 +15,7 @@
     "db:gen-postgres-schema": "node prisma/gen-postgres-schema.mjs"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.39.0",
+    "@anthropic-ai/sdk": "^0.120.0",
     "@prisma/client": "^5.22.0",
     "@react-pdf/renderer": "^4.6.1",
     "@storybook/shared": "*",
