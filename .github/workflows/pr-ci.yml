@@ -53,6 +53,16 @@ jobs:
         working-directory: server
       - run: npm test
         working-directory: server
+      # server/ and shared/ have tsconfigs but neither was ever typechecked in
+      # CI — only client/ was, so a type error in either could reach master
+      # unnoticed. Both run here rather than in a new job because renaming or
+      # adding a required check means an admin has to update the `develop-policy`
+      # ruleset, which pins checks by job name. Server must follow
+      # `prisma generate`: its types depend on the generated client.
+      - run: npx tsc --noEmit
+        working-directory: server
+      - run: npx tsc --noEmit
+        working-directory: shared
 
   client-tests:
     name: Client tests (vitest + RTL) + typecheck + lint + build
