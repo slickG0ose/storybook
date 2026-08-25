@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
-    "@prisma/client": "^5.22.0",
+    "@prisma/client": "^6.19.3",
     "@react-pdf/renderer": "^4.6.1",
     "@storybook/shared": "*",
     "@types/multer": "^2.1.0",
@@ -25,7 +25,7 @@
     "express": "^5.2.1",
     "jsonrepair": "^3.14.0",
     "multer": "^2.1.1",
-    "prisma": "^5.22.0",
+    "prisma": "^6.19.3",
     "react": "^19.2.6",
     "uuid": "^11.1.0",
     "zod": "^4.4.3"
