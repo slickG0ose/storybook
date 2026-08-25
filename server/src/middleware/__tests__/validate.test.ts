@@ -37,7 +37,7 @@ describe('validate() middleware', () => {
 
     it('returns 400 with a useful error message when the body is invalid', async () => {
       const Schema = z.object({
-        name: z.string({ required_error: 'name is required' }),
+        name: z.string({ error: 'name is required' }),
       });
       const app = express();
       app.use(express.json());

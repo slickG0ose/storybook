@@ -37,12 +37,12 @@ export type Order = z.infer<typeof OrderSchema>;
 // POST /api/orders — create order from current cart
 // ---------------------------------------------------------------------------
 export const OrderCreateRequestSchema = z.object({
-  sessionId: z.string({ required_error: 'sessionId is required' }).min(1, 'sessionId is required'),
+  sessionId: z.string({ error: 'sessionId is required' }).min(1, 'sessionId is required'),
   customerName: z
-    .string({ required_error: 'customerName is required' })
+    .string({ error: 'customerName is required' })
     .min(1, 'customerName is required'),
   customerEmail: z
-    .string({ required_error: 'customerEmail is required' })
+    .string({ error: 'customerEmail is required' })
     .min(1, 'customerEmail is required'),
 });
 export type OrderCreateRequest = z.infer<typeof OrderCreateRequestSchema>;

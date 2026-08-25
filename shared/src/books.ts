@@ -125,7 +125,7 @@ export type BookDeleteResponse = z.infer<typeof BookDeleteResponseSchema>;
 // ---------------------------------------------------------------------------
 export const BookUpdatePageRequestSchema = z.object({
   illustration_description: z
-    .string({ required_error: 'illustration_description is required' })
+    .string({ error: 'illustration_description is required' })
     .trim()
     .min(1, 'illustration_description is required')
     .max(2000, 'illustration_description must be 2000 characters or fewer'),
@@ -142,7 +142,7 @@ export type BookUpdatePageResponse = z.infer<typeof BookUpdatePageResponseSchema
 // ---------------------------------------------------------------------------
 export const BookReviseRequestSchema = z.object({
   feedback: z
-    .string({ required_error: 'feedback is required' })
+    .string({ error: 'feedback is required' })
     .trim()
     .min(1, 'feedback is required'),
   // 3..15 pages enforced by the handler via clamp; we accept any finite number
@@ -225,7 +225,7 @@ export type IllustrationVersionListResponse = z.infer<typeof IllustrationVersion
 // ---------------------------------------------------------------------------
 export const BookIllustrationRevertRequestSchema = z.object({
   url: z
-    .string({ required_error: 'url is required' })
+    .string({ error: 'url is required' })
     .min(1, 'url is required'),
 });
 export type BookIllustrationRevertRequest = z.infer<typeof BookIllustrationRevertRequestSchema>;

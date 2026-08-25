@@ -10,7 +10,7 @@ import { z } from 'zod';
 // DELETE /api/_test/user-by-email
 export const TestUserDeleteRequestSchema = z.object({
   email: z
-    .string({ required_error: 'email is required' })
+    .string({ error: 'email is required' })
     .min(1, 'email is required'),
 });
 export type TestUserDeleteRequest = z.infer<typeof TestUserDeleteRequestSchema>;
@@ -31,7 +31,7 @@ export type TestUserDeleteResponse = z.infer<typeof TestUserDeleteResponseSchema
 // gate itself — the spec still goes through the real /api/auth/register.
 export const TestAllowEmailRequestSchema = z.object({
   email: z
-    .string({ required_error: 'email is required' })
+    .string({ error: 'email is required' })
     .min(1, 'email is required'),
 });
 export type TestAllowEmailRequest = z.infer<typeof TestAllowEmailRequestSchema>;
