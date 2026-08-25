@@ -18,9 +18,15 @@ import type { ZodSchema, ZodTypeAny } from 'zod';
 // bad deploy. The shape of the request schema is always enforced strictly
 // (returns 400). Response drift is the one we soften in prod.
 //
-// We MUST NOT throw from patchedJson — async route handlers reject and
-// Express 4 does not forward async rejections to the error middleware,
-// which makes Node exit on unhandledRejection and kills the dev server.
+// We do not throw from patchedJson. Under Express 4 this was mandatory: a
+// throw here surfaced as an unhandled rejection, which took the dev server
+// down with it. Express 5 forwards handler rejections to the error
+// middleware in index.ts, so a throw would no longer be fatal — but we
+// still don't, for a second reason that did not go away. patchedJson runs
+// *during* res.json(), so throwing would abandon a response mid-flight and
+// report drift as a generic "Internal server error", losing the message
+// that says which field drifted.
+//
 // Instead we send a 500 envelope using the captured `originalJson` so we
 // don't recurse into the patched version. Loud (visible in console + the
 // request fails) without taking the process down.
