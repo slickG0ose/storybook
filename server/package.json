@@ -21,13 +21,13 @@
     "@storybook/shared": "*",
     "@types/multer": "^2.1.0",
     "cors": "^2.8.5",
-    "dotenv": "^16.4.7",
+    "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "jsonrepair": "^3.14.0",
     "multer": "^2.1.1",
     "prisma": "^5.22.0",
     "react": "^19.2.6",
-    "uuid": "^11.1.0",
+    "uuid": "^14.0.2",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -36,7 +36,6 @@
     "@types/node": "^22.10.0",
     "@types/react": "^19.2.18",
     "@types/supertest": "^7.2.0",
-    "@types/uuid": "^10.0.0",
     "supertest": "^7.2.2",
     "tsx": "^4.19.0",
     "typescript": "^7.0.2",
