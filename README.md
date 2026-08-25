@@ -100,7 +100,7 @@ npm run report           # Open last HTML report
 
 ## Tech Stack
 
-- **Frontend:** React 19, TypeScript 5.8, Vite 8, Tailwind CSS 4, React Router 7, Lucide icons
+- **Frontend:** React 19, TypeScript 7, Vite 8, Tailwind CSS 4, React Router 7, Lucide icons
 - **Backend:** Express 4, TypeScript, tsx runtime, Anthropic SDK, JSON file persistence
 - **Testing:** Vitest, Supertest, React Testing Library, Playwright
 - **Tooling:** Concurrently, ESLint, dotenv

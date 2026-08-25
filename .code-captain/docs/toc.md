@@ -4,7 +4,7 @@
 
 ## Identity
 purpose|AI-powered children's book storefront — browse, create, and purchase personalized stories via Claude AI
-stack|React 19 / Vite 8 / Tailwind 4 / Express 4 / Prisma 5 (SQLite) / Anthropic SDK / TypeScript 5.8
+stack|React 19 / Vite 8 / Tailwind 4 / Express 4 / Prisma 5 (SQLite) / Anthropic SDK / TypeScript 7 (native)
 type|Full-stack web app (SPA + REST API)
 entry|server/src/index.ts, client/src/main.tsx
 build|cd client && npm run build
