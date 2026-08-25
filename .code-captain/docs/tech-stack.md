@@ -11,7 +11,7 @@
 | ORM | Prisma | 5.22 | SQLite via @prisma/client |
 | AI | Anthropic SDK | 0.39 | Claude API for story generation |
 | Validation | Zod | 3.23 | Shared schemas, request/response validation |
-| Language | TypeScript | 5.7–5.8 | Across all workspaces |
+| Language | TypeScript | 7.0 | Native (Go) compiler. Across all workspaces; `tsc` ships per-platform binaries as optional deps |
 | Monorepo | npm workspaces | — | shared, server, client, e2e |
 
 ## Dependencies (top 15 by importance)
