@@ -555,3 +555,66 @@ describe('BookSpread — orphaned illustration recovery', () => {
     expect(screen.queryByTestId('orphan-restore')).not.toBeInTheDocument()
   })
 })
+
+/**
+ * The re-roll style hint (mitigation B, Task 9). It sits with the re-roll controls and is
+ * gated on exactly the same three conditions they are — owner, draft, and a page that
+ * already has art — so the assertions below pin each condition separately rather than
+ * only the happy path.
+ */
+const illustratedBook: BookWithPages = {
+  ...mockBook,
+  pages: mockBook.pages.map(p => ({ ...p, illustration_url: `/illustrations/book-1/page-${p.page_number}.png` })),
+}
+
+/** The reader opens on the cover; the hint lives on a story page. */
+async function goToFirstStoryPage(): Promise<void> {
+  fireEvent.click(screen.getByRole('button', { name: 'Next spread' }))
+  await waitFor(() => expect(screen.getByText('Page 1 of 2')).toBeInTheDocument())
+}
+
+describe('BookSpread — re-roll style hint', () => {
+  it('renders the hint for an owner on a draft book with an illustrated page', async () => {
+    renderSpread({ book: illustratedBook, isOwner: true, isDraft: true })
+    await goToFirstStoryPage()
+
+    expect(screen.getByText('What to change on re-roll')).toBeInTheDocument()
+    expect(screen.getByText(/re-rolls match this book/i)).toBeInTheDocument()
+  })
+
+  it('pairs every colour class on the hint with a dark-mode partner', async () => {
+    renderSpread({ book: illustratedBook, isOwner: true, isDraft: true })
+    await goToFirstStoryPage()
+
+    const hint = screen.getByText(/re-rolls match this book/i)
+    expect(hint.className).toContain('text-gray-500')
+    expect(hint.className).toContain('dark:text-gray-400')
+  })
+
+  it('does not render the hint for a non-owner', async () => {
+    renderSpread({ book: illustratedBook, isOwner: false, isDraft: true })
+    await goToFirstStoryPage()
+
+    expect(screen.queryByText('What to change on re-roll')).not.toBeInTheDocument()
+    expect(screen.queryByText(/re-rolls match this book/i)).not.toBeInTheDocument()
+  })
+
+  it('does not render the hint on a published book', async () => {
+    renderSpread({
+      book: { ...illustratedBook, status: 'published' },
+      isOwner: true,
+      isDraft: false,
+    })
+    await goToFirstStoryPage()
+
+    expect(screen.queryByText('What to change on re-roll')).not.toBeInTheDocument()
+    expect(screen.queryByText(/re-rolls match this book/i)).not.toBeInTheDocument()
+  })
+
+  it('does not render the hint on a page that has no illustration yet', async () => {
+    renderSpread({ book: mockBook, isOwner: true, isDraft: true })
+    await goToFirstStoryPage()
+
+    expect(screen.queryByText(/re-rolls match this book/i)).not.toBeInTheDocument()
+  })
+})

@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';
+import { mkdir, writeFile, rm, rmdir } from 'fs/promises';
+import { join } from 'path';
 import type { Express } from 'express';
 import { createTestApp, resetDatabase, allowEmail } from '../../__tests__/setup';
 import prisma from '../../db/prisma';
@@ -758,13 +760,64 @@ describe('Books API routes', () => {
       process.env.OPENAI_API_KEY = 'sk-test';
     });
 
-    afterEach(() => {
+    afterEach(async () => {
       for (const k of IMAGE_ENV_VARS) {
         const original = originalImageEnv[k];
         if (original === undefined) delete process.env[k];
         else process.env[k] = original;
       }
+      vi.unstubAllEnvs();
+      // Remove only the anchor fixtures this suite wrote — never the whole
+      // book directory, which on a dev machine holds real generated art.
+      for (const file of anchorFixtures) await rm(file, { force: true });
+      anchorFixtures.length = 0;
+      try {
+        await rmdir(ANCHOR_DIR);
+      } catch {
+        // Non-empty (real art lives here) or never created — either is fine.
+      }
     });
+
+    // ---------------------------------------------------------------------
+    // Style-anchor fixtures (spec: reroll-style-consistency, mitigation B).
+    // resolveStyleAnchor is a passthrough to the real implementation and stats
+    // the real disk on purpose, so a page that is supposed to anchor needs
+    // actual bytes behind its illustration_url. A page whose URL has no file
+    // must NOT anchor — that is the restored-from-another-machine case.
+    // ---------------------------------------------------------------------
+    const ANCHOR_DIR = join(
+      import.meta.dirname, '../../../public/illustrations', 'luna-star-garden',
+    );
+    // 1x1 transparent PNG — the bytes are never read by these tests, only stat'd.
+    const FAKE_PNG_B64 =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+    const anchorFixtures: string[] = [];
+
+    /**
+     * Give a page an illustration_url with real bytes behind it, and pin the
+     * book to the provider this suite has a key for. The pin is not incidental:
+     * a book with art is pinned after mitigation A, and without it the fixture
+     * file's mtime (today, i.e. post-cutover) would infer `fal`, which this
+     * suite deliberately has no FAL_KEY for — every anchor test would 409.
+     * Returns the URL.
+     */
+    async function illustratePageOnDisk(pageNumber: number): Promise<string> {
+      const filename = `page-${pageNumber}.png`;
+      await mkdir(ANCHOR_DIR, { recursive: true });
+      const absPath = join(ANCHOR_DIR, filename);
+      await writeFile(absPath, Buffer.from(FAKE_PNG_B64, 'base64'));
+      anchorFixtures.push(absPath);
+      const url = `/illustrations/luna-star-garden/${filename}`;
+      await prisma.page.updateMany({
+        where: { book_id: 'luna-star-garden', page_number: pageNumber },
+        data: { illustration_url: url },
+      });
+      await prisma.book.update({
+        where: { id: 'luna-star-garden' },
+        data: { image_provider: 'openai', image_model: 'gpt-image-1' },
+      });
+      return url;
+    }
 
     // Helper: claim luna-star-garden as the authed user's draft book so the
     // route's ownership check passes. Returns the token.
@@ -870,11 +923,13 @@ describe('Books API routes', () => {
 
     // IV2 Phase 2 — reference plumbing through /illustrate.
     // generateIllustration's signature is
-    //   (bookId, pageNumber, description, feedback, styleDescriptor, characters, referenceImages)
-    // so referenceImages is the 7th positional arg → mock.calls[n][6].
+    //   (bookId, pageNumber, description, feedback, styleDescriptor, characters, referenceImages, opts)
+    // so referenceImages is the 7th positional arg → mock.calls[n][6], and the
+    // trailing options object (pin + styleAnchor) is the 8th → mock.calls[n][7].
     const REF_IMAGES_ARG = 6;
+    const OPTS_ARG = 7;
 
-    it('threads required-cast portrait refs as referenceImages when portraits exist', async () => {
+    it('threads the style anchor first, then required-cast portrait refs (3 refs)', async () => {
       const token = await setupOwnedDraft();
       // Primary + antagonist have portraits; a supporting character with a
       // portrait must NOT be forced as a reference (spec: required = primary +
@@ -891,6 +946,11 @@ describe('Books API routes', () => {
           ]),
         },
       });
+      // Page 2 already has art, so this targeted re-roll anchors on it. Anchor
+      // + 2 required portraits is exactly MAX_REFERENCE_IMAGES — nothing is
+      // truncated, and the anchor holds slot 0 because the prompt names it by
+      // position ("Reference image 1").
+      const anchorUrl = await illustratePageOnDisk(2);
 
       mockGenerateIllustration.mockResolvedValue('/illustrations/luna-star-garden/page.png');
 
@@ -902,9 +962,99 @@ describe('Books API routes', () => {
       expect(res.status).toBe(200);
       expect(mockGenerateIllustration).toHaveBeenCalledTimes(1);
       const refs = mockGenerateIllustration.mock.calls[0][REF_IMAGES_ARG] as string[];
-      expect(refs).toEqual([primaryPortrait, antagonistPortrait]);
+      expect(refs).toEqual([anchorUrl, primaryPortrait, antagonistPortrait]);
       // The supporting character's portrait is intentionally excluded.
       expect(refs).not.toContain('/illustrations/luna-star-garden/portrait-1002.png');
+      // The generator is told which reference is the anchor, not left to infer
+      // it from position — that flag is what switches the prompt clauses on.
+      expect(mockGenerateIllustration.mock.calls[0][OPTS_ARG]).toMatchObject({
+        styleAnchor: anchorUrl,
+      });
+    });
+
+    it("anchors a targeted re-roll on the page's own existing illustration", async () => {
+      const token = await setupOwnedDraft();
+      // No portraits on this book, so the anchor is the only reference — the
+      // narrow case the mitigation exists for: re-rolling one page of a book
+      // whose art already has a style to match.
+      const anchorUrl = await illustratePageOnDisk(4);
+
+      mockGenerateIllustration.mockResolvedValue('/illustrations/luna-star-garden/page-4-v2.png');
+
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/illustrate')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ pageNumber: 4, feedback: 'more stars in the sky' });
+
+      expect(res.status).toBe(200);
+      expect(mockGenerateIllustration).toHaveBeenCalledTimes(1);
+      expect(mockGenerateIllustration.mock.calls[0][REF_IMAGES_ARG]).toEqual([anchorUrl]);
+      expect(mockGenerateIllustration.mock.calls[0][OPTS_ARG]).toMatchObject({
+        styleAnchor: anchorUrl,
+      });
+    });
+
+    it('drops the anchor (no 500) when the page URL has no file behind it', async () => {
+      const token = await setupOwnedDraft();
+      // A book restored from another machine: the row remembers a URL, the
+      // bytes never came along. Both reference resolvers throw on a missing
+      // file, so failing to drop this anchor turns a re-roll into a 500.
+      await prisma.page.updateMany({
+        where: { book_id: 'luna-star-garden', page_number: 2 },
+        data: { illustration_url: '/illustrations/luna-star-garden/page-2-gone.png' },
+      });
+
+      mockGenerateIllustration.mockResolvedValue('/illustrations/luna-star-garden/page-2-v2.png');
+
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/illustrate')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ pageNumber: 2 });
+
+      expect(res.status).toBe(200);
+      // Degrades to today's prompt-only path rather than failing the request.
+      expect(mockGenerateIllustration.mock.calls[0][REF_IMAGES_ARG]).toBeUndefined();
+      expect(mockGenerateIllustration.mock.calls[0][OPTS_ARG]).toMatchObject({ styleAnchor: null });
+    });
+
+    it('never anchors on a bulk illustrate, even when the book already has art', async () => {
+      const token = await setupOwnedDraft();
+      const primaryPortrait = '/illustrations/luna-star-garden/portrait-1000.png';
+      await prisma.book.update({
+        where: { id: 'luna-star-garden' },
+        data: {
+          characters_json: JSON.stringify([
+            { role: 'primary', name: 'Luna', portrait_url: primaryPortrait },
+          ]),
+        },
+      });
+      // Page 2 has real art on disk. A bulk run skips it (it only targets pages
+      // with no illustration_url), and must not borrow it as an anchor for the
+      // pages it does draw — those are new art, not re-rolls. Note the route's
+      // `pageNumber ?` gate is belt-and-braces: with today's filter every bulk
+      // page has a null URL, so this asserts the outcome rather than the gate.
+      await illustratePageOnDisk(2);
+      // 4 openai-priced pages at 25c each would trip the 50c daily cap and turn
+      // this into a partial-result test; the cap is not what is under test here.
+      vi.stubEnv('QUOTA_DAILY_PER_USER_CENTS', '1000');
+
+      mockGenerateIllustration.mockResolvedValue('/illustrations/luna-star-garden/page.png');
+
+      const res = await request(app)
+        .post('/api/books/luna-star-garden/illustrate')
+        .set('Authorization', `Bearer ${token}`)
+        .send({});
+
+      expect(res.status).toBe(200);
+      // 5 seeded pages minus the already-illustrated page 2.
+      expect(mockGenerateIllustration).toHaveBeenCalledTimes(4);
+      for (const call of mockGenerateIllustration.mock.calls) {
+        expect(call[1]).not.toBe(2);
+        // Portrait refs still ride every page (unchanged bulk behaviour)...
+        expect(call[REF_IMAGES_ARG]).toEqual([primaryPortrait]);
+        // ...but no anchor, so the prompt stays byte-identical to today's.
+        expect(call[OPTS_ARG]).toMatchObject({ styleAnchor: null });
+      }
     });
 
     it('passes only the primary portrait when antagonist has none (single ref)', async () => {
@@ -949,6 +1099,9 @@ describe('Books API routes', () => {
       // No references threaded → undefined, so the provider stays on the
       // prompt-only (Flux Pro 1.1 / gpt-image-1 generations) path.
       expect(mockGenerateIllustration.mock.calls[0][REF_IMAGES_ARG]).toBeUndefined();
+      // Page 1 has never been illustrated, so a targeted re-roll of it has
+      // nothing to anchor on either — references AND prompt match today's.
+      expect(mockGenerateIllustration.mock.calls[0][OPTS_ARG]).toMatchObject({ styleAnchor: null });
     });
 
     it('returns 500 with a non-empty JSON error body when generation throws', async () => {
@@ -976,10 +1129,7 @@ describe('Books API routes', () => {
 
     // ---------------------------------------------------------------------
     // Per-book image pin (spec: reroll-style-consistency, mitigation A).
-    // generateIllustration's trailing options object is the 8th positional
-    // arg → mock.calls[n][7].
     // ---------------------------------------------------------------------
-    const OPTS_ARG = 7;
 
     it('pins image_provider and image_model on the illustrate response (wire shape)', async () => {
       const token = await setupOwnedDraft();

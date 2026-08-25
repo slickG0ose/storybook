@@ -317,6 +317,8 @@ server. Re-rolling on a different image model would not match the rest of the bo
 **Depends on:** Task 5
 **Parallel-safe with:** none
 
+**Status:** Done (2026-08-24)
+
 **Files to add or change:**
 - `server/src/services/illustrations.ts` — anchor resolution + reference composition
 - `server/src/services/__tests__/illustrations.test.ts` — extend
@@ -355,6 +357,8 @@ export function composeReferenceImages(styleAnchor: string | null, portraitRefs:
 **Zone:** server
 **Depends on:** Task 6
 **Parallel-safe with:** none
+
+**Status:** Done (2026-08-24)
 
 **Files to add or change:**
 - `server/src/services/illustrations.ts` — `generateIllustration` prompt assembly
@@ -405,6 +409,8 @@ The bare-redo variation directive is the mitigation for "an edit model handed it
 **Depends on:** Task 7
 **Parallel-safe with:** none
 
+**Status:** Done (2026-08-24)
+
 **Files to add or change:**
 - `server/src/routes/books.ts` — build the anchor for targeted re-rolls only
 - `server/src/routes/__tests__/books.test.ts` — extend
@@ -448,6 +454,8 @@ const url = await generateIllustration(
 **Depends on:** Task 8
 **Parallel-safe with:** none
 
+**Status:** Done (2026-08-24)
+
 **Files to add or change:**
 - `client/src/components/BookSpread.tsx` — one hint line in `PageIllustration`, under the "What to change on re-roll" label (around line 703)
 - `client/src/components/__tests__/BookSpread.test.tsx` — extend
@@ -472,6 +480,8 @@ No fetch change: `handleIllustrate` in `BookDetail.tsx` already renders any `{ e
 ---
 
 ### Task 10 — Pre-merge follow-ups
+
+**Status:** Done (2026-08-24)
 
 **Zone:** docs (harness) · **Depends on:** none (run last)
 

@@ -61,6 +61,97 @@ export function collectRequiredPortraitRefs(characters?: Character[]): string[] 
     .map(c => c.portrait_url as string);
 }
 
+// Hard ceiling on how many reference images a single generation request may
+// carry. Precedence is: the style anchor at index 0, required portraits after
+// (ADR-013, extending ADR-007 decisions 4 and 7).
+//
+// 3 is OUR ceiling, not a published Fal limit: the required cast is at most
+// primary + antagonist (collectRequiredPortraitRefs above), so anchor + 2
+// portraits is the natural maximum. Truncation therefore only bites when a cast
+// declares multiple primaries, and composeReferenceImages warns when it does.
+// If fal-ai/flux-pro/kontext/multi turns out to accept fewer, this constant is
+// the single place to change.
+export const MAX_REFERENCE_IMAGES = 3;
+
+// Resolve a page's existing illustration into a usable STYLE ANCHOR: the web
+// path back, iff it is non-empty AND a real file exists behind it on disk.
+//
+// Why the existence check is load-bearing: a book restored from another machine
+// (or a dev.db copied without public/illustrations/) can carry an
+// illustration_url with no bytes behind it. Both reference resolvers —
+// toDataUri() on the Fal path and resolveReferenceBytes() on the OpenAI path —
+// THROW on a missing file, which would turn a re-roll into a 500. Losing the
+// anchor degrades the re-roll to today's prompt-only behaviour, which is a
+// strictly better outcome than failing the request, so this drops the anchor
+// and warns rather than propagating.
+//
+// It never throws: every failure mode (missing file, unreadable directory, a
+// path that is a directory rather than a file, a URL that is not an
+// /illustrations/ web path at all) returns null.
+export async function resolveStyleAnchor(
+  illustrationUrl: string | null | undefined,
+): Promise<string | null> {
+  if (!illustrationUrl || illustrationUrl.trim() === '') return null;
+
+  // Same web-path -> on-disk mapping the reference resolvers use, so "exists"
+  // here means "the resolver will find it" and not merely "some file exists".
+  const rel = illustrationUrl.replace(/^\/?illustrations\//, '');
+  const absPath = join(ILLUSTRATIONS_DIR, rel);
+
+  try {
+    const s = await stat(absPath);
+    if (!s.isFile()) {
+      console.warn(
+        `Style anchor is not a file, dropping it: ${illustrationUrl} (resolved to ${absPath})`,
+      );
+      return null;
+    }
+  } catch {
+    console.warn(
+      `Style anchor image not found on disk, dropping it: ${illustrationUrl} (resolved to ${absPath})`,
+    );
+    return null;
+  }
+
+  return illustrationUrl;
+}
+
+// Reference precedence for a generation request: the style anchor first, then
+// the required character portraits, capped at MAX_REFERENCE_IMAGES.
+//
+// The anchor goes at index 0 because the prompt refers to it by position
+// ("Reference image 1 is an existing illustration from this same book") — see
+// generateIllustration's anchor-aware prompt assembly. It also means truncation
+// can never drop the anchor, which is the reference that carries the style.
+//
+// REGRESSION BOUNDARY (ADR-006 dec 3 / ADR-007 dec 3): with no anchor this is a
+// pass-through of the portrait refs, so an anchor-less call is byte-identical to
+// today. With neither it returns an EMPTY ARRAY — and callers must keep mapping
+// `[]` to `undefined` before handing it to generateIllustration/generateCover,
+// exactly as routes/books.ts and routes/generate.ts already do. Both generators
+// treat `undefined` and `[]` identically (prompt-only), so the request bytes are
+// the same either way; the distinction is preserved because the route tests
+// assert `referenceImages` is `undefined` on the no-reference path, and that
+// assertion is the fence around the regression boundary.
+export function composeReferenceImages(
+  styleAnchor: string | null,
+  portraitRefs: string[],
+): string[] {
+  const refs = styleAnchor ? [styleAnchor, ...portraitRefs] : [...portraitRefs];
+
+  if (refs.length > MAX_REFERENCE_IMAGES) {
+    console.warn(
+      `Reference images (${refs.length}) exceed MAX_REFERENCE_IMAGES ` +
+      `(${MAX_REFERENCE_IMAGES}); keeping the style anchor and the first ` +
+      `${MAX_REFERENCE_IMAGES - (styleAnchor ? 1 : 0)} portrait(s), dropping ` +
+      `${refs.length - MAX_REFERENCE_IMAGES}.`,
+    );
+    return refs.slice(0, MAX_REFERENCE_IMAGES);
+  }
+
+  return refs;
+}
+
 function formatCastPrefix(characters?: Character[]): string {
   if (!characters || characters.length === 0) return '';
   const cast = characters
@@ -96,9 +187,10 @@ export interface ImageGenOptions {
 //   pin         which provider + base model serves THIS book. Resolved by
 //               services/imagePin.ts. Absent = the environment default, which
 //               is exactly today's behaviour.
-//   styleAnchor the page's own existing illustration, used to shape the prompt.
-//               Threaded here but IGNORED until Task 7 — the no-anchor path
-//               must stay byte-identical (ADR-006 dec 3 / ADR-007 dec 3).
+//   styleAnchor the page's own existing illustration (reference slot 0). When
+//               set, generateIllustration adds the anchor prompt clauses; when
+//               absent the prompt is byte-identical to today's, which is the
+//               regression boundary (ADR-006 dec 3 / ADR-007 dec 3).
 export interface GenerationPin {
   pin?: ImagePin;
   styleAnchor?: string | null;
@@ -296,8 +388,44 @@ export async function generateIllustration(
   const style = styleDescriptor?.trim() || 'Whimsical, colorful, warm, suitable for young children';
   const castPrefix = formatCastPrefix(characters);
   let prompt = `${castPrefix}Children's book illustration, ${description}. ${style}. No text or words in the image.`;
+
+  // Mitigation B (ADR-013): shape the prompt around the page's own existing
+  // illustration when the route passes one as the style anchor. EVERY clause
+  // below is gated on `styleAnchor`, so a call without one produces a prompt
+  // byte-identical to today's — that is the regression boundary from ADR-006
+  // dec 3 / ADR-007 dec 3, not a nicety.
+  const styleAnchor = opts?.styleAnchor ?? null;
+  // How many of the references are character portraits, derived from what the
+  // caller actually passed rather than by re-deriving cast state here:
+  // composeReferenceImages() puts the anchor at slot 0 and the required
+  // portraits after it, so everything that is not the anchor is a portrait.
+  const portraitCount = styleAnchor
+    ? (referenceImages ?? []).filter(ref => ref !== styleAnchor).length
+    : 0;
+
+  if (styleAnchor) {
+    prompt += ` Reference image 1 is an existing illustration from this same book:`
+            + ` match its art style, colour palette, linework, shading, and character designs exactly.`;
+    if (portraitCount > 0) {
+      prompt += ` The remaining reference images are canonical character portraits.`;
+    }
+  }
   if (feedback) {
     prompt += ` Revision instructions: ${feedback}`;
+  }
+  // The two anchor clauses are MUTUALLY EXCLUSIVE. With feedback, Kontext is
+  // doing what it is built for: change one thing, hold everything else. Without
+  // feedback the opposite is wanted — an edit model handed its own output
+  // returns a near-copy, and the user has just paid for the same picture, so a
+  // bare re-roll asks explicitly for a fresh composition. A prompt carrying
+  // both clauses would tell the model to preserve and vary at the same time.
+  if (styleAnchor && feedback) {
+    prompt += ` Change only what the revision instructions ask for; keep the art style,`
+            + ` palette and overall composition as in reference image 1.`;
+  } else if (styleAnchor) {
+    prompt += ` Produce a fresh interpretation of this scene — a different composition,`
+            + ` pose and camera angle from reference image 1 — while keeping its art style,`
+            + ` palette and character designs identical.`;
   }
 
   // Forward referenceImages only when present, so callers that pass nothing

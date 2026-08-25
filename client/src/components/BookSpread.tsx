@@ -718,6 +718,15 @@ function PageIllustration({
             >
               What to change on re-roll
             </label>
+            {/*
+             * The re-roll is anchored on this page's existing art and runs on the model
+             * the book was originally illustrated with, so a redo keeps the book's look
+             * rather than adopting today's default. Say so, because the visible effect is
+             * that a bare "Redo" now returns something closer to what is already there.
+             */}
+            <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-1">
+              Re-rolls match this book&rsquo;s original art style.
+            </p>
             <textarea
               id={`redo-feedback-${page.page_number}`}
               value={feedback}

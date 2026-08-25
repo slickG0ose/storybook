@@ -39,6 +39,8 @@ import {
   listIllustrationVersions,
   collectRequiredPortraitRefs,
   isImageGenConfigured,
+  resolveStyleAnchor,
+  composeReferenceImages,
 } from '../services/illustrations';
 import { resolveAndPinImagePin, ensureBookPinned, pinnedProviderUnavailableError } from '../services/imagePin';
 import { parseAiJson } from '../services/parseAiJson';
@@ -716,11 +718,13 @@ router.post(
     // IV2 Phase 2: collect the required cast's portrait references (primary +
     // antagonist with a portrait_url) and pass them to every page so characters
     // stay consistent. Phase 2 has no per-page character mapping — the same refs
-    // ride every page. When no required character has a portrait yet, refs is
-    // empty and we pass `undefined`, which keeps generateIllustration on the
-    // byte-identical prompt-only path (no 403, no regression vs. IV1/today).
+    // ride every page. Resolved once, out of the loop, because they are a
+    // property of the book's cast; the style anchor is per page and is resolved
+    // inside the loop below. When no required character has a portrait yet and
+    // there is no anchor, the composed list is empty and the call passes
+    // `undefined`, keeping generateIllustration on the byte-identical
+    // prompt-only path (no 403, no regression vs. IV1/today).
     const portraitRefs = collectRequiredPortraitRefs(hydratedBook.characters);
-    const referenceImages = portraitRefs.length > 0 ? portraitRefs : undefined;
 
     // spendGate reserved only the first image. This is a loop over N paid
     // calls, so quota is re-checked per iteration and charged per success.
@@ -744,6 +748,23 @@ router.post(
           break;
         }
 
+        // Mitigation B (ADR-013): anchor the generation on THIS page's own
+        // existing illustration, resolved per page inside the loop so the
+        // anchor is always the art the user is looking at rather than some
+        // other page's.
+        //
+        // TARGETED RE-ROLLS ONLY. A bulk illustrate (no pageNumber) selects
+        // pages with no illustration_url by definition, so there is nothing to
+        // anchor on; gating on pageNumber says that explicitly instead of
+        // relying on the filter above to keep being written that way.
+        //
+        // resolveStyleAnchor returns null when the URL has no bytes behind it,
+        // so a book restored without its images degrades to the prompt-only
+        // path rather than 500ing — do not "improve" this by reading
+        // page.illustration_url directly.
+        const styleAnchor = pageNumber ? await resolveStyleAnchor(page.illustration_url) : null;
+        const refs = composeReferenceImages(styleAnchor, portraitRefs);
+
         const url = await generateIllustration(
           book.id,
           page.page_number,
@@ -751,8 +772,10 @@ router.post(
           pageNumber ? feedback : undefined,
           book.style_descriptor,
           hydratedBook.characters,
-          referenceImages,
-          { pin },
+          // `[]` -> undefined keeps the no-reference call byte-identical to
+          // today's prompt-only path (the route tests pin `undefined` here).
+          refs.length > 0 ? refs : undefined,
+          { pin, styleAnchor },
         );
 
         if (url) {
