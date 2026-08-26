@@ -1,7 +1,7 @@
 # Home hero visual — task plan
 
 > Spec: [spec.md](spec.md)
-> Status: Draft
+> Status: Complete — all 8 tasks Done (2026-08-26)
 > Last updated: 2026-08-25
 
 ## Overview
@@ -438,6 +438,11 @@ is resolved either way, and `notes.md` reflects what shipped.
 ### Task 8 — Pre-merge follow-ups
 
 **Zone:** docs (harness) · **Depends on:** none (run last)
+
+**Status:** Done (2026-08-26). ADR-014 written; #128, #129, #130 filed; #127 filed earlier
+in the session; `adr-tracking-check hero-visual` reports 5 items, all tracked, zero
+orphaned. The PR body carries the spec link, agent ownership, and the explicit
+no-wire-shape statement.
 
 For each ADR-worthy item in the spec, ensure exactly one tracking action exists — a
 matching ADR, a linked issue, or an explicit `Deferred:` line with reasoning.

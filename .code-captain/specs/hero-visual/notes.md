@@ -1,18 +1,32 @@
-### agent/feat/hero-visual — 2026-08-25
+### agent/feat/hero-visual — 2026-08-25 → 2026-08-26
 
-**Issue:** #125 — Home hero has no real visual; it is text over a gradient. Absorbs #118 (centre-symmetry).
-**Spec:** pending — @architect not yet dispatched
+**Issue:** #125 — Home hero had no real visual; it was text over a gradient. Absorbed #118 (centre-symmetry).
+**Spec:** [spec.md](spec.md) · **Plan:** [tasks.md](tasks.md) · **ADR:** ADR-014
+**Outcome:** shipped. 8 of 8 tasks Done. Commit `d2c788a`.
 
-**Source:** `design-taste-frontend` skill audit, section 4.8. Companion finding filed as #126 (self-host webfonts), not in this branch.
+**Source:** `design-taste-frontend` skill audit, section 4.8 ("text + gradient blob is not a hero"). Companion finding filed as #126 (self-host webfonts), deliberately not in this branch.
 
-**Plan**
-- [ ] (placeholder — architect fills this in as tasks.md)
+## What actually landed
 
-**Known constraints going in**
-- `client/src/pages/Home.tsx:201-221` is the hero block.
-- Palette tokens are already settled in `client/src/index.css` `@theme`. Purple is the action accent, amber is brand chrome and selected-state. The hero art must not introduce a third accent.
-- Both themes required (CLAUDE.md done-criterion #2). Art has to read on cream `#fffbf0` and on `gray-900` `#1b1714`.
-- Reserve the image box; CLS budget is real since this is above the fold.
-- **Ruled 2026-08-25:** art comes from the already-seeded book, not a generated asset. Source is "A Spot for Sunny" at `server/public/illustrations/b2fa23cf-3156-4b89-83e7-82d98c32c8b7/` (cover + 5 pages, several with -v2/-v3/-v4 revisions).
-- **Every source file is a ~2.2 MB PNG.** A raw one in the hero would blow the LCP budget that #126 exists to protect. The spec must derive an optimized, responsive web asset.
-- Static single image for now. Rotation (reader's own characters, or a best-of pool) is #127, blocked on this landing.
+- **The art:** `page-4-v2.png` from the seeded "A Spot for Sunny" — Mira and Sunny on the bench. Derived once by hand into two committed WebP variants at native 1:1, 960 and 480, in `client/src/assets/hero/`.
+- **Bytes:** 144,238 + 29,566 + a 4,359-byte README = 178,163 total, against a 200 KB cap. Largest single file 140.9 KB against a 150 KB cap.
+- **Encoder:** `npx -y sharp-cli`, quality **72** (not the spec's nominal 75) at `--effort 6`. Nothing entered `package.json`. Reasoning in ADR-014 and in the asset README.
+- **Composition:** split left-text / right-art at `lg`, single centred column below with the art last in a fixed DOM order. The mat (`bg-white dark:bg-gray-800`, `rounded-[24px]`, `shadow-card`, `ring-gray-200 dark:ring-gray-700`) is the dark-mode treatment.
+- **Guards:** `heroAsset.test.ts` fails on any `.png`, any file over 150 KB, or a directory total over 200 KB. `pwa.config.ts` precaches `webp` so offline Home is not a broken box.
+
+## Rulings made during the work
+
+- **Seeded art, not generated** (repo owner, 2026-08-25). Cheaper, spends no illustration quota, honest about product output, and avoids pinning the hero to whichever image model made it.
+- **No dark-mode brightness filter** (repo owner, 2026-08-26, after reviewing both themes on a running dev server). Verdict was "does not glare, but pretty vivid and pops a bit"; "I wouldn't adjust it much if any." Recorded as considered-and-declined, not overlooked. The knob is one class on the `<img>` — reopening is cheap.
+- **1:1 locked deliberately** so #127 can swap any book page in without re-deciding aspect ratio.
+
+## Traps found, worth not re-deriving
+
+- **`page-4-v4.png` renders Sunny as a golden retriever** — the exact defect the v2 feedback string was written to correct. The `-v3`/`-v4` files are orphaned revisions the seed does not reference. The highest version number is the wrong pick here.
+- **`new URL('...', import.meta.url)` throws under Vitest.** Vite's `asset-import-meta-url` transform rewrites it to an `http://` URL, so `fileURLToPath` fails. Use `join(dirname(fileURLToPath(import.meta.url)), ...)`. Now also in `docs/conventions/testing.md`.
+- **`reuseExistingServer: !CI` can run e2e against the wrong code.** A dev server from another checkout on :5173 will be silently reused. Filed as #130.
+- **`client npm run lint` lints exactly one file** — the config matches only `**/*.{js,jsx}` and the client is TypeScript. Filed as #129.
+
+## Follow-ups filed
+
+#126 (self-host webfonts) · #127 (rotate hero art, blocked on this) · #128 (H1 title case) · #129 (client lint) · #130 (e2e hardcoded ports)

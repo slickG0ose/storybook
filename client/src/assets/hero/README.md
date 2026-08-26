@@ -2,7 +2,7 @@
 
 The two `.webp` files in this directory are **derived, committed artifacts**. There is no
 build step and no image pipeline dependency: derivation was run once by hand with the
-command recorded below, and the outputs were committed. See ADR-013 and
+command recorded below, and the outputs were committed. See ADR-014 and
 `.code-captain/specs/hero-visual/spec.md`.
 
 ## Source

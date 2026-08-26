@@ -1,6 +1,6 @@
 # Home hero visual — real illustration, asymmetric composition
 
-> Status: Draft
+> Status: Accepted
 > Last updated: 2026-08-25
 > Backlog: [#125](https://github.com/slickG0ose/storybook/issues/125) (closes [#118](https://github.com/slickG0ose/storybook/issues/118))
 
