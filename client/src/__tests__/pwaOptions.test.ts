@@ -53,6 +53,19 @@ describe('pwaOptions', () => {
     expect(pwaOptions.devOptions?.enabled).toBe(false)
   })
 
+  it('precaches the hero image extension', () => {
+    // Why the extension list matters: the Home hero is a bundled WebP rendered above the
+    // fold. globPatterns IS the precache manifest — an extension absent from it is never
+    // cached, so an offline Home renders a broken image box instead of the artwork.
+    // Parsed rather than substring-matched so this fails if `webp` is dropped, and does
+    // not fight a future addition (e.g. the deferred AVIF variants).
+    const globPatterns = pwaOptions.workbox?.globPatterns ?? []
+    const precachedExtensions = globPatterns.flatMap(
+      pattern => pattern.match(/\{([^}]*)\}/)?.[1]?.split(',') ?? [],
+    )
+    expect(precachedExtensions).toContain('webp')
+  })
+
   it('excludes /api/ and /illustrations/ from the navigation fallback', () => {
     const denylist = pwaOptions.workbox?.navigateFallbackDenylist ?? []
     expect(pwaOptions.workbox?.navigateFallback).toBe('index.html')

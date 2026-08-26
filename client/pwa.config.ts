@@ -30,7 +30,11 @@ export const pwaOptions: Partial<VitePWAOptions> = {
     ],
   },
   workbox: {
-    globPatterns: ['**/*.{js,css,html,svg,woff2}'],
+    // `webp` is load-bearing, not incidental: the Home hero is a bundled WebP above the
+    // fold (client/src/assets/hero/). An extension missing from this list is never
+    // precached, so an offline Home renders a broken image box. Pinned by
+    // src/__tests__/pwaOptions.test.ts.
+    globPatterns: ['**/*.{js,css,html,svg,webp,woff2}'],
     navigateFallback: 'index.html',
     // /api/ and /illustrations/ must reach the network untouched — there is no
     // runtimeCaching entry for either. Offline cart data comes from an explicit

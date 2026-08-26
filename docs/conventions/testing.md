@@ -147,6 +147,30 @@ Same rule for any context whose value type grows: export the interface, annotate
 
 Use `vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve(...) }))`. Don't reach for MSW — overkill for the current test scope.
 
+### Reading real files from a client test
+
+A client test that needs the filesystem (asserting on a committed artifact, say) cannot
+resolve its own directory the obvious way:
+
+```ts
+// WRONG — throws under Vitest
+const DIR = new URL('../assets/hero/', import.meta.url);
+fileURLToPath(DIR);   // TypeError: The URL must be of scheme file
+```
+
+Vite's `asset-import-meta-url` transform rewrites `new URL(..., import.meta.url)` at
+build time, so under Vitest it evaluates to `http://localhost:3000/src/assets/hero`
+rather than a `file:` URL. Use the path form instead:
+
+```ts
+// RIGHT
+const DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'assets', 'hero');
+```
+
+The environment is jsdom but the runtime is Node, so `node:fs` itself works fine — it is
+only the URL construction that is intercepted. `client/src/__tests__/heroAsset.test.ts` is
+the worked example.
+
 ## E2E tests — Playwright
 
 ### Configuration

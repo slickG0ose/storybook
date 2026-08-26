@@ -3,7 +3,15 @@ import { Link, useLocation } from 'react-router-dom'
 import { Sparkles, Search, X, BookOpen, Eye } from 'lucide-react'
 import BookCard from '../components/BookCard'
 import { api } from '../lib/apiBase'
+import heroArt960 from '../assets/hero/spot-for-sunny-bench-960.webp'
+import heroArt480 from '../assets/hero/spot-for-sunny-bench-480.webp'
 import type { Book, Page } from '../types'
+
+// Describes the artwork, not the product: the hero image is a page from a real
+// seeded book, so its alt text is what a sighted reader sees, not a sales line.
+const HERO_ALT =
+  'Watercolour illustration of two young girls sitting side by side on a wooden bench ' +
+  'under a leafy tree, an orange backpack between them, one turning to greet the other.'
 
 function BookPreviewModal({ book, onClose }: { book: Book; onClose: () => void }) {
   const [firstPage, setFirstPage] = useState<Page | null>(null)
@@ -197,48 +205,87 @@ export default function Home() {
         which is both the flattest possible gradient and the palette that reads as
         stock-AI. This is the cream surface with two off-centre radial glows instead:
         the light has a direction, and nothing is evenly interpolated.
+
+        The composition is a split rather than a centred column (#118). A centred
+        column was the right answer while the hero was text-only — offsetting text for
+        its own sake is churn — so the symmetry stood until there was something to be
+        asymmetric about. There is now: we sell illustrated books and the first screen
+        finally shows one. Below `lg` the art just joins the bottom of the single
+        centred stack; at `lg` and up the text left-aligns and the art takes the right
+        column. DOM order is identical at every breakpoint (text, then art), so no
+        `order-*` utility is needed and reading order always matches visual order.
       */}
       <section
-        className="relative bg-cream dark:bg-gray-900 py-20 sm:py-24 px-4 text-center transition-colors
+        className="relative bg-cream dark:bg-gray-900 py-16 sm:py-20 lg:py-24 px-4 transition-colors
                    bg-[radial-gradient(70%_85%_at_88%_-15%,var(--color-purple-100),transparent_62%),radial-gradient(42%_55%_at_-8%_52%,var(--color-amber-100),transparent_66%)]
                    dark:bg-[radial-gradient(70%_85%_at_88%_-15%,var(--color-purple-950),transparent_62%),radial-gradient(42%_55%_at_-8%_52%,#2a2013,transparent_66%)]"
       >
-        <div className="relative">
-          <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold text-gray-800 dark:text-gray-100 mb-5 font-display max-w-4xl mx-auto">
-            Stories Made with <span className="text-purple-500 dark:text-purple-300">Magic</span>
-          </h1>
-          <p className="text-lg sm:text-xl text-gray-600 dark:text-gray-300 max-w-[52ch] mx-auto mb-9">
-            Beautiful children's books crafted by AI. Browse our collection or create a one-of-a-kind story for your little one.
-          </p>
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link
-              to="/create"
-              className="inline-flex items-center gap-2 bg-purple-500 hover:bg-purple-600 text-white px-8 py-3.5 rounded-full font-bold text-lg no-underline shadow-accent hover:shadow-none transition-[background-color,box-shadow,transform] duration-200 active:scale-[0.97]"
-            >
-              <Sparkles size={20} />
-              Create Your Own Book
-            </Link>
+        <div className="relative max-w-6xl mx-auto grid gap-10 lg:gap-14 lg:items-center lg:grid-cols-[minmax(0,1fr)_minmax(0,440px)]">
+          {/* Text column. Centred below `lg`, left-aligned from `lg` up — the search
+              bar stays inside this column rather than being re-centred underneath, so
+              the column is never half-left-half-centred. */}
+          <div className="text-center lg:text-left">
+            <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold text-gray-800 dark:text-gray-100 mb-5 font-display max-w-4xl mx-auto lg:mx-0">
+              Stories Made with <span className="text-purple-500 dark:text-purple-300">Magic</span>
+            </h1>
+            <p className="text-lg sm:text-xl text-gray-600 dark:text-gray-300 max-w-[52ch] mx-auto lg:mx-0 mb-9">
+              Beautiful children's books crafted by AI. Browse our collection or create a one-of-a-kind story for your little one.
+            </p>
+            <div className="flex flex-col sm:flex-row items-center lg:items-start justify-center lg:justify-start gap-4">
+              <Link
+                to="/create"
+                className="inline-flex items-center gap-2 bg-purple-500 hover:bg-purple-600 text-white px-8 py-3.5 rounded-full font-bold text-lg no-underline shadow-accent hover:shadow-none transition-[background-color,box-shadow,transform] duration-200 active:scale-[0.97]"
+              >
+                <Sparkles size={20} />
+                Create Your Own Book
+              </Link>
+            </div>
+
+            {/* Search Bar */}
+            <div className="max-w-xl mx-auto lg:mx-0 mt-8">
+              <div className="relative">
+                <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search books by title, description, or author..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="w-full pl-11 pr-10 py-3 rounded-full border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-400 text-sm"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => setSearchQuery('')}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+                  >
+                    <X size={16} />
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
 
-          {/* Search Bar */}
-          <div className="max-w-xl mx-auto mt-8">
-            <div className="relative">
-              <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search books by title, description, or author..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="w-full pl-11 pr-10 py-3 rounded-full border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-400 text-sm"
+          {/* Art column. The illustration is an opaque square on pale cream paper: on
+              the cream surface it blends at the edges, but on gray-900 it would butt a
+              bright square against near-black and glare. The mat carries the app's
+              existing card language so the art reads as a page from a book and gets a
+              mid-tone surround in dark mode — no filter on the image itself, which is
+              the one thing the hero exists to show off. */}
+          <div className="w-full max-w-[300px] sm:max-w-[380px] lg:max-w-[440px] justify-self-center lg:justify-self-end lg:mt-4">
+            <div className="p-2 sm:p-2.5 bg-white dark:bg-gray-800 rounded-[24px] shadow-card ring-1 ring-gray-200 dark:ring-gray-700">
+              {/* No `loading="lazy"`: this is above the fold and is the LCP candidate.
+                  `width`/`height` plus `aspect-square` reserve the box before the bytes
+                  land, so nothing shifts on a slow connection. */}
+              <img
+                src={heroArt960}
+                srcSet={`${heroArt480} 480w, ${heroArt960} 960w`}
+                sizes="(min-width: 1024px) 440px, 300px"
+                width={960}
+                height={960}
+                alt={HERO_ALT}
+                decoding="async"
+                fetchPriority="high"
+                className="w-full aspect-square object-cover rounded-[16px]"
               />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
-                >
-                  <X size={16} />
-                </button>
-              )}
             </div>
           </div>
         </div>
