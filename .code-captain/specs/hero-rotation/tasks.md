@@ -471,6 +471,32 @@ The `relative aspect-square` wrapper lands here so Task 7 adds no layout. Keep
 **Depends on:** 1, 4, 6
 **Parallel-safe with:** 9
 
+**Status:** Done (2026-08-26) — code + tests only. **The aesthetic pass is still
+outstanding and is the user's**; the "Done when" clause below is not fully discharged
+until they have signed off.
+> Four things the body did not specify, recorded here rather than only in a hand-back:
+> 1. **`client/vite.config.ts` also changed** — `/hero` was added to the dev/preview
+>    proxy table beside `/illustrations`. Not in the file list, and not optional: in dev
+>    `api()` returns a server-relative path, so without the proxy every rotating frame
+>    loads Vite's `index.html`, fires `onerror`, and is skipped. The rotation would have
+>    been invisible in local dev and in the Task 8 e2e run.
+> 2. **`client/src/types.ts` also changed** — a one-line `HeroFrame` re-export, per
+>    `docs/conventions/client.md` ("wire shapes come from `@storybook/shared` via
+>    `client/src/types.ts`").
+> 3. **The pool fetch is deferred out of the mount task** (`setTimeout(…, 0)`). A child's
+>    effect runs before its parent's, so an un-deferred fetch would be issued *ahead* of
+>    `Home`'s own `/api/books` call — which is both wrong for a progressive-enhancement
+>    request and would have broken `Home.test.tsx`'s positional `fetch` mock, which that
+>    task forbids editing.
+> 4. **The crossfade passes through frame 0.** Two layers is the architecture the spec
+>    fixes (and Task 8's e2e expects exactly two `<img>`s), so a pool-frame-to-pool-frame
+>    dissolve is not expressible: layer 1 fades out to reveal the bundled frame, swaps
+>    its already-cached `src` while invisible, and fades back in. Only `opacity` animates.
+>
+> The response is validated client-side with `HeroPoolResponseSchema`, following the
+> precedent `client/src/lib/cartCache.ts` set with `CartGetResponseSchema` — Zod is
+> already in the client bundle because of it, so this costs no new bytes.
+
 **Files to add or change:**
 - `client/src/lib/useHeroPool.ts` — new; fetch + suppression policy
 - `client/src/components/HeroArt.tsx` — the rotating layer

@@ -14,6 +14,10 @@ const proxy = {
   // as-is in dev). Without this, /illustrations/* would hit Vite and fall
   // through to index.html, so generated images render broken in local dev.
   '/illustrations': 'http://localhost:3001',
+  // Same story for the derived hero-rotation frames: `api('/hero/<book>/p1-960.webp')`
+  // is server-relative in dev, so without this the rotating layer would load Vite's
+  // index.html, fire `onerror`, and the pool would silently skip every frame.
+  '/hero': 'http://localhost:3001',
 }
 
 export default defineConfig({

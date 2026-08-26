@@ -52,3 +52,8 @@ export type { Order, OrderItem } from '@storybook/shared';
 
 export type { IllustrationVersion } from '@storybook/shared';
 export type { BookVersion } from '@storybook/shared';
+
+// One frame of the Home hero's rotation pool (GET /api/hero/pool). `useHeroPool`
+// validates the response against the matching `HeroPoolResponseSchema` client-side,
+// the way `cartCache.ts` reuses `CartGetResponseSchema`.
+export type { HeroFrame } from '@storybook/shared';
