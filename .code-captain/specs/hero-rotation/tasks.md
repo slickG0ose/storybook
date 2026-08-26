@@ -50,8 +50,12 @@ be written any time after Task 3.
      no auth/session model change, no test deletions. Report that as a clean bill.
 - **Do not touch `client/src/assets/hero/`, `client/src/__tests__/heroAsset.test.ts`, or
   any attribute on the bundled hero `<img>`.** `git diff --stat origin/master...HEAD --
-  client/src/assets/hero/` must be empty at the end (use `origin/master` — a local
-  `master` ref behind #132 lists the bundled hero assets as additions).
+  client/src/assets/hero/ ':!*.md'` must be empty at the end (use `origin/master` — a
+  local `master` ref behind #132 lists the bundled hero assets as additions).
+  - **Amended 2026-08-26:** the check excludes `*.md`. Task 9 explicitly adds a
+    Consumers-adjacent line to `client/src/assets/hero/README.md`, which the unnarrowed
+    check would forbid. The constraint's purpose is that the *assets* and the `<img>`
+    attributes are frozen; documentation about them is not.
 - **Do not edit these three assertions.** If rotation makes one of them fail, the
   accessible-name rule was broken and the component is wrong, not the test:
   `client/src/pages/__tests__/Home.test.tsx:190`, `e2e/tests/home.spec.ts:17`,
