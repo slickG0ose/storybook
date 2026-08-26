@@ -360,6 +360,8 @@ feature working.
 **Depends on:** none
 **Parallel-safe with:** 1, 2, 4, 5
 
+**Status:** Done (2026-08-26)
+
 A deliberately boring commit: the diff should be a move plus a wrapper, so the rotation
 commit that follows contains only rotation.
 
