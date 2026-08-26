@@ -1,14 +1,95 @@
-@import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@400;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@400;500;600;700&display=swap');
 
 @import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/*
+ * Reveal-on-hover is only safe where hover exists. On a touch device the hover state
+ * never arrives, so an `opacity-0` control stays invisible while remaining in the
+ * hit-testing tree — a tap trap. Gate the hiding itself behind this variant so touch
+ * simply shows the control.
+ */
+@custom-variant can-hover (@media (hover: hover));
+
+/*
+ * Design tokens.
+ *
+ * Two palette overrides do most of the visual work here without touching a single
+ * className in a component:
+ *
+ *   gray-*   -> retinted warm. The light theme is cream (#fffbf0) but every dark
+ *               surface used Tailwind's default blue-tinted gray, so the app mixed
+ *               a warm and a cool neutral family. These values are the warm ramp.
+ *   purple-* -> desaturated. The stock purple-500 sat near full chroma and, paired
+ *               with the pink it used to gradient into, read as the generic
+ *               "AI product" accent. This ramp keeps the hue and drops the shout.
+ *
+ * Because only the values change, `dark:bg-gray-800` and `dark:bg-purple-900/20`
+ * still mean what they meant before — including in the tests that assert on those
+ * exact class strings.
+ */
 @theme {
   --font-display: 'Fredoka', sans-serif;
   --font-body: 'Nunito', sans-serif;
+
   --color-cream: #fffbf0;
   --color-warm-brown: #8b6f47;
+
+  /* Warm neutral ramp — replaces Tailwind's cool default gray. */
+  --color-gray-50: #faf9f7;
+  --color-gray-100: #f4f2ee;
+  --color-gray-200: #e7e3dc;
+  --color-gray-300: #d4cec4;
+  --color-gray-400: #a49c90;
+  --color-gray-500: #78706a;
+  --color-gray-600: #57514b;
+  --color-gray-700: #403a35;
+  --color-gray-800: #2a2521;
+  --color-gray-900: #1b1714;
+  --color-gray-950: #0f0c0a;
+
+  /*
+   * The single ACTION accent. Same hue as before, ~30% less chroma. Every control that
+   * does something — Add to Cart wherever it appears, Create, checkout, the 404's exits —
+   * is purple.
+   *
+   * Amber keeps a second, non-overlapping role: brand chrome (wordmark, nav links, age
+   * badges) and SELECTED state (active filter chip, active page dot, active view toggle).
+   * "Do this" and "this one is picked" are different jobs and read better in different
+   * hues. Two remaining amber ACTION controls — the narration Play button and the update
+   * toast's reload — are the exception and are tracked, not intentional.
+   */
+  --color-purple-50: #f5f3fb;
+  --color-purple-100: #ebe7f6;
+  --color-purple-200: #d8d1ed;
+  --color-purple-300: #b9ade0;
+  --color-purple-400: #9384cd;
+  --color-purple-500: #7563b8;
+  --color-purple-600: #5f4f9d;
+  --color-purple-700: #4d4080;
+  --color-purple-800: #3c3163;
+  --color-purple-900: #2b2447;
+  --color-purple-950: #1a1530;
+
+  /*
+   * Shadows carry the background's hue rather than neutral black. A pure-black
+   * shadow on cream reads as grime; this brown-tinted one reads as depth.
+   */
+  --shadow-card: 0 1px 2px rgb(61 44 20 / 0.05), 0 8px 24px -14px rgb(61 44 20 / 0.22);
+  --shadow-card-hover: 0 2px 6px rgb(61 44 20 / 0.07), 0 20px 44px -18px rgb(61 44 20 / 0.32);
+  --shadow-accent: 0 8px 24px -10px rgb(117 99 184 / 0.55);
+}
+
+/*
+ * Dark surfaces need their own shadow alphas. A brown-tinted 5%-opacity shadow is
+ * invisible on a #2a2521 card, which left dark-mode cards leaning entirely on a
+ * gray-800/gray-900 surface delta that measures 1.17:1.
+ */
+.dark {
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.45), 0 10px 28px -14px rgb(0 0 0 / 0.8);
+  --shadow-card-hover: 0 2px 6px rgb(0 0 0 / 0.5), 0 22px 46px -18px rgb(0 0 0 / 0.95);
+  --shadow-accent: 0 8px 26px -10px rgb(117 99 184 / 0.75);
 }
 
 body {
@@ -16,13 +97,78 @@ body {
   background-color: #fffbf0;
   margin: 0;
   transition: background-color 0.3s, color 0.3s;
+  /* Kerning/ligature defaults differ per engine; pin them so type is stable. */
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
 }
 
 .dark body {
-  background-color: #111827;
-  color: #e5e7eb;
+  background-color: #1b1714;
+  color: #e7e3dc;
 }
 
 h1, h2, h3, h4, h5, h6 {
   font-family: 'Fredoka', sans-serif;
+  /* Display type sits too loose at large sizes; pull it in and stop orphan words. */
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+p {
+  text-wrap: pretty;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+/*
+ * A single keyboard focus treatment for the whole app. Several buttons had no
+ * focus affordance at all, and the ones that did used `focus:` (which also fires
+ * on mouse click). `:focus-visible` shows the ring only when it is actually needed.
+ */
+:focus-visible {
+  outline: 2px solid var(--color-purple-500);
+  outline-offset: 2px;
+}
+
+.dark :focus-visible {
+  outline-color: var(--color-purple-300);
+}
+
+/* Prices and counts line up in columns only with fixed-width figures. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Fixed grain overlay. Flat vector surfaces read as sterile at this scale; a
+ * near-invisible noise layer gives the cream and the charcoal some tooth.
+ * Non-interactive and skipped entirely when the user reduces motion is not
+ * relevant here — it never animates — but it does sit above everything, hence
+ * pointer-events: none.
+ */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 100; /* one step above the z-50 modal layer */
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.dark body::after {
+  opacity: 0.05;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

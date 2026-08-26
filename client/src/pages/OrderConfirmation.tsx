@@ -54,7 +54,7 @@ export default function OrderConfirmation() {
           </Link>
           <Link
             to="/create"
-            className="inline-flex items-center justify-center gap-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white px-6 py-3 rounded-xl font-bold no-underline hover:shadow-lg transition-shadow"
+            className="inline-flex items-center justify-center gap-2 bg-purple-500 hover:bg-purple-600 text-white px-6 py-3 rounded-xl font-bold no-underline transition-colors"
           >
             Create Another Book
           </Link>

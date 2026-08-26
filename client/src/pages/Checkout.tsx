@@ -111,7 +111,7 @@ export default function Checkout() {
             <button
               type="submit"
               disabled={submitting}
-              className="w-full bg-amber-500 hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-500 text-white py-3 rounded-xl font-bold transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+              className="w-full bg-purple-500 hover:bg-purple-600 dark:bg-purple-500 dark:hover:bg-purple-400 text-white py-3 rounded-xl font-bold transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {submitting ? (
                 <><Loader2 size={18} className="animate-spin" /> Placing Order...</>

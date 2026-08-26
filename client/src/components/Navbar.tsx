@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom'
+import { Link, NavLink } from 'react-router-dom'
 import { ShoppingCart, BookOpen, Sparkles, Moon, Sun, User, LogOut, Shield } from 'lucide-react'
 import { useCart } from '../context/CartContext'
 import { useTheme } from '../context/ThemeContext'
@@ -18,6 +18,13 @@ import { useAuth } from '../context/AuthContext'
 /** Icon-link chrome. `p-2` lifts an 18px lucide glyph to a 34px hit area on mobile. */
 const NAV_LINK =
   'text-amber-800 dark:text-amber-300 hover:text-amber-600 dark:hover:text-amber-200 flex items-center gap-1 no-underline font-semibold p-2 sm:p-0 rounded-full hover:bg-amber-100/60 dark:hover:bg-gray-700/60 sm:hover:bg-transparent sm:dark:hover:bg-transparent transition-colors'
+
+/**
+ * Current-page treatment. `NavLink` sets aria-current="page" for us, so the styling
+ * and the screen-reader announcement can never drift apart.
+ */
+const navLinkClass = ({ isActive }: { isActive: boolean }) =>
+  `${NAV_LINK} ${isActive ? 'text-amber-950 dark:text-amber-100 sm:underline sm:decoration-2 sm:underline-offset-8 sm:decoration-amber-400 sm:dark:decoration-amber-300' : ''}`
 
 export default function Navbar() {
   const { items } = useCart()
@@ -41,28 +48,28 @@ export default function Navbar() {
             <span className="hidden sm:inline">Browse</span>
           </Link>
           {user && (
-            <Link to="/my-books" className={NAV_LINK}>
+            <NavLink to="/my-books" className={navLinkClass}>
               <User size={18} />
               <span className="hidden sm:inline">My Books</span>
-            </Link>
+            </NavLink>
           )}
           {showAdminLink && (
-            <Link to="/admin" aria-label="Admin" className={NAV_LINK}>
+            <NavLink to="/admin" aria-label="Admin" className={navLinkClass}>
               <Shield size={18} />
               <span className="hidden sm:inline">Admin</span>
-            </Link>
+            </NavLink>
           )}
           <Link
             to="/create"
             aria-label="Create a Book"
-            className="bg-gradient-to-r from-purple-500 to-pink-500 text-white p-2.5 sm:px-4 sm:py-2 rounded-full flex items-center gap-1.5 no-underline font-semibold hover:shadow-lg transition-shadow text-sm shrink-0"
+            className="bg-purple-500 hover:bg-purple-600 text-white p-2.5 sm:px-4 sm:py-2 rounded-full flex items-center gap-1.5 no-underline font-semibold shadow-accent hover:shadow-none text-sm shrink-0 transition-[background-color,box-shadow,transform] duration-200 active:scale-[0.97]"
           >
             <Sparkles size={16} />
             <span className="hidden sm:inline">Create a Book</span>
           </Link>
           <button
             onClick={toggle}
-            className="p-2 rounded-full hover:bg-amber-100 dark:hover:bg-gray-700 text-amber-800 dark:text-amber-300 transition-colors cursor-pointer"
+            className="p-2 rounded-full hover:bg-amber-100 dark:hover:bg-gray-700 text-amber-800 dark:text-amber-300 transition-[background-color,transform] duration-200 cursor-pointer active:scale-90"
             aria-label="Toggle dark mode"
           >
             {dark ? <Sun size={20} /> : <Moon size={20} />}

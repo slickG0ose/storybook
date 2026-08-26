@@ -586,7 +586,7 @@ export default function CreateBook() {
               onClick={() => void handleGenerate()}
               disabled={!user}
               title={!user ? 'Sign in to generate a story' : undefined}
-              className="flex items-center justify-center gap-2 px-6 sm:px-8 py-3 rounded-xl font-bold bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:shadow-lg transition-shadow cursor-pointer disabled:opacity-40 disabled:cursor-default disabled:hover:shadow-none"
+              className="flex items-center justify-center gap-2 px-6 sm:px-8 py-3 rounded-xl font-bold bg-purple-500 hover:bg-purple-600 text-white transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-default disabled:hover:shadow-none"
             >
               <Wand2 size={18} />
               Generate My Story
