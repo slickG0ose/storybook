@@ -592,10 +592,16 @@ body carries the spec link, the plan link, and the agent ownership trail.
 
 All three were put to the repo owner before any task started. None are open.
 
-1. **Pool frames: `page-1.png` and `page-5-v3.png`.** Both were rendered at 420px and
+1. **Pool frames: `page-1.png` and `page-5.png`.** Both were rendered at 420px and
    reviewed before choosing. `page-1` is the dynamic, architectural shot (kids bursting
-   through a red door); `page-5-v3` is the wide group scene under the tree. Neither reads
+   through a red door); page 5 is the wide group scene under the tree. Neither reads
    as a near-duplicate of frame 0's bench mid-shot.
+   - **Amended 2026-08-26 (owner ruling):** this originally named `page-5-v3.png`. It
+     conflicted with the harder rule that a pool frame must come from a URL
+     `spot-for-sunny.json` actually points at — the fixture points page 5 at
+     `page-5.png`. The fixture wins: a hero frame that is not in the book it advertises
+     is a small lie. v3 is the same scene, style and cast; it adds Sunny's backpack and
+     reframes the tree. Neither has the `-v4` defect.
    - **`page-3-v2.png` was rejected**, not merely unchosen: it is a single centred figure
      with a downcast expression, compositionally the closest of the three to frame 0, and
      at hero scale it reads as "sad kid alone".
