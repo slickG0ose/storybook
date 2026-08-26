@@ -24,6 +24,33 @@ process.stdin.on("end", () => {
 ' 2>/dev/null || true)
 fi
 
+# The directory the guarded command will actually run in. Same safe-fail contract
+# as CMD above: an empty value falls through to the CLAUDE_PROJECT_DIR default.
+HOOK_CWD=""
+if command -v node >/dev/null 2>&1; then
+  HOOK_CWD=$(printf '%s' "$INPUT" | node -e '
+let s = "";
+process.stdin.on("data", d => s += d);
+process.stdin.on("end", () => {
+  try {
+    const j = JSON.parse(s);
+    process.stdout.write(j.cwd || "");
+  } catch (e) {}
+});
+' 2>/dev/null || true)
+fi
+
+# Resolve the branch from the repo the command actually runs in, NOT from
+# CLAUDE_PROJECT_DIR. In a git worktree those are different repos: the session
+# works on a feature branch inside .claude/worktrees/<name> while
+# CLAUDE_PROJECT_DIR still points at the shared checkout, which is routinely
+# parked on master. Reading the shared checkout made the protected-branch guards
+# below fire on every commit from every worktree — blocking work on a feature
+# branch by reporting a branch the session was not on.
+current_branch() {
+  git -C "${HOOK_CWD:-${CLAUDE_PROJECT_DIR:-.}}" rev-parse --abbrev-ref HEAD 2>/dev/null || echo ""
+}
+
 # Strip heredoc bodies + single-quoted string contents before pattern matching.
 # Bash never executes either — so a guarded pattern appearing inside them
 # (e.g. inside a `gh issue create --body "$(cat <<'EOF' ... EOF)"` heredoc,
@@ -117,7 +144,7 @@ fi
 
 # 5) Hard reset while currently on a protected branch
 if [[ "$NORM" =~ ${CMD_START}git[[:space:]]+reset[[:space:]]+--hard ]]; then
-  CURRENT_BRANCH=$(git -C "${CLAUDE_PROJECT_DIR:-.}" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+  CURRENT_BRANCH=$(current_branch)
   case "$CURRENT_BRANCH" in
     master|main|develop)
       block "Refuses 'git reset --hard' on protected branch '$CURRENT_BRANCH'."
@@ -135,7 +162,7 @@ fi
 #    master|main|develop are also rejected by GitHub branch protection on push;
 #    catching them here saves a rebase later.
 if [[ "$NORM" =~ ${CMD_START}git[[:space:]]+commit([[:space:]]|$) ]]; then
-  CURRENT_BRANCH=$(git -C "${CLAUDE_PROJECT_DIR:-.}" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "")
+  CURRENT_BRANCH=$(current_branch)
   case "$CURRENT_BRANCH" in
     master|main|develop)
       block "Refuses 'git commit' on protected branch '$CURRENT_BRANCH' — create a feature branch first per CLAUDE.md (git switch -c <type>/<descriptor>)."

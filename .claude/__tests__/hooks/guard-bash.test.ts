@@ -105,6 +105,55 @@ describe('guard-bash.sh — rule 5 + 7: protected-branch operations', () => {
       expectAllowIn(repo, 'git commit -m wip'));
   });
 
+  // Worktree case. The session works on a feature branch inside
+  // .claude/worktrees/<name>, while CLAUDE_PROJECT_DIR still points at the
+  // shared checkout — which is routinely parked on master after a sync. The
+  // guard must read the repo the command actually runs in, or it blocks every
+  // commit from every worktree while reporting a branch the session is not on.
+  describe('worktree: cwd and CLAUDE_PROJECT_DIR are different repos', () => {
+    let worktreeRepo: string;
+    let sharedRepo: string;
+    beforeAll(() => {
+      worktreeRepo = makeRepoOnBranch('agent/feat/example');
+      sharedRepo = makeRepoOnBranch('master');
+    });
+    afterAll(() => {
+      rmSync(worktreeRepo, { recursive: true, force: true });
+      rmSync(sharedRepo, { recursive: true, force: true });
+    });
+
+    it('allows `git commit` when cwd is a feature branch and CLAUDE_PROJECT_DIR is master', () => {
+      const r = runHook(
+        GUARD,
+        { command: 'git commit -m wip' },
+        { env: { CLAUDE_PROJECT_DIR: sharedRepo }, cwd: worktreeRepo },
+      );
+      expect(r.exitCode).toBe(0);
+    });
+
+    it('allows `git reset --hard` under the same split', () => {
+      const r = runHook(
+        GUARD,
+        { command: 'git reset --hard origin/master' },
+        { env: { CLAUDE_PROJECT_DIR: sharedRepo }, cwd: worktreeRepo },
+      );
+      expect(r.exitCode).toBe(0);
+    });
+
+    // The mirror image: cwd genuinely on master must still block, even when
+    // CLAUDE_PROJECT_DIR points somewhere safe. Without this the fix could be
+    // "always allow" and the suite would not notice.
+    it('still blocks `git commit` when cwd is master and CLAUDE_PROJECT_DIR is a feature branch', () => {
+      const r = runHook(
+        GUARD,
+        { command: 'git commit -m foo' },
+        { env: { CLAUDE_PROJECT_DIR: worktreeRepo }, cwd: sharedRepo },
+      );
+      expect(r.exitCode).toBe(2);
+      expect(r.stderr).toContain('protected branch');
+    });
+  });
+
   // Positive cases — use a temp repo where HEAD is genuinely on a protected
   // branch, so the rule's `git rev-parse` returns master/main/develop.
   // Without these, a regression that broke the branch-detection portion
