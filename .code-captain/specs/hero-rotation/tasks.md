@@ -575,6 +575,26 @@ suite), and the three existing specs are byte-identical to `master`.
 **Depends on:** 3, 4
 **Parallel-safe with:** 7, 8
 
+**Status:** Done (2026-08-26)
+> `server/public/hero/README.md` already existed from Task 3, so this extended and
+> corrected it rather than rewriting: added the `.gitignore` re-include trap, exact
+> per-frame bytes, and the fact that the README's own bytes count toward the 400 KB
+> total. The directory figure is quoted as "275,880 across the four images, plus this
+> README" rather than a single number, because a single number goes stale on every edit
+> to the file it appears in.
+>
+> Two judgment calls worth a ruling:
+> 1. **`docs/conventions/server.md` has no general routes table** — the only one is the
+>    auth table under §Auth. Rather than invent a second table, the two hero routes were
+>    added to it and the table reintroduced as "the auth routes, plus any route elsewhere
+>    whose auth requirement is itself load-bearing", which is exactly what
+>    `GET /api/hero/pool`'s deliberate no-auth is.
+> 2. **`client/src/assets/hero/README.md`'s Consumers line is now stale** — it says the
+>    assets are imported by `Home.tsx`, but Task 6 moved the imports to `HeroArt.tsx`.
+>    Left as-is because the dispatch said to add one line and touch nothing else; the
+>    added paragraph names `HeroArt.tsx`, so the file is not misleading, only imprecise.
+>    One-line fix if wanted.
+
 **Files to add or change:**
 - `server/public/hero/README.md` — provenance table, the derive command, the byte budget and
   its actual numbers, the `-v3`/`-v4` trap, and the "setting the flag without deriving does

@@ -24,6 +24,27 @@ there is no manifest. **A frame filed under a different name is silently invisib
 than loudly broken**, so the naming convention is pinned by
 `server/src/__tests__/heroFrameAssets.test.ts`.
 
+### These files are tracked only because `.gitignore` re-includes them
+
+`server/public/*` is ignored wholesale — that directory otherwise holds runtime-generated
+content (uploads, generated illustrations), none of which belongs in git. The hero frames
+are the opposite case: nothing here is generated at runtime and every byte is a
+hand-derived, reviewed artifact. So the root `.gitignore` carries an explicit
+`!server/public/hero/` re-include.
+
+This bit once, during derivation: the frames were produced, the budget test passed
+locally, and `git status` showed nothing to commit. **Untracked artifacts are invisible
+locally and a 404 in CI and in production**, where the rotation would silently never
+start — which looks exactly like the designed degradation and is therefore not obvious
+from the outside. After deriving, always confirm with:
+
+```bash
+git status --short server/public/hero/
+```
+
+Unlike `server/public/illustrations/`, the re-include is directory-wide and needs **no
+per-book line** when a new book's frames are added.
+
 ## Source
 
 | | |
@@ -98,9 +119,19 @@ Enforced by `server/src/__tests__/heroFrameAssets.test.ts`, which runs in
 
 - every single file ≤ 150 KB (153,600 bytes) — largest actual is 109,792, **43,808 bytes
   of headroom**
-- total of this directory ≤ **400 KB** (409,600 bytes) — actual 275,880 for the four
-  images, plus this README
+- total of this directory ≤ **400 KB** (409,600 bytes) — actual **275,880 across the four
+  images**, plus this README (~10 KB), so roughly 286 KB used and ~120 KB spare
 - no `.png`, ever, and no extension outside `.webp` / `.jpg` / `.md`
+
+Per-frame, for the record: `p1-960` 105,482 · `p1-480` 29,630 · `p5-960` 109,792 ·
+`p5-480` 30,976. A third book's pair lands around 140 KB, which is the arithmetic to redo
+before raising the cap rather than after.
+
+**Prose in this file spends the same budget the images do.** The test totals *every* file,
+README included — filtering to images would let bytes be parked in a non-image file that
+still ships in the repo. It is not a real constraint at today's numbers (this README is
+~8 KB of a 400 KB ceiling) but it is why the total above is quoted with the README in it
+rather than as an image-only figure.
 
 **400 KB, not 1 MB.** Repo owner's ruling, 2026-08-26: a cap permitting five frames while
 two ship is decoration, not a guard. The bundled-hero budget test earned its keep by
@@ -158,8 +189,11 @@ confirmation — stop and ask instead.
 ## Consumers
 
 Served by `app.use('/hero', express.static(...))` in `server/src/index.ts`, listed by
-`GET /api/hero/pool`, and rendered by the rotating layer in
-`client/src/components/HeroArt.tsx`. Paths on the wire are **server-relative**
+`GET /api/hero/pool` (public, no auth middleware, `Cache-Control: public, max-age=300`),
+and rendered by the rotating layer in `client/src/components/HeroArt.tsx`. The flag that
+decides whether a book's frames are listed is toggled by
+`PUT /api/admin/books/:id/hero-eligible`, which reports `hero_frames_available` — the
+count of files found in here for that book. Paths on the wire are **server-relative**
 (`/hero/<book_id>/p1-960.webp`) and the client wraps them in `api()`, matching the
 existing `api(page.illustration_url)` convention — absolute URLs would break the
 `VITE_API_BASE_URL` split between GitHub Pages and Render.
