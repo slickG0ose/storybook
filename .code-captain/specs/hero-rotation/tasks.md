@@ -566,8 +566,43 @@ untouched, `npx tsc --noEmit` and lint clean, and the user has signed off on the
 **Depends on:** 3, 4, 7
 **Parallel-safe with:** 9
 
+**Status:** Done (2026-08-26)
+> Three things the body did not specify, recorded here rather than only in a hand-back:
+> 1. **The suite's hardcoded ports were made env-configurable first ([#130](https://github.com/slickG0ose/storybook/issues/130)).**
+>    `reuseExistingServer: !process.env.CI` means a plain `npm test` from a worktree
+>    silently drives whatever is already listening on 3001/5173/4173 — another checkout's
+>    `master`, in this case, which predates the hero illustration and reports
+>    `getByRole('img', { name: /bench/i })` as element-not-found. That produced 7 phantom
+>    hero failures before the cause was found. The user approved distinct ports over
+>    stopping the other servers. New `e2e/ports.ts`; `playwright.config.ts` and
+>    `client/vite.config.ts` read it. **Defaults are the previously-hardcoded values**, so
+>    CI and `npm run dev` are byte-for-byte unchanged (verified by resolving the config
+>    with no env set). Reproduce with:
+>    `cd e2e && API_PORT=3011 CLIENT_PORT=5183 PREVIEW_PORT=4183 npx playwright test`
+> 2. **Four e2e files beyond the one in the list were touched**, for the same reason:
+>    `admin.spec.ts`, `version-history.spec.ts`, `illustration-history.spec.ts` and
+>    `_editPublished.ts` each hardcode `http://localhost:3001` for their out-of-browser
+>    registration calls, and `admin.spec.ts` asserted `toHaveURL('http://localhost:5173/')`.
+>    Left alone they would have registered users against the *other* checkout's database
+>    while the browser drove this one. They now import `API_BASE`, and the URL assertion is
+>    relative so Playwright resolves it against `baseURL`. **The three protected specs
+>    (`home`, `mobile/hero`, `dark-mode`) were not touched** — verified byte-identical to
+>    `origin/master`.
+> 3. **`reducedMotion` goes through `contextOptions`.** It is not a top-level `use` option
+>    in Playwright 1.52's typings; set directly it type-errors and is a silent no-op. Via
+>    `contextOptions` it is real — proven by transiently flipping it to `'reduce'`, which
+>    fails all five tests, then reverting. That is also the non-vacuity check: with
+>    rotation suppressed the spec goes red rather than passing on an empty pool.
+>
+> The aesthetic half of done-criterion #2 is **not** claimed here and remains outstanding
+> on Task 7. The file header says so.
+
 **Files to add or change:**
 - `e2e/tests/hero-rotation.spec.ts` — new
+- `e2e/ports.ts` — new; the one place the suite's ports are decided (#130)
+- `e2e/playwright.config.ts`, `client/vite.config.ts` — read the ports from env
+- `e2e/tests/{admin,version-history,illustration-history}.spec.ts`,
+  `e2e/tests/_editPublished.ts` — API base from `ports.ts` instead of a literal
 
 **Tests to write:**
 - **rotation occurs** — poll the second hero `<img>`'s `src` until it contains `/hero/`,
@@ -642,6 +677,22 @@ survive your edit), root suite green.
 ### Task 10 — Pre-merge follow-ups
 
 **Zone:** docs (harness) · **Depends on:** none (run last)
+
+**Status:** Done (2026-08-26)
+> Three notes:
+> 1. **ADR-016 was written separately, not folded into ADR-015.** The fold was offered
+>    (ADR-014 precedent) and declined for the spec's own stated reason: `hero-personal`
+>    will deliberately amend the consent policy, and a policy that will be amended is
+>    easier to find under its own heading than as decision 8 of an entry titled
+>    "delivery". ADR-016 records the declined fold under its own Alternatives heading.
+> 2. **015 confirmed as the next free number** by re-reading `decisions.md` — ADR-014 was
+>    the highest. Both entries are inserted newest-on-top, so the file reads 016, 015, 014.
+> 3. **The four `Deferred:` lines and the accepted a11y cost live in the ADRs' Consequences
+>    sections**, not in `spec.md` — the developer role forbids editing the architect's spec
+>    body, and `decisions.md` is the durable, greppable home for a deferral anyway.
+>    Population 1 is tracked by #127 staying open plus a `Deferred:` line in ADR-016;
+>    **the #127 comment was drafted and handed back for the user to post — no `gh`
+>    command was run from this dispatch.**
 
 For each ADR-worthy item in `spec.md`, ensure exactly one tracking action exists — a
 matching ADR entry, a linked issue, or an explicit `Deferred:` line with reasoning:
