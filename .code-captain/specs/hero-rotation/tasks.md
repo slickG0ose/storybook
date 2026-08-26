@@ -248,6 +248,28 @@ green, `git diff master...HEAD -- '**/package.json' '**/package-lock.json'` empt
 **Depends on:** 1, 2
 **Parallel-safe with:** 3, 6
 
+**Status:** Done (2026-08-26)
+> Five things the body did not specify, recorded here rather than only in a hand-back:
+> 1. **`server/src/__tests__/setup.ts` also changed** — `createTestApp()` had to mount
+>    `heroRouter`, or every test in `hero.test.ts` 404s. Not in the file list; unavoidable.
+> 2. **`orderBy` is `[{ created_at: 'asc' }, { id: 'asc' }]`.** The body says `created_at`
+>    asc; `id` is only a tiebreak, because SQLite stores millisecond resolution and one
+>    seed run can write two books in the same millisecond. Without it the "deterministic
+>    ordering" that justifies the 300 s cache header is not actually deterministic.
+> 3. **`width`/`height` are the constants `960`/`960`, not probed from the file.** 1:1 is
+>    locked (ADR-014 decision 6) and the derive contract fixes the output at 960×960, so
+>    the alternative is decoding a WebP per request via a native dependency the spec
+>    explicitly refuses — to learn a constant that is already written down.
+> 4. **The two cap tests write throwaway artifacts** under `server/public/hero/test-hero-*/`
+>    and remove them in `afterEach`, with a defensive sweep in `beforeAll`. Only two frames
+>    are committed, so a 2-per-book cap and a 5-total cap cannot otherwise be distinguished
+>    from the artifact gate doing all the work. The existence of `__resetHeroFrameCache()`
+>    in the body's own signature list is what makes this the intended route.
+> 5. **The done-when grep and the explanatory comment conflict.** `routes/hero.ts` carries a
+>    prominent comment about the missing auth read, but naming the helper in it puts a hit
+>    in `grep -n 'getAuthUser' server/src/routes/hero.ts`. The comment is phrased around
+>    the identifier instead, so the grep returns nothing and stays a real check.
+
 **Files to add or change:**
 - `server/src/lib/heroPool.ts` — new; the single expression of eligibility
 - `server/src/routes/hero.ts` — new; the public route
