@@ -179,6 +179,24 @@ comment or in `demo-seed.ts`, not just in the spec.
 **Depends on:** 2 (for which book is eligible — the decision, not the code)
 **Parallel-safe with:** 4
 
+**Status:** Done (2026-08-26)
+> Three deviations from the body below, all recorded here so they are not only in a
+> hand-back message:
+> 1. **Pages 1 and 5, not 1 and 3.** The body's "p3" predates §Open questions, which
+>    resolved to page 1 + page 5 and *rejected* page 3. Followed the resolution.
+> 2. **Page 5 derived from `page-5.png`, not `page-5-v3.png`.** §Open question 1 named
+>    `-v3`, but the fixture points page 5 at `page-5.png`, and "derive only from URLs the
+>    fixture points at" is the harder constraint. Both were rendered and compared; they are
+>    the same scene in the same style (v3 adds the backpack). **Developer judgment call —
+>    owner may overrule**, in which case the fixture and the script's `FRAMES` list change
+>    together in one commit.
+> 3. **Directory cap pinned at 400 KB, per §Open question 2**, not the 1 MB in the body.
+>    Actual total is 275,880 bytes across four images.
+>
+> Also required and not in the body: **`.gitignore` re-includes `server/public/hero/`.**
+> `server/public/*` is ignored wholesale, so the derived artifacts were untracked and
+> would have shipped as a 404 in CI and in production.
+
 **Files to add or change:**
 - `server/scripts/derive-hero-frames.sh` — new; the loop around ADR-014's command
 - `server/public/hero/b2fa23cf-3156-4b89-83e7-82d98c32c8b7/p1-960.webp` + `p1-480.webp`

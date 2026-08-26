@@ -51,6 +51,10 @@ app.use(cors(corsPolicy.options));
 app.use(express.json({ limit: '10mb' }));
 app.use('/illustrations', express.static(join(import.meta.dirname, '../public/illustrations')));
 app.use('/uploads', express.static(join(import.meta.dirname, '../public/uploads')));
+// Derived, committed, byte-budgeted hero-rotation frames. Unlike /illustrations these
+// are never written at runtime -- they are produced by server/scripts/derive-hero-frames.sh
+// and committed. server/src/__tests__/heroFrameAssets.test.ts is the budget gate.
+app.use('/hero', express.static(join(import.meta.dirname, '../public/hero')));
 
 app.use('/api/auth', authRouter);
 app.use('/api/books', booksRouter);
