@@ -4,6 +4,71 @@ Append-only log. Newest entries on top. Each entry should answer: *what was deci
 
 ---
 
+## ADR-014 — Hero art is a committed, byte-budgeted WebP derived from a seeded book page at native 1:1
+
+**Date:** 2026-08-26
+**Status:** Accepted
+**Scope:** `hero-visual` Tasks 1-8. Spec at [.code-captain/specs/hero-visual/spec.md](../specs/hero-visual/spec.md), plan at [tasks.md](../specs/hero-visual/tasks.md). Closes [#125](https://github.com/slickG0ose/storybook/issues/125) and [#118](https://github.com/slickG0ose/storybook/issues/118). Related: [#127](https://github.com/slickG0ose/storybook/issues/127) (rotate the hero art), [#126](https://github.com/slickG0ose/storybook/issues/126) (self-host webfonts, same LCP budget).
+
+### The problem
+
+The Home hero was a headline, a line of subtext, and a CTA over two radial gradients. We sell illustrated books and the first screen showed no illustration. #118 asked separately whether to break the hero's centre-symmetry; that question had no good answer while the hero was text-only, because a centred column is the correct layout for centred text. Adding a visual is what makes the asymmetry decision meaningful, so both issues are discharged by one change.
+
+### Decision
+
+Six coupled decisions, captured as a set per the ADR-004/006/007/008/010/011/012 grouped precedent.
+
+**1. The art is a committed artifact, not a build step.** Derivation ran once by hand; the outputs are in the tree. A build step means a dependency, a config surface, and a per-CI-run cost for a single image that changes approximately never. The exact command is recorded in `client/src/assets/hero/README.md` so it is reproducible without being automated.
+
+**2. No new dependency — and the `npx` path is load-bearing, not incidental.** There is no WebP *encoder* on this machine: `sips` reads WebP but its `--formats` table shows it without the `Writable` flag, and there is no `cwebp`, ImageMagick, or `sharp` anywhere. Derivation runs through `npx -y sharp-cli`, which executes from the npx cache and puts nothing in `package.json` or the lockfile. The named fallback was `sips -s format jpeg`, acceptable only inside the byte budget; it was not needed. `git diff master...HEAD -- '**/package.json' '**/package-lock.json'` is empty.
+
+**3. The byte budget is enforced by a test, not by discipline.** `client/src/__tests__/heroAsset.test.ts` walks `client/src/assets/hero/` recursively and fails if any single file exceeds 150 KB, if the directory total exceeds 200 KB, or if any `.png` appears at all. The source PNGs are ~2.2 MB; the PNG rule is the one assertion that stops someone dropping a source file into the folder and wrecking LCP above the fold. Failure messages name the offending file and its size. Shipped state: 140.9 KB + 28.9 KB + a 4.3 KB README = 174.0 KB.
+
+**4. `client/src/assets/`, not `client/public/`.** Files in `public/` ship unhashed and are referenced by literal path — a cache-busting hazard that also interacts badly with the `VITE_BASE_PATH=/storybook/` GitHub Pages deploy. Importing through Vite gets content-hashing and base-prefixing for free. Both variants are far above `assetsInlineLimit`, so they emit as real files rather than data URIs (verified in the build output).
+
+**5. Bundled, not served from `/illustrations/`.** The server is Render and is currently not up (see [docs/deploy-spike-render.md](../../docs/deploy-spike-render.md)). A hero sourced over the API is a broken box whenever the backend is cold or down. A bundled asset renders regardless. `client/pwa.config.ts` now precaches `webp`, so it also survives offline — verified by grepping `client/dist/sw.js` for both variants in the precache manifest.
+
+**6. Native 1:1, no crop — and this lock is for #127's benefit.** Every illustration this product emits is 1024x1024. Locking the hero frame to 1:1 means #127 can swap any book page in without re-deciding aspect ratio or re-cropping. A landscape crop would also leave dead space beside a text column that is much taller than 4:3 at these type sizes.
+
+### Why
+
+- **LCP is the whole point.** The hero is above the fold. Everything above — the budget, the test that enforces it, the format, the two-variant `srcSet` — exists to add a subject to the hero without paying for it in first paint. #126 protects the same budget from the font side.
+- **The product should show its own output.** Sourcing from a seeded book rather than generating a new asset is cheaper, spends nothing against the illustration quota, and is honest about what the product actually produces. It also avoids pinning the hero to whichever image model happened to make it — the drift problem ADR-013 exists to fix.
+- **A single image does not justify a pipeline.** Adding a build step, a dependency, and a CI cost to process one file that changes approximately never is the wrong shape of solution.
+
+### The frame chosen, and the one that is a trap
+
+`page-4-v2.png` from "A Spot for Sunny" — Mira and Sunny on the bench. It reads as a story rather than a portrait, and its two faces land at ~65 px at hero scale.
+
+**`page-4-v4.png` is a trap and is called out here because the highest version number looks like the safe pick.** It renders Sunny as a golden retriever — the exact defect the v2 feedback string in `spot-for-sunny.json` was written to correct. The `-v3`/`-v4` files are orphaned revisions the seed does not reference. `page-4-v2.png` is the canonical one.
+
+The cover was rejected on composition, not on the lettering premise that was originally assumed: `cover.png` carries no title lettering. It loses on a single figure walking away from the viewer, the second character reduced to a background detail, and a near-monochrome yellow field that would put a large amber wash beside amber brand chrome.
+
+### Alternative considered: a Vite image plugin or a `sharp` build step
+
+Derive at build time from the source PNG, so the committed tree holds no binary artifact and the derivation is reproducible in CI rather than by a documented command.
+
+Rejected on cost-to-benefit for a single file. It adds a dependency to `client/package.json`, a config surface, and per-run CI time forever, to avoid committing 174 KB once. It would also make the hero's bytes invisible to review — a plugin quietly emitting a larger file on a version bump is exactly the regression the byte-budget test is designed to catch loudly. Revisit if the hero becomes dynamic under #127 and the source set grows past a handful of images, at which point the arithmetic flips.
+
+### Alternative considered: a dark-mode brightness filter on the image
+
+`dark:brightness-[0.92]` on the `<img>`, to take the edge off a bright square on a near-black ground.
+
+**Considered against the real rendering and declined.** The mat wrapper (`bg-white dark:bg-gray-800 rounded-[24px] shadow-card` with a `gray-700` ring) already gives the bright square a mid-tone surround instead of a hard glare edge, and `--shadow-card` carries its own dark alphas. The repo owner reviewed both themes on a running dev server: it does not glare, but it is "pretty vivid and 'pops' a bit in dark mode", and "I wouldn't adjust it much if any."
+
+Recording the verdict as "fine, slightly vivid" rather than "correct", because that is what it was. The knob is one class on the `<img>` in `client/src/pages/Home.tsx` and reverting costs nothing — a deliberately low bar to reopen.
+
+### Consequences
+
+- **Quality 72, not the spec's nominal 75, on the 960 variant.** At q=75 it encodes to 151,146 bytes — inside the 150 KB cap by ~2.4 KB. That is too little headroom for a ceiling a test pins exactly; a re-derivation on a different `sharp` build would flip the suite red for no real reason. q=72 costs nothing visible at the rendered size (440 CSS px, 880 px at 2x DPR) and buys ~9 KB. `--effort 6` is also set on both files: pure compression search, more CPU at derivation time, identical quality, zero runtime cost on a committed artifact. Without it, q=75 exceeded the cap outright.
+- **`sizes` overstates the desktop render by 20 px.** It is pinned as `(min-width: 1024px) 440px, 300px`, but the image lays out at 420 CSS px at 1440 because `max-w-6xl` minus the gap minus the mat's padding lands at 420. Harmless — it only biases toward the larger candidate, which a 2x display picks anyway. Pinned verbatim in `Home.test.tsx` with a comment, so a future retune updates the pin rather than reading the red as a bug.
+- **Hero section padding changed** from `py-20 sm:py-24` to `py-16 sm:py-20 lg:py-24`. With art added to the mobile stack the shorter small-screen padding is the sensible reading, but it is a real visual change beyond the art itself.
+- **AVIF variants deferred.** Held as an upgrade path; the `webp`-only precache pattern and the extension-list assertion were both written so adding `avif` later needs no test surgery. Revisit under #127.
+- **#118 needs no ADR of its own.** Its done criterion was "either a redesigned hero, or an ADR recording that the centred composition is intentional" — the redesign discharges it directly.
+- **#127 inherits the 1:1 lock and the byte budget.** Rotation at N images means the per-file budget matters more, not less, and the derivation command in the README is the thing that would need automating first.
+
+---
+
 ## ADR-013 — A book's art is pinned to the image model that made it; `IMAGE_PROVIDER` is only the default for books with no art
 
 **Date:** 2026-08-23
