@@ -4,6 +4,156 @@ Append-only log. Newest entries on top. Each entry should answer: *what was deci
 
 ---
 
+## ADR-016 — Whose art may appear in the hero pool: editorial eligibility and owner consent are separate columns with separate writers
+
+**Date:** 2026-08-26
+**Status:** Accepted
+**Scope:** `hero-rotation` Tasks 2, 4, 5. Spec at [.code-captain/specs/hero-rotation/spec.md](../specs/hero-rotation/spec.md) §"The consent seam", plan at [tasks.md](../specs/hero-rotation/tasks.md). Population 2 of [#127](https://github.com/slickG0ose/storybook/issues/127); **#127 stays open.** Paired with **ADR-015** below, which covers delivery and the eligibility signal.
+
+### The problem
+
+A "best-of pool from the catalog" has no catalog art to draw on. Verified against `dev.db` and disk on 2026-08-26: the six canonical seed books have **zero** illustrations, and every one of the 19 PNGs on disk belongs to a user-created book (`is_user_created: true`, `created_by` = the seeded demo admin). The feature is built on user-created work from its first commit.
+
+So the usual shortcut — "it's our own seed data, consent is implied" — is not available. Putting a reader's art on the front page is promotional publishing, and it must not become one code path with "a reader viewing their own art", by accident or by a handler that forgot.
+
+### Decision
+
+**Eligibility and consent are two columns, written by two different actors, and this spec ships a writer for only one of them.**
+
+```prisma
+model Book {
+  // Editorial: "this is good enough for the front page." Admin-writable.
+  is_hero_eligible Boolean   @default(false)
+  // Permission for promotional display outside this book's own detail page.
+  // NO API writes this column.
+  hero_consent_at  DateTime?
+}
+```
+
+Five seams, all mechanical, all of which must be defeated at once for a stranger's art to reach the pool:
+
+**1. No API writes `hero_consent_at`.** The only writer in the tree is the demo-seed fixture `server/prisma/demo-seed-fixtures/spot-for-sunny.json` — the operator consenting to the operator's own demo book. To place anyone else's art in the pool today, an admin would have to write raw SQL.
+
+**2. The admin route deliberately does not write it, and a test re-reads the row to prove it.** `PUT /api/admin/books/:id/hero-eligible` sets the editorial flag and nothing else; `server/src/routes/__tests__/admin.test.ts` ("does not write hero_consent_at when flagging a book eligible") reads `hero_consent_at` before and after the toggle and asserts null both times. The assertion lives where the temptation lives.
+
+**3. One `where` fragment.** `HERO_POOL_WHERE` in `server/src/lib/heroPool.ts` is the single expression of pool eligibility — `{ deleted_at: null, status: 'published', is_hero_eligible: true, hero_consent_at: { not: null } }` — mirroring `AVAILABLE_BOOK_WHERE`. No route writes its own version.
+
+**4. The wire shape cannot carry a personal frame.** `HeroFrameSchema.source` is `z.literal('pool')`. A personal frame will carry `source: 'personal'` under a different response schema, so a `'personal'` frame emitted from the pool route fails `validate()` loudly rather than shipping. The discriminator looks like dead weight in a single-source world; it is the thing that makes the mistake fail at test time.
+
+**5. `GET /api/hero/pool` has no auth middleware and never calls `getAuthUser` — and the absence is pinned.** The route mounts `validate({ response })` only, and its handler takes `_req`. `hero.test.ts` asserts the same GET returns **byte-identical JSON** with no token, with a normal user's bearer token, and with an admin's; the task's done-when adds `grep -n 'getAuthUser' server/src/routes/hero.ts` returning nothing. The explanatory comment in `routes/hero.ts` is deliberately phrased *around* the identifier so the grep stays a real check rather than matching prose. The moment someone personalises this route, the invariance test goes red.
+
+### Why
+
+- **Consent is the starting state here, not an edge case.** With no catalog art at all, any predicate that tried to sidestep consent would either empty the pool or quietly promote user work.
+- **Admin authority and owner permission are different keys.** An admin saying "this is good" is a quality judgment. Only the owner can say "you may show this to strangers." One column each keeps them un-conflatable.
+- **Seams that are only prose get crossed.** Each of the five is either a type, a `where` fragment, or an assertion; none of them relies on the next reader having read this ADR.
+- **The follow-on spec is already cut against this.** `hero-personal` adds a second route under `/api/hero`, a `source: 'personal'` literal, and frames that join the rotation late. `HERO_POOL_WHERE` does not relax.
+
+### Alternative considered: one column — admin flag only, consent implied by the admin action
+
+Ship `is_hero_eligible` alone and treat an admin flagging a book as sufficient authority to display it.
+
+Rejected because it is exactly the conflation the feature needs to avoid, and it is unrecoverable after the fact: once the flag means both things, there is no way to distinguish "an admin thought this was good" from "the owner agreed to promotion" in existing rows. A nullable timestamp column that nothing writes costs one migration and buys the distinction permanently.
+
+### Alternative considered: derive consent from provenance — `is_user_created: false` or `created_by: null`
+
+Use "the operator made it" as a proxy for "we may promote it."
+
+Rejected on fact: it empties the pool on day one. "A Spot for Sunny" is `is_user_created: true` with `created_by` set to the seeded demo admin, so a provenance predicate excludes the only publishable illustrated book in the database. It also encodes "we only ever promote our own work" as an accident of how the seed happens to be written, rather than as a decision anyone made.
+
+### Alternative considered: folding this into ADR-015 as a grouped decision set
+
+The ADR-004/006/007/008/010/011/012/014 precedent is to group coupled decisions under one entry, and delivery and consent shipped in one PR.
+
+**Declined, and the spec's own reasoning is why:** `hero-personal` will deliberately *extend* this policy, and a policy that is going to be amended is easier to find under its own heading than as decision 8 of an entry titled "delivery". ADR-015 groups decisions that were all answers to the same question (how do N frames reach the page); consent is a different question that happened to arrive in the same PR.
+
+### Consequences
+
+- **Deferred: population 1, the personalised hero.** #127 remains open when this merges — it covers two populations and this PR ships one. Blocked on the server-side derivation decision recorded in ADR-015's alternatives (a native `sharp` install on Render is a CLAUDE.md size-gate item needing its own spec and its own confirmation). Follow-on spec slug: `hero-personal`.
+- **Consent has no UI and no writer, on purpose.** When it is designed, the change is an owner-only route plus a surface that states plainly what opting in means. Until then the column reads as an unused field; the comment on it in `schema.prisma` and the doc comment on `HERO_POOL_WHERE` both say why, so it survives a tidy-up pass.
+- **Withdrawal is asymmetric today.** Un-flagging a book removes its frames from the pool immediately, end-to-end tested. *Withdrawing consent* has no runtime lever — it needs raw SQL. Accepted while there is exactly one consenting book and its owner is the operator; it becomes a real gap the moment a second party consents, which cannot happen without the owner-only route above.
+- **`hero_frames_available` on the admin response is consent-blind and uncapped by design.** It counts derived artifacts on disk, ignoring `HERO_POOL_WHERE` and `MAX_FRAMES_PER_BOOK`, because reporting the pool count would answer `0` both for an underived book and for a consented-but-draft one — collapsing the one distinction the number exists to make. Rationale is on the helper in `server/src/lib/heroPool.ts`, not only here.
+- **The admin list shows editorial state only.** `AdminBookListItemSchema` gains `is_hero_eligible`; nothing surfaces `hero_consent_at`, and `BookSchema` gains neither — the storefront has no business reading an editorial flag.
+
+---
+
+## ADR-015 — Hero rotation delivery: frame 0 stays bundled, rotation frames are served artifacts behind an admin-set eligibility flag
+
+**Date:** 2026-08-26
+**Status:** Accepted
+**Scope:** `hero-rotation` Tasks 1-10. Spec at [.code-captain/specs/hero-rotation/spec.md](../specs/hero-rotation/spec.md), plan at [tasks.md](../specs/hero-rotation/tasks.md). Population 2 of [#127](https://github.com/slickG0ose/storybook/issues/127) — the best-of pool; **#127 stays open** for population 1. Extends **ADR-014**; the consent half is **ADR-016** above rather than a decision in this entry.
+
+### The problem
+
+ADR-014's delivery decision does not survive contact with N frames. It bundled the hero because a bundled asset renders with the backend cold or down, and it capped `client/src/assets/hero/` at 200 KB because a 2.2 MB PNG above the fold destroys LCP. The single shipped frame is already 140.9 KB of that 200 KB. Four bundled frames at hero quality is roughly 680 KB. **Bundling the rotation set is arithmetically dead** — adopting it means roughly quadrupling the one guard that stops a raw PNG landing above the fold, and shipping every rotation byte to every visitor whether they stay for the rotation or not.
+
+### Decision
+
+Seven coupled decisions, captured as a set per the ADR-004/006/007/008/010/011/012/014 grouped precedent.
+
+**1. Split the budget by frame role.** The two constraints — "never depend on the API for first paint" and "never grow the bundle" — apply to *different frames*, and that is the way out. **Frame 0 is untouched**: same two committed WebPs, same `fetchPriority="high"`, same `sizes`, same byte test, same offline precache, and its `<img>` is never re-`src`ed by rotation. **Frames 1..N are progressive enhancement** — also derived, committed, byte-budgeted WebPs, but living under `server/public/hero/` and served by `express.static` at `/hero`, fetched after first paint from `GET /api/hero/pool`. `client/src/assets/hero/` gains nothing, so `heroAsset.test.ts` stays byte-for-byte as ADR-014 wrote it.
+
+Not more bundled frames, not a build step, and not live user art over the API: **derived-and-committed artifacts, delivered over HTTP instead of through Vite, gated behind first paint.**
+
+**2. The served set gets its own budget test, capped at 400 KB — not 1 MB.** `server/src/__tests__/heroFrameAssets.test.ts` mirrors `heroAsset.test.ts`: no `.png` at all, an extension allowlist, 150 KB per file, 400 KB for the directory, failure messages naming the file and its size. Shipped state is 275,880 bytes across four images plus a 10.3 KB README. The owner's ruling on the number: *a cap permitting five frames when two ship is decoration, not a guard* — the hero-visual budget test earned its keep by sitting close enough to bite. Raise it deliberately, in the same commit that adds the third frame.
+
+**3. The derivation command grows a loop, not a pipeline.** `server/scripts/derive-hero-frames.sh` wraps ADR-014's `npx -y sharp-cli` invocation. It stays out of CI and out of the build, still emits committed artifacts, and adds nothing to any `package.json` or lockfile. ADR-014 named automating this as the first thing to revisit once "the source set grows past a handful of images"; at four files it has not.
+
+**4. A pool frame may only come from a URL the seed fixture actually points at.** Page 5 ships derived from `page-5.png`, **not** `page-5-v3.png`, even though the spec's open-question resolution originally named `-v3`. `spot-for-sunny.json` points page 5 at `page-5.png`, and a hero frame that is not in the book it advertises is a small lie. Both were rendered and compared: same scene, same cast, same style — v3 adds Sunny's backpack and reframes the tree. The `-v4` revision remains the trap ADR-014 flagged (it renders Sunny as a golden retriever). Frame choice is page 1 and page 5; `page-3-v2` was rejected rather than merely unchosen, as a single centred figure that reads at hero scale as "sad kid alone".
+
+**5. The best-of signal is an admin-set boolean plus two caps.** `Book.is_hero_eligible Boolean @default(false)`, and that is the whole signal — there are no orders and no cart history, so a computed popularity signal would rank an empty set today. **Frames, not books, are the unit:** `MAX_FRAMES_PER_BOOK = 2` and `MAX_POOL_FRAMES = 5`, so one book cannot monopolise the rotation as the catalog grows while today's single demo book still yields real rotation.
+
+**6. A frame exists only if its derived artifact exists.** The resolver `stat`s `server/public/hero/<book_id>/p<n>-960.webp` and silently omits frames with no file, so setting the flag without running the derive script does nothing visible. That is why the admin toggle's response carries `hero_frames_available`: `0` tells the operator the artifact step is outstanding.
+
+**7. `GET /api/hero/pool` sets `Cache-Control: public, max-age=300`, and this is a new precedent in this codebase — recorded deliberately.** **No other route here sets a cache header.** It was accepted with eyes open, justified by the cold-Render case the whole split-budget design exists to survive: the pool list is identical for every visitor, changes only when an operator flags a book, and asking a sleeping free-tier instance for the same five-item list once per visitor is the cost this design is trying not to pay. Recorded here so the precedent is *discoverable rather than incidental* — the next route that wants a cache header should point at this decision or argue with it, not rediscover the question.
+
+### Why
+
+- **LCP and CLS are still the whole point.** The LCP candidate cannot regress because the element that *is* the LCP candidate never changes. Only `opacity` animates, inside a `relative aspect-square` box that already reserves height, so CLS is zero by construction and merely confirmed by measurement.
+- **The designed degradation is today's hero.** Fetch fails, empty pool, `prefers-reduced-motion: reduce`, or `navigator.connection?.saveData` — all four suppress rotation and leave frame 0. With the backend down, offline, or JS disabled, the hero is exactly what shipped in ADR-014. That is three unit tests, not a hope.
+- **Committed bytes stay reviewable.** A build step would make the hero's bytes invisible to review, which is the regression the budget test exists to catch loudly. Two directories, two tests, same discipline.
+- **The flag is honest about being taste, not evidence.** It goes stale silently and does not scale past an operator who can hold the catalog in their head. The upgrade path needs no wire-shape change, because the response is already an ordered list.
+
+### Alternative considered: more bundled frames under a raised budget
+
+Keep every ADR-014 property with zero new machinery — no server involvement, works offline and with the backend down.
+
+**Rejected on arithmetic.** The 960 variant is 140.9 KB at q=72 with 9.4 KB of headroom; a 640 px frame lands near 62 KB and still reads soft on a 2x display in a 440 CSS px box. Four frames at hero quality is ~680 KB against a 200 KB directory cap. Adopting it spends the LCP guard to buy variety, for a decorative feature. The hybrid keeps the good half of this option: frame 0 is still bundled and still budgeted.
+
+### Alternative considered: a build step or Vite image plugin deriving frames from the source PNGs
+
+No committed binaries, reproducible in CI, the source set as the source of truth.
+
+Rejected for the same reason ADR-014 rejected it, at four files instead of one: a new dependency, a config surface, per-CI-run cost forever, and bytes that stop being visible in review. **Held as the upgrade path** — the derive *script* is the middle step, the loop without the pipeline. Revisit when the frame set outgrows hand-curation.
+
+### Alternative considered: server-side on-demand derivation (`sharp` on Render, or a resize query param)
+
+Any book becomes poolable the moment it is flagged; the only design that scales to population 1.
+
+Rejected here, but **this is the gate on population 1, not a dead end.** It means a native dependency on a free-tier Render instance, a cache directory, and cold-start CPU on the request that renders the front page — a CLAUDE.md size-gate item needing its own confirmation. Bolting it onto this branch would smuggle a significant infrastructure decision in behind a front-page nicety. Recorded so `hero-personal` starts from a stated position rather than re-deriving it.
+
+### Also rejected, with reasoning in spec §Alternatives
+
+- **Serving the existing `/illustrations/*.png` directly and resizing in CSS** — ~2.2 MB per frame, ~11 MB for a full cycle, much of it on mobile data. It is the LCP regression ADR-014 exists to prevent, moved below the fold in time rather than in space.
+- **A `manifest.json` beside the artifacts instead of a DB flag** — cheaper (no migration, no admin route), but it has no runtime withdrawal lever: pulling a frame down would require a deploy. The withdrawal lever is the one operationally serious property here.
+- **Popularity derived from `OrderItem` / cart adds** — ranks an empty set today, is gameable once there is data, and cold-starts against exactly the new books most worth showing.
+
+### Consequences
+
+- **Accepted cost: rotating frames are `aria-hidden` decorative.** Frame 0 keeps the accessible name for the whole session; every rotating layer is `alt=""` + `aria-hidden="true"`, so exactly one `<img>` in the hero is ever named. A screen-reader user gets frame 0's description while a different frame is on screen. Recorded rather than left implicit because it is a deliberate a11y trade, made to keep three pinned `/bench/i` selectors deterministic (`client/src/pages/__tests__/Home.test.tsx:190`, `e2e/tests/home.spec.ts:17`, `e2e/tests/mobile/hero.spec.ts:30`). It is defensible only while the rotation is decorative variety with no caption, no link, and no information the page needs — **it stops being defensible the moment attribution is added.**
+- **Deferred: attribution / a credit line under the hero, and with it the "visible frame owns the accessible name" a11y upgrade.** `book_id` and `book_title` are already on the wire so it needs no schema change, but the two are one change: the moment the hero credits a book, the visible frame is carrying information and must own the name — which makes the three pinned selectors timing-dependent and needs them rewritten deliberately, not incidentally. Reopen trigger: anyone asking the hero to say which book a frame came from.
+- **Deferred: the Admin UI toggle.** The endpoint ships (it is the withdrawal lever); the button does not. A switch that appears to add a book to the hero while the derive step is still outstanding is a worse experience than no switch. Reopen trigger: derivation becoming automatic, at which point the switch tells the truth.
+- **Deferred: popularity-derived ordering** (order counts, cart adds), with the flag demoted to an override. Reopen trigger: real order history. Adopting it changes `resolveHeroPool`'s ordering and nothing else — no wire-shape change, no client change — because the response is already an ordered list.
+- **Deferred: PWA runtime caching for `/hero/*`.** Pool frames are cross-origin in production (`VITE_API_BASE_URL` points at Render while the client ships from GitHub Pages) and cannot be precached from the client build. Frame 0 stays precached, so offline behaviour is unchanged from ADR-014. Reopen trigger: same-origin hosting, or a deliberate runtime-caching strategy in `client/pwa.config.ts`.
+- **Ordering must be deterministic for the cache header to be honest.** The resolver orders by book `created_at` asc **then `id` asc** — SQLite stores millisecond resolution and one seed run can write two books in the same millisecond, so without the tiebreak the "deterministic ordering" that justifies `max-age=300` is not actually deterministic.
+- **`.gitignore` was silently swallowing `server/public/hero/`.** `server/public/*` is ignored wholesale — correctly, since it otherwise holds runtime-generated uploads and illustrations. The derived frames were untracked and would have shipped as a 404 in CI and in production. The directory is now re-included with an explanatory comment. Anything else added under `server/public/` that is meant to be committed needs the same treatment.
+- **Serving instead of bundling means dev needs a proxy entry.** `/hero` was added to `client/vite.config.ts`'s proxy table beside `/illustrations`; without it, every rotating frame in local dev loads Vite's `index.html`, fires `onerror`, and is skipped — the rotation would be invisible in dev and in the e2e run while passing every unit test.
+- **The migration is a `RedefineTables` block, not `ALTER TABLE ADD COLUMN`.** Prisma's SQLite connector emits create-copy-drop-rename for this column pair. The generated SQL was kept unedited and is data-preserving, but it means the "additive migrations are trivially safe" intuition does not read off the SQL here — review the generated file rather than assuming.
+- **`AdminBookListItemSchema`'s new field had to land with the Prisma column, not with the other schemas.** It is a *required* field on a `validate()`-checked response, so adding it a task early makes `GET /api/admin/books` return a hard 500 rather than a soft mismatch. Worth remembering as the general rule: a required field on a validated response and the column that fills it are one commit.
+- **`heroAsset.test.ts` and `client/src/assets/hero/` are byte-identical to master.** That is a success criterion, not a side effect — `git diff --stat origin/master...HEAD -- client/src/assets/hero/ ':!*.md'` is empty.
+
+---
+
 ## ADR-014 — Hero art is a committed, byte-budgeted WebP derived from a seeded book page at native 1:1
 
 **Date:** 2026-08-26
