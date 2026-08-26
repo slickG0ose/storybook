@@ -476,7 +476,7 @@ export default function BookSpread({
             <button
               onClick={() => void handleSubmitFeedback()}
               disabled={revising || !feedback.trim()}
-              className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:shadow-lg transition-shadow cursor-pointer disabled:opacity-40 disabled:cursor-default"
+              className="flex items-center gap-2 px-5 py-2 rounded-xl font-bold bg-purple-500 hover:bg-purple-600 text-white transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-default"
             >
               {revising ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
               {revising ? 'Revising...' : 'Revise Story'}

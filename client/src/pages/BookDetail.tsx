@@ -751,7 +751,7 @@ export default function BookDetail() {
                         ? 'bg-red-500 dark:bg-red-600 text-white'
                         : added
                           ? 'bg-green-500 text-white'
-                          : 'bg-amber-500 hover:bg-amber-600 text-white'
+                          : 'bg-purple-500 hover:bg-purple-600 dark:bg-purple-500 dark:hover:bg-purple-400 text-white'
                     }`}
                   >
                     <ShoppingCart size={18} />
@@ -1154,7 +1154,7 @@ export default function BookDetail() {
             <button
               onClick={() => void handleRevise()}
               disabled={revising || !feedback.trim()}
-              className="flex items-center gap-2 px-6 py-3 rounded-xl font-bold bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:shadow-lg transition-shadow cursor-pointer disabled:opacity-40 disabled:cursor-default"
+              className="flex items-center gap-2 px-6 py-3 rounded-xl font-bold bg-purple-500 hover:bg-purple-600 text-white transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-default"
             >
               {revising ? (
                 <>

@@ -3,8 +3,29 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>StoryBook - AI Children's Books</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+
+    <title>StoryBook — AI children's books</title>
+    <meta
+      name="description"
+      content="Illustrated children's books written by AI. Browse the collection, or create a one-of-a-kind story with your child in it."
+    />
+    <meta name="theme-color" content="#fffbf0" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1b1714" media="(prefers-color-scheme: dark)" />
+
+    <!-- The 📚 emoji data-URI that used to sit here shadowed the real mark in public/. -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="StoryBook — AI children's books" />
+    <meta
+      property="og:description"
+      content="Illustrated children's books written by AI. Browse the collection, or create a one-of-a-kind story with your child in it."
+    />
+    <!-- Vite rewrites meta[content] for the Pages base path, so this resolves under
+         /storybook/ too. It is still root-relative rather than absolute; scrapers that
+         require a full URL are tracked separately. -->
+    <meta property="og:image" content="/icons/og-image.jpg" />
+    <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
     <div id="root"></div>

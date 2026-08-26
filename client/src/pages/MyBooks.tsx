@@ -114,7 +114,7 @@ export default function MyBooks() {
         <p className="text-gray-500 dark:text-gray-400 mb-6">Create your first personalized story with AI!</p>
         <Link
           to="/create"
-          className="inline-block bg-gradient-to-r from-purple-500 to-pink-500 text-white px-6 py-3 rounded-xl font-bold no-underline transition-shadow hover:shadow-lg"
+          className="inline-block bg-purple-500 hover:bg-purple-600 text-white px-6 py-3 rounded-xl font-bold no-underline transition-colors"
         >
           Create a Book
         </Link>
@@ -132,7 +132,7 @@ export default function MyBooks() {
         <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-100 font-display">My Books</h1>
         <Link
           to="/create"
-          className="bg-gradient-to-r from-purple-500 to-pink-500 text-white px-4 py-2 rounded-full flex items-center gap-1.5 no-underline font-semibold hover:shadow-lg transition-shadow text-sm"
+          className="bg-purple-500 hover:bg-purple-600 text-white px-4 py-2 rounded-full flex items-center gap-1.5 no-underline font-semibold transition-colors text-sm"
         >
           <Sparkles size={16} />
           Create Another

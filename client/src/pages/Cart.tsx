@@ -166,7 +166,7 @@ export default function Cart() {
         ) : (
           <Link
             to="/checkout"
-            className="block w-full bg-amber-500 hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-500 text-white py-3 rounded-xl font-bold text-center no-underline transition-colors"
+            className="block w-full bg-purple-500 hover:bg-purple-600 dark:bg-purple-500 dark:hover:bg-purple-400 text-white py-3 rounded-xl font-bold text-center no-underline transition-colors"
           >
             Proceed to Checkout
           </Link>
