@@ -127,6 +127,13 @@ single-source world, and the next reader will be tempted to delete it.
 
 **Surface the seed-shape guardrail to the user before starting this task.**
 
+**Status:** Done (2026-08-26)
+> Seed-shape guardrail was surfaced and approved by the user before this task started.
+> Migration landed as `20260826172625_add_hero_eligibility_and_consent`. Prisma's SQLite
+> connector emits a `RedefineTables` (create-copy-drop-rename) block rather than
+> `ALTER TABLE ADD COLUMN` for this pair; the generated SQL was kept unedited and is
+> data-preserving — see the hand-back note.
+
 **Files to add or change:**
 - `shared/src/admin.ts` — `AdminBookListItemSchema` gains `is_hero_eligible: z.boolean()`
   (moved here from Task 1 by user ruling — required field, needs the column in the same

@@ -44,8 +44,16 @@ export type AdminCreator = z.infer<typeof AdminCreatorSchema>;
 
 // Admin list response: book row + creator. No pages (the list query doesn't
 // include them).
+//
+// `is_hero_eligible` lives here and NOT on BookSchema: it is an editorial flag
+// the storefront has no business reading, and the admin list is the only place
+// its state needs to be visible. It is required rather than optional, which is
+// why it landed in the same commit as the Prisma column — a missing required
+// field is a hard rejection in validate(), so shipping it earlier would have
+// made GET /api/admin/books answer 500.
 export const AdminBookListItemSchema = BookSchema.extend({
   creator: AdminCreatorSchema,
+  is_hero_eligible: z.boolean(),
 });
 export type AdminBookListItem = z.infer<typeof AdminBookListItemSchema>;
 
