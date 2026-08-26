@@ -4,6 +4,7 @@ import type { Express } from 'express';
 import { mkdir, rm, writeFile } from 'fs/promises';
 import { existsSync } from 'fs';
 import { join, resolve } from 'path';
+import { AdminBookHeroEligibleResponseSchema } from '@storybook/shared';
 import { createTestApp, resetDatabase, allowEmail } from '../../__tests__/setup';
 import prisma from '../../db/prisma';
 
@@ -23,6 +24,56 @@ async function createOrphanDir(name: string): Promise<string> {
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, 'placeholder.png'), 'fake-image-bytes');
   return dir;
+}
+
+/**
+ * The seeded demo book, and the only id with committed derived hero frames on disk
+ * (`p1-960.webp` / `p5-960.webp` under `server/public/hero/`). `resetDatabase()` seeds
+ * the six canonical books, none of which have artifacts, so a test that wants
+ * `hero_frames_available` to be non-zero has to create this row itself.
+ */
+const HERO_BOOK_ID = 'b2fa23cf-3156-4b89-83e7-82d98c32c8b7';
+const HERO_DERIVED_PAGES = [1, 5];
+
+/**
+ * A published, consented book with `pageCount` pages. Consent is set here because the
+ * withdrawal test needs a book that is genuinely in the pool before the flag is cleared —
+ * and because no API can set it, which is the point of the column.
+ */
+async function createHeroBook(
+  options: { is_hero_eligible?: boolean; pageCount?: number } = {},
+): Promise<void> {
+  const { is_hero_eligible = false, pageCount = 5 } = options;
+
+  await prisma.book.create({
+    data: {
+      id: HERO_BOOK_ID,
+      title: 'A Spot for Sunny',
+      author: 'AI Storybook',
+      description: 'A gentle story about listening and kindness.',
+      theme: 'friendship',
+      age_range: '4-7',
+      cover_emoji: '\u{1F33B}',
+      cover_color: '#f59e0b',
+      price: 24.99,
+      is_user_created: true,
+      status: 'published',
+      is_hero_eligible,
+      hero_consent_at: new Date('2026-08-26T00:00:00.000Z'),
+    },
+  });
+
+  for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
+    await prisma.page.create({
+      data: {
+        book_id: HERO_BOOK_ID,
+        page_number: pageNumber,
+        text: `Page ${pageNumber} text`,
+        illustration_description: `A sunny dog on page ${pageNumber}. Watercolour, warm light.`,
+        illustration_url: `/illustrations/${HERO_BOOK_ID}/page-${pageNumber}.png`,
+      },
+    });
+  }
 }
 
 /**
@@ -229,6 +280,150 @@ describe('Admin API routes', () => {
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ is_featured: true });
       expect(res.status).toBe(404);
+    });
+  });
+
+  /**
+   * The editorial flag behind the hero rotation. Two things here are load-bearing beyond
+   * the usual CRUD assertions: the route must never write `hero_consent_at` (editorial
+   * judgement is not the owner's consent to be advertised), and clearing the flag must
+   * actually pull the book's frames out of `GET /api/hero/pool` — that round trip is the
+   * withdrawal lever the whole DB-flag design was chosen for over a static manifest.
+   */
+  describe('PUT /api/admin/books/:id/hero-eligible', () => {
+    it('pins is_hero_eligible and hero_frames_available on the response', async () => {
+      const { token: adminToken } = await createUserAndGetToken(app, 'admin@example.com', 'admin');
+      await createHeroBook();
+
+      const res = await request(app)
+        .put(`/api/admin/books/${HERO_BOOK_ID}/hero-eligible`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ is_hero_eligible: true });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        id: HERO_BOOK_ID,
+        title: 'A Spot for Sunny',
+        is_hero_eligible: true,
+        // The count of derived artifacts on disk, not a pool preview: the two committed
+        // frames for this book are pages 1 and 5.
+        hero_frames_available: HERO_DERIVED_PAGES.length,
+        pages: expect.any(Array),
+      });
+
+      // Second line of defence, same schema validate() runs: an extra or missing key in
+      // the book half of the shape fails here too.
+      expect(() => AdminBookHeroEligibleResponseSchema.parse(res.body)).not.toThrow();
+    });
+
+    it('toggles the flag back off and reports the same frame count', async () => {
+      const { token: adminToken } = await createUserAndGetToken(app, 'admin@example.com', 'admin');
+      await createHeroBook({ is_hero_eligible: true });
+
+      const off = await request(app)
+        .put(`/api/admin/books/${HERO_BOOK_ID}/hero-eligible`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ is_hero_eligible: false });
+
+      expect(off.status).toBe(200);
+      expect(off.body.is_hero_eligible).toBe(false);
+      // Frames on disk are unrelated to the flag — clearing it does not unwrite files.
+      expect(off.body.hero_frames_available).toBe(HERO_DERIVED_PAGES.length);
+    });
+
+    it('reports hero_frames_available: 0 for a flagged book with no derived artifacts', async () => {
+      const { token: adminToken } = await createUserAndGetToken(app, 'admin@example.com', 'admin');
+
+      // A seeded catalog book: five pages, zero files under server/public/hero/. This is
+      // the state the number exists to surface — flagged, but the derive step is still
+      // outstanding, so the front page will not change.
+      const res = await request(app)
+        .put('/api/admin/books/luna-star-garden/hero-eligible')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ is_hero_eligible: true });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        is_hero_eligible: true,
+        hero_frames_available: 0,
+      });
+    });
+
+    it('returns 401 for a missing token even with a malformed body', async () => {
+      // Malformed body on purpose: adminGate runs before validate(), so the answer must
+      // be about auth. A 400 here would mean the middleware order was swapped.
+      const res = await request(app)
+        .put('/api/admin/books/luna-star-garden/hero-eligible')
+        .send({ is_hero_eligible: 'yes please' });
+      expect(res.status).toBe(401);
+    });
+
+    it('returns 403 for a non-admin bearer token even with a malformed body', async () => {
+      const { token } = await createUserAndGetToken(app, 'regular@example.com');
+      const res = await request(app)
+        .put('/api/admin/books/luna-star-garden/hero-eligible')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ is_hero_eligible: 'yes please' });
+      expect(res.status).toBe(403);
+    });
+
+    it('returns 400 when is_hero_eligible is not a boolean', async () => {
+      const { token: adminToken } = await createUserAndGetToken(app, 'admin@example.com', 'admin');
+      const res = await request(app)
+        .put('/api/admin/books/luna-star-garden/hero-eligible')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({});
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 404 for an unknown book id', async () => {
+      const { token: adminToken } = await createUserAndGetToken(app, 'admin@example.com', 'admin');
+      const res = await request(app)
+        .put('/api/admin/books/nope/hero-eligible')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ is_hero_eligible: true });
+      expect(res.status).toBe(404);
+    });
+
+    it('does not write hero_consent_at when flagging a book eligible', async () => {
+      const { token: adminToken } = await createUserAndGetToken(app, 'admin@example.com', 'admin');
+
+      const before = await prisma.book.findUnique({ where: { id: 'dinosaur-bakery' } });
+      expect(before?.hero_consent_at).toBeNull();
+
+      const res = await request(app)
+        .put('/api/admin/books/dinosaur-bakery/hero-eligible')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ is_hero_eligible: true });
+      expect(res.status).toBe(200);
+      expect(res.body.is_hero_eligible).toBe(true);
+
+      // The seam, asserted where the temptation lives: an admin flagging a book is not
+      // that book's owner consenting to promotional display. If this route ever learns
+      // to write consent, the pool silently starts publishing strangers' art.
+      const after = await prisma.book.findUnique({ where: { id: 'dinosaur-bakery' } });
+      expect(after?.hero_consent_at).toBeNull();
+    });
+
+    it('removes the book from GET /api/hero/pool when toggled off', async () => {
+      const { token: adminToken } = await createUserAndGetToken(app, 'admin@example.com', 'admin');
+      await createHeroBook({ is_hero_eligible: true });
+
+      const before = await request(app).get('/api/hero/pool');
+      expect(before.status).toBe(200);
+      expect(before.body.frames.map((f: { id: string }) => f.id)).toEqual(
+        HERO_DERIVED_PAGES.map(n => `${HERO_BOOK_ID}-p${n}`),
+      );
+
+      const res = await request(app)
+        .put(`/api/admin/books/${HERO_BOOK_ID}/hero-eligible`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ is_hero_eligible: false });
+      expect(res.status).toBe(200);
+
+      const after = await request(app).get('/api/hero/pool');
+      expect(after.status).toBe(200);
+      expect(after.body.frames).toEqual([]);
     });
   });
 

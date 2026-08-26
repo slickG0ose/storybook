@@ -6,6 +6,8 @@ import {
   AdminBookListResponseSchema,
   AdminBookMutationResponseSchema,
   AdminBookFeaturedRequestSchema,
+  AdminBookHeroEligibleRequestSchema,
+  AdminBookHeroEligibleResponseSchema,
   AdminUserListResponseSchema,
   AdminUserRestoreResponseSchema,
   OrphanIllustrationListResponseSchema,
@@ -17,9 +19,11 @@ import {
   AdminSpendResponseSchema,
   type AllowlistAddRequest,
   type AdminBookFeaturedRequest,
+  type AdminBookHeroEligibleRequest,
   type Character,
 } from '@storybook/shared';
 import prisma from '../db/prisma';
+import { countHeroFrames } from '../lib/heroPool';
 import { getAuthUser, requireAdmin } from './auth';
 import { validate } from '../middleware/validate';
 import { normalizeEmail } from '../services/allowlist';
@@ -205,6 +209,57 @@ router.put(
     });
 
     res.json(hydrateBook(updated));
+  },
+);
+
+/**
+ * PUT /api/admin/books/:id/hero-eligible — the editorial flag behind the Home hero
+ * rotation, and the operational lever for taking a book back out of it.
+ *
+ * Middleware order is `adminGate → validate → handler`, matching the featured route
+ * above: auth must beat validation so a non-admin sending nonsense is told 403, not 400.
+ *
+ * **This route does not write `hero_consent_at`, and must not learn how.** An admin
+ * saying "this is good enough for the front page" is editorial judgement; the book
+ * owner agreeing to have their art advertised to strangers is consent. Two columns, two
+ * writers — see `server/src/lib/heroPool.ts` and spec §"The consent seam". If wiring the
+ * consent write in here would be convenient, that is the seam working.
+ *
+ * `hero_frames_available` is what makes this response more than the book: the flag alone
+ * changes nothing until `server/scripts/derive-hero-frames.sh` has written the artifacts,
+ * so a `0` here means "flagged, but nobody ran the derive script yet".
+ */
+router.put(
+  '/books/:id/hero-eligible',
+  adminGate,
+  validate({
+    name: 'PUT /api/admin/books/:id/hero-eligible',
+    request: AdminBookHeroEligibleRequestSchema,
+    response: AdminBookHeroEligibleResponseSchema,
+  }),
+  async (req: Request<{ id: string }>, res: Response) => {
+    const { is_hero_eligible } = req.body as AdminBookHeroEligibleRequest;
+
+    const book = await prisma.book.findUnique({ where: { id: req.params.id } });
+    if (!book) {
+      return res.status(404).json({ error: 'Book not found' });
+    }
+
+    const updated = await prisma.book.update({
+      where: { id: req.params.id },
+      // One column. Adding `hero_consent_at` to this payload is the mistake the whole
+      // design exists to make hard.
+      data: { is_hero_eligible },
+      include: { pages: { orderBy: { page_number: 'asc' } } },
+    });
+
+    res.json({
+      ...hydrateBook(updated),
+      hero_frames_available: countHeroFrames(
+        updated.id,
+        updated.pages.map(page => page.page_number),
+      ),
+    });
   },
 );
 

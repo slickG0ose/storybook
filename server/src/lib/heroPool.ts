@@ -118,6 +118,29 @@ export function __resetHeroFrameCache(): void {
 }
 
 /**
+ * How many of this book's pages have a derived 960 artifact on disk.
+ *
+ * This is the operator-facing half of the artifact gate, and the reason
+ * `PUT /api/admin/books/:id/hero-eligible` answers with more than `BookWithPagesSchema`:
+ * flagging a book whose frames were never derived changes nothing a visitor can see, and
+ * `hero_frames_available: 0` is how the admin finds that out instead of assuming the
+ * front page changed.
+ *
+ * Deliberately **not** a pool preview. It ignores `HERO_POOL_WHERE` (status, soft-delete,
+ * consent) and ignores `MAX_FRAMES_PER_BOOK`, because it answers "did the derive script
+ * run?" and not "will this appear in the hero?" — a book can legitimately report 2 frames
+ * and still contribute none, e.g. while it is a draft or while its owner has not
+ * consented. Answering the pool question here would report `0` for an underived book and
+ * `0` for an unconsented one, collapsing the one distinction the number exists to make.
+ *
+ * Shares `heroFrameExists` with `resolveHeroPool` so there is still exactly one predicate
+ * for "a frame exists", memo and all.
+ */
+export function countHeroFrames(bookId: string, pageNumbers: number[]): number {
+  return pageNumbers.filter(pageNumber => heroFrameExists(bookId, pageNumber)).length;
+}
+
+/**
  * First sentence of the generation prompt, capped — it describes the art, which is what
  * alt text is for. The full prompt runs to several hundred characters of styling and
  * staging notes that a screen-reader user would have to sit through to reach the subject.

@@ -351,6 +351,20 @@ note the handler signature takes `_req` deliberately.
 **Depends on:** 1, 2, 4 (reuses the frame resolver for the count)
 **Parallel-safe with:** 6
 
+**Status:** Done (2026-08-26)
+> One file beyond the list: **`server/src/lib/heroPool.ts` gained an exported
+> `countHeroFrames(bookId, pageNumbers)`.** The artifact predicate (`heroFrameExists`,
+> plus its memo) was module-private after Task 4, so the alternative was re-deriving
+> `existsSync(server/public/hero/<book>/p<n>-960.webp)` inside `admin.ts` — a second
+> expression of the same rule, which is the thing `heroPool.ts` exists to prevent.
+> Nothing in shared changed: Task 1 already landed both schemas.
+>
+> **`hero_frames_available` is uncapped and consent-blind** — it counts artifacts on
+> disk, ignoring `HERO_POOL_WHERE` and `MAX_FRAMES_PER_BOOK`. Reporting the pool count
+> instead would answer `0` for an underived book *and* for a consented-but-draft one,
+> collapsing the single distinction the number exists to make. Rationale is in the
+> helper's doc comment, not only here.
+
 **Files to add or change:**
 - `server/src/routes/admin.ts` — new route, modelled line-for-line on
   `PUT /api/admin/books/:id/featured` (~line 185)
