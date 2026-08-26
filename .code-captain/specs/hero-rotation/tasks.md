@@ -49,8 +49,9 @@ be written any time after Task 3.
   3. Nothing else on the list: no `data.json`, no Claude model or SDK change, no paid API,
      no auth/session model change, no test deletions. Report that as a clean bill.
 - **Do not touch `client/src/assets/hero/`, `client/src/__tests__/heroAsset.test.ts`, or
-  any attribute on the bundled hero `<img>`.** `git diff --stat master...HEAD --
-  client/src/assets/hero/` must be empty at the end.
+  any attribute on the bundled hero `<img>`.** `git diff --stat origin/master...HEAD --
+  client/src/assets/hero/` must be empty at the end (use `origin/master` — a local
+  `master` ref behind #132 lists the bundled hero assets as additions).
 - **Do not edit these three assertions.** If rotation makes one of them fail, the
   accessible-name rule was broken and the component is wrong, not the test:
   `client/src/pages/__tests__/Home.test.tsx:190`, `e2e/tests/home.spec.ts:17`,
@@ -65,6 +66,12 @@ be written any time after Task 3.
 **Zone:** shared
 **Depends on:** none
 **Parallel-safe with:** 6
+
+**Status:** Done (2026-08-26)
+> **Ruling (user, 2026-08-26): the `AdminBookListItemSchema` field moves to Task 2.**
+> It is a *required* field on a `validate()`-checked response, so adding it before
+> Task 2's Prisma column exists makes `GET /api/admin/books` return 500. Task 2's file
+> list now carries `shared/src/admin.ts`.
 
 **Files to add or change:**
 - `shared/src/hero.ts` — new; pool frame + pool response schemas
@@ -96,7 +103,8 @@ export const AdminBookHeroEligibleResponseSchema = BookWithPagesSchema.extend({
   is_hero_eligible: z.boolean(),
   hero_frames_available: z.number().int(),
 });
-// and: AdminBookListItemSchema gains `is_hero_eligible: z.boolean()`
+// NOTE: AdminBookListItemSchema's `is_hero_eligible` field lands in Task 2 --
+// it is required, so it needs the Prisma column in the same commit.
 ```
 
 Put a comment on `source` saying what it is for. It reads like dead weight in a
@@ -120,6 +128,9 @@ single-source world, and the next reader will be tempted to delete it.
 **Surface the seed-shape guardrail to the user before starting this task.**
 
 **Files to add or change:**
+- `shared/src/admin.ts` — `AdminBookListItemSchema` gains `is_hero_eligible: z.boolean()`
+  (moved here from Task 1 by user ruling — required field, needs the column in the same
+  commit or `GET /api/admin/books` 500s on response validation)
 - `server/prisma/schema.prisma` — two additive columns on `Book`
 - `server/prisma/migrations/<ts>_add_hero_eligibility_and_consent/` — generated
 - `server/prisma/demo-seed-fixtures/spot-for-sunny.json` — `is_hero_eligible: true`,

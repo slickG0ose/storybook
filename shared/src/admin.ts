@@ -67,6 +67,29 @@ export const AdminBookFeaturedRequestSchema = z.object({
 export type AdminBookFeaturedRequest = z.infer<typeof AdminBookFeaturedRequestSchema>;
 
 // ---------------------------------------------------------------------------
+// PUT /api/admin/books/:id/hero-eligible
+//
+// Editorial quality only — "this is good enough for the front page". It is NOT
+// consent: this route never writes `hero_consent_at`, because an admin flagging
+// a book is not the book owner agreeing to promotional display. See
+// .code-captain/specs/hero-rotation/spec.md §"The consent seam".
+// ---------------------------------------------------------------------------
+export const AdminBookHeroEligibleRequestSchema = z.object({
+  is_hero_eligible: z.boolean({ error: 'is_hero_eligible must be a boolean' }),
+});
+export type AdminBookHeroEligibleRequest = z.infer<typeof AdminBookHeroEligibleRequestSchema>;
+
+// Why this is not just BookWithPagesSchema: a frame only exists once its
+// derived artifact has been written under server/public/hero/, so flagging a
+// book with no derived files changes nothing a visitor can see.
+// `hero_frames_available: 0` is how the operator finds that out.
+export const AdminBookHeroEligibleResponseSchema = BookWithPagesSchema.extend({
+  is_hero_eligible: z.boolean(),
+  hero_frames_available: z.number().int(),
+});
+export type AdminBookHeroEligibleResponse = z.infer<typeof AdminBookHeroEligibleResponseSchema>;
+
+// ---------------------------------------------------------------------------
 // GET /api/admin/orphan-illustrations — directories on disk with no live book
 // ---------------------------------------------------------------------------
 export const OrphanIllustrationSchema = z.object({
