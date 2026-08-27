@@ -652,11 +652,9 @@ suite), and the three existing specs are byte-identical to `master`.
 >    added to it and the table reintroduced as "the auth routes, plus any route elsewhere
 >    whose auth requirement is itself load-bearing", which is exactly what
 >    `GET /api/hero/pool`'s deliberate no-auth is.
-> 2. **`client/src/assets/hero/README.md`'s Consumers line is now stale** — it says the
->    assets are imported by `Home.tsx`, but Task 6 moved the imports to `HeroArt.tsx`.
->    Left as-is because the dispatch said to add one line and touch nothing else; the
->    added paragraph names `HeroArt.tsx`, so the file is not misleading, only imprecise.
->    One-line fix if wanted.
+> 2. **`client/src/assets/hero/README.md`'s Consumers line was stale and is now fixed** —
+>    it named `Home.tsx`, but Task 6 moved the imports to `HeroArt.tsx`. Task 9 surfaced
+>    it and left it; it was corrected in the same commit before the branch shipped.
 
 **Files to add or change:**
 - `server/public/hero/README.md` — provenance table, the derive command, the byte budget and

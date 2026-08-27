@@ -16,10 +16,10 @@ server-side derivation decision, and **#127 stays open when this merges.**
 - [x] 4 — `server/src/lib/heroPool.ts` + `GET /api/hero/pool`
 - [x] 5 — `PUT /api/admin/books/:id/hero-eligible`
 - [x] 6 — Extract `HeroArt` with no behaviour change (deliberately a no-op commit)
-- [ ] 7 — The rotation itself: `useHeroPool` + the crossfading layer
-- [ ] 8 — e2e: rotation happens, and nothing shifts (measured CLS)
+- [x] 7 — The rotation itself: `useHeroPool` + the crossfading layer
+- [x] 8 — e2e: rotation happens, and nothing shifts (measured CLS)
 - [x] 9 — Documentation (this file, both hero READMEs, `docs/conventions/server.md`)
-- [ ] 10 — Pre-merge follow-ups: ADR-015 / ADR-016, #127 note, deferred items
+- [x] 10 — Pre-merge follow-ups: ADR-015 / ADR-016, #127 note, deferred items
 
 **Inherited from ADR-014, both load-bearing**
 - The byte budget is enforced by a test (`client/src/__tests__/heroAsset.test.ts`): 150 KB per file, 200 KB for the directory. N rotating frames cannot each be 140 KB and stay bundled. This is the constraint that most shapes the design.
