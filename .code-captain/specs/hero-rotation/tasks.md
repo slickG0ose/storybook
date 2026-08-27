@@ -471,9 +471,11 @@ The `relative aspect-square` wrapper lands here so Task 7 adds no layout. Keep
 **Depends on:** 1, 4, 6
 **Parallel-safe with:** 9
 
-**Status:** Done (2026-08-26) — code + tests only. **The aesthetic pass is still
-outstanding and is the user's**; the "Done when" clause below is not fully discharged
-until they have signed off.
+**Status:** Done (2026-08-26). **Aesthetic pass signed off by the owner 2026-08-27** —
+full rotation cycle reviewed in light and dark at 1440px and 393px against this
+worktree's own servers (API 3011 / client 5183, so the main checkout's :3001/:5173 were
+never involved). The page-1 red door did **not** compete with the purple CTA, so the
+recorded `page-3-v2` swap was not needed. "Done when" is fully discharged.
 > Four things the body did not specify, recorded here rather than only in a hand-back:
 > 1. **`client/vite.config.ts` also changed** — `/hero` was added to the dev/preview
 >    proxy table beside `/illustrations`. Not in the file list, and not optional: in dev
