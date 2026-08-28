@@ -17,6 +17,8 @@
     "characters_json": "[{\"role\":\"primary\",\"name\":\"Mira\",\"descriptor\":\"6-year-old girl with warm brown skin, dark curly hair pulled into two puffs with yellow ribbons, big curious eyes, denim overalls over a striped yellow-and-white t-shirt, red sneakers\"}]",
     "style_descriptor": "Classic storybook illustration, soft ink outlines with watercolor washes, warm and whimsical, gentle textures, suitable for young children",
     "style_reference_url": null,
+    "is_hero_eligible": true,
+    "hero_consent_at": "2026-08-26T00:00:00.000Z",
     "created_at": "2026-05-19T13:26:43.838Z"
   },
   "pages": [

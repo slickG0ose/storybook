@@ -85,8 +85,16 @@ image dependency to satisfy this; stop and ask instead.
 
 ## Consumers
 
-Imported by `client/src/pages/Home.tsx` through Vite, so the emitted URLs are
+Imported by `client/src/components/HeroArt.tsx` through Vite, so the emitted URLs are
 content-hashed and `base`-prefixed automatically (the GitHub Pages deploy serves under
 `/storybook/`). Both files are well above `assetsInlineLimit`, so they emit as real files
 rather than data URIs. They live in `src/assets/` rather than `public/` for exactly that
 hashing and base-path handling.
+
+**This frame is now frame 0 of a rotation** (#127,
+`.code-captain/specs/hero-rotation/spec.md`): `client/src/components/HeroArt.tsx` stacks a
+second, `absolute inset-0` `<img>` over it and crossfades in pool frames served from
+`server/public/hero/` — but **this image's `<img>` element, its `src`, and its attributes
+are never mutated**, so it remains the LCP candidate and the only hero image carrying an
+accessible name. Rotation adds nothing to this directory and spends none of the budget
+above.

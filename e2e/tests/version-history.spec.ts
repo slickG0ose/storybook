@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { API_BASE } from '../ports';
 
 // Story-version revert (T1.2) e2e — fully route-mocked.
 //
@@ -52,13 +53,13 @@ test.describe('Version history — restore prior version', () => {
 
     // Registration is closed by default (F4a / #5) — opt the throwaway address
     // in first. The spec still registers through the real endpoint.
-    const allow = await request.post('http://localhost:3001/api/_test/allow-email', {
+    const allow = await request.post(`${API_BASE}/api/_test/allow-email`, {
       data: { email },
       headers: { 'x-test-secret': 'dev-test-secret' },
     });
     expect(allow.ok()).toBeTruthy();
 
-    const res = await request.post('http://localhost:3001/api/auth/register', {
+    const res = await request.post(`${API_BASE}/api/auth/register`, {
       data: { email, name: 'Version History Tester', password: 'pw-test-1234' },
     });
     expect(res.ok()).toBeTruthy();
@@ -182,7 +183,7 @@ test.describe('Version history — restore prior version', () => {
     // Clean up every user we registered against the live server so dev.db
     // doesn't accumulate timestamped @example.com accounts across runs.
     for (const email of createdEmails) {
-      await request.delete('http://localhost:3001/api/_test/user-by-email', {
+      await request.delete(`${API_BASE}/api/_test/user-by-email`, {
         data: { email },
         headers: { 'x-test-secret': 'dev-test-secret' },
       });

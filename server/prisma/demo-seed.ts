@@ -47,6 +47,11 @@ interface BookFixture {
     characters_json: string | null;
     style_descriptor: string | null;
     style_reference_url: string | null;
+    // Hero rotation. Optional so a fixture written before this spec still
+    // parses; absent means not-eligible and not-consented, matching the
+    // column defaults.
+    is_hero_eligible?: boolean;
+    hero_consent_at?: string | null;
     created_at: string;
   };
   pages: {
@@ -104,6 +109,18 @@ async function upsertFixture(prisma: PrismaClient, fixture: BookFixture, created
     characters_json: book.characters_json,
     style_descriptor: book.style_descriptor,
     style_reference_url: book.style_reference_url,
+    // Hero rotation. `is_hero_eligible` is editorial taste — an admin saying
+    // this book is good enough for the front page.
+    //
+    // `hero_consent_at` is something else entirely, and this is the only place
+    // in the codebase that writes it: the demo fixture is the operator
+    // consenting to promotional display of the operator's own demo book. No
+    // API sets this column, deliberately, because an admin flagging a book is
+    // not the book's owner agreeing to have their art shown to strangers on
+    // the front page. See .code-captain/specs/hero-rotation/spec.md
+    // §"The consent seam" before adding a writer.
+    is_hero_eligible: book.is_hero_eligible ?? false,
+    hero_consent_at: book.hero_consent_at ? new Date(book.hero_consent_at) : null,
     created_by: createdBy,
     created_at: new Date(book.created_at),
   };

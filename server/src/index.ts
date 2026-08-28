@@ -29,6 +29,7 @@ import cartRouter from './routes/cart';
 import ordersRouter from './routes/orders';
 import uploadsRouter from './routes/uploads';
 import adminRouter from './routes/admin';
+import heroRouter from './routes/hero';
 import testRouter from './routes/test';
 import { snapshotDb } from './db/snapshot';
 import { bootstrapAllowlist } from './services/allowlist';
@@ -51,6 +52,10 @@ app.use(cors(corsPolicy.options));
 app.use(express.json({ limit: '10mb' }));
 app.use('/illustrations', express.static(join(import.meta.dirname, '../public/illustrations')));
 app.use('/uploads', express.static(join(import.meta.dirname, '../public/uploads')));
+// Derived, committed, byte-budgeted hero-rotation frames. Unlike /illustrations these
+// are never written at runtime -- they are produced by server/scripts/derive-hero-frames.sh
+// and committed. server/src/__tests__/heroFrameAssets.test.ts is the budget gate.
+app.use('/hero', express.static(join(import.meta.dirname, '../public/hero')));
 
 app.use('/api/auth', authRouter);
 app.use('/api/books', booksRouter);
@@ -59,6 +64,8 @@ app.use('/api/cart', cartRouter);
 app.use('/api/orders', ordersRouter);
 app.use('/api/uploads', uploadsRouter);
 app.use('/api/admin', adminRouter);
+// Public and unauthenticated on purpose — see the header comment in routes/hero.ts.
+app.use('/api/hero', heroRouter);
 
 // Test-only routes for cleaning up state left by E2E specs. Mounted only
 // outside production; the handlers themselves also enforce a NODE_ENV check.

@@ -1,0 +1,415 @@
+import { describe, it, expect, beforeEach, beforeAll, afterEach } from 'vitest';
+import request from 'supertest';
+import type { Express } from 'express';
+import { mkdir, rm, writeFile, readdir } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { HeroPoolResponseSchema } from '@storybook/shared';
+import { createTestApp, resetDatabase, allowEmail } from '../../__tests__/setup';
+import {
+  deriveAlt,
+  MAX_ALT_CHARS,
+  MAX_POOL_FRAMES,
+  MAX_FRAMES_PER_BOOK,
+  __resetHeroFrameCache,
+} from '../../lib/heroPool';
+import prisma from '../../db/prisma';
+
+/**
+ * `GET /api/hero/pool` — wire shape, the caps, and the consent seam.
+ *
+ * The tests that matter most here are the *absence* tests. The pool route has no auth
+ * middleware on purpose (see the header comment in `routes/hero.ts`), and the
+ * auth-invariance case below is the tripwire on that: the moment someone personalises
+ * this route, three byte-identical bodies stop being byte-identical and this file goes
+ * red. Do not relax it into "all three return 200".
+ */
+
+// Mirrors HERO_PUBLIC_DIR in heroPool.ts. This file is at
+// server/src/routes/__tests__/, so three levels up is server/.
+const HERO_DIR = resolve(import.meta.dirname, '../../../public/hero');
+
+/**
+ * The real seeded demo book, and the only book with committed derived frames:
+ * `p1-960.webp`, `p1-480.webp`, `p5-960.webp`, `p5-480.webp`. The tests that assert the
+ * happy path use it rather than a fixture, so the artifact gate is exercised against the
+ * files that actually ship instead of against files a test just wrote.
+ */
+const REAL_BOOK_ID = 'b2fa23cf-3156-4b89-83e7-82d98c32c8b7';
+const REAL_FRAME_PAGES = [1, 5];
+
+/**
+ * Prefix for the throwaway artifact directories the cap tests need. Two committed frames
+ * cannot demonstrate a 2-per-book cap or a 5-total cap — the artifact gate would be doing
+ * all the work and the caps would go untested — so those tests write their own.
+ *
+ * These land inside the directory `heroFrameAssets.test.ts` byte-budgets, which is why
+ * they are swept in `beforeAll` as well as removed in `afterEach`: a crashed run must not
+ * leave bytes behind for the budget test (or `git status`) to find. They are a few bytes
+ * each and match the `<book_id>/p<n>-{480,960}.webp` naming rule, so even a leaked file
+ * fails nothing.
+ */
+const FAKE_BOOK_PREFIX = 'test-hero-';
+
+/** Enough of a RIFF/WEBP header to be recognisable in a directory listing. */
+const FAKE_WEBP = Buffer.from('RIFF\x00\x00\x00\x00WEBPtest-fixture', 'latin1');
+
+const SPOT_FOR_SUNNY = JSON.parse(
+  readFileSync(
+    resolve(import.meta.dirname, '../../../prisma/demo-seed-fixtures/spot-for-sunny.json'),
+    'utf8',
+  ),
+) as { versions: { pages_json: string }[] };
+
+const SPOT_FOR_SUNNY_PAGES = JSON.parse(SPOT_FOR_SUNNY.versions[0].pages_json) as {
+  text: string;
+  illustrationDescription: string;
+}[];
+
+async function removeFakeFrameDirs(): Promise<void> {
+  const entries = await readdir(HERO_DIR, { withFileTypes: true });
+  await Promise.all(
+    entries
+      .filter(e => e.isDirectory() && e.name.startsWith(FAKE_BOOK_PREFIX))
+      .map(e => rm(join(HERO_DIR, e.name), { recursive: true, force: true })),
+  );
+}
+
+/** Writes both variants for each page, so the on-disk shape matches the derive script's. */
+async function writeFakeFrames(bookId: string, pages: number[]): Promise<void> {
+  const dir = join(HERO_DIR, bookId);
+  await mkdir(dir, { recursive: true });
+  for (const pageNumber of pages) {
+    await writeFile(join(dir, `p${pageNumber}-960.webp`), FAKE_WEBP);
+    await writeFile(join(dir, `p${pageNumber}-480.webp`), FAKE_WEBP);
+  }
+  // The resolver memoises existsSync, so a test that changes the disk must clear it.
+  __resetHeroFrameCache();
+}
+
+interface BookOptions {
+  id: string;
+  title?: string;
+  pageCount?: number;
+  status?: string;
+  deleted_at?: Date | null;
+  is_hero_eligible?: boolean;
+  hero_consent_at?: Date | null;
+  created_at?: Date;
+  /** Defaults to the real Spot for Sunny prompts, so alt text is derived from real data. */
+  descriptions?: string[];
+}
+
+async function createBook(options: BookOptions): Promise<void> {
+  const {
+    id,
+    title = 'A Spot for Sunny',
+    pageCount = 5,
+    status = 'published',
+    deleted_at = null,
+    is_hero_eligible = true,
+    hero_consent_at = new Date('2026-08-26T00:00:00.000Z'),
+    created_at = new Date('2026-05-19T13:26:43.838Z'),
+    descriptions,
+  } = options;
+
+  await prisma.book.create({
+    data: {
+      id,
+      title,
+      author: 'AI Storybook',
+      description: 'A gentle story about listening and kindness.',
+      theme: 'friendship',
+      age_range: '4-7',
+      cover_emoji: '\u{1F33B}',
+      cover_color: '#f59e0b',
+      price: 24.99,
+      is_user_created: true,
+      status,
+      deleted_at,
+      is_hero_eligible,
+      hero_consent_at,
+      created_at,
+    },
+  });
+
+  for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
+    await prisma.page.create({
+      data: {
+        book_id: id,
+        page_number: pageNumber,
+        text: SPOT_FOR_SUNNY_PAGES[(pageNumber - 1) % SPOT_FOR_SUNNY_PAGES.length].text,
+        illustration_description:
+          descriptions?.[pageNumber - 1] ??
+          SPOT_FOR_SUNNY_PAGES[(pageNumber - 1) % SPOT_FOR_SUNNY_PAGES.length]
+            .illustrationDescription,
+        illustration_url: `/illustrations/${id}/page-${pageNumber}.png`,
+      },
+    });
+  }
+}
+
+/** Registers a user (allowlisted, as the real gate requires) and returns their token. */
+async function tokenFor(app: Express, email: string, role: 'user' | 'admin'): Promise<string> {
+  await allowEmail(email);
+  const res = await request(app)
+    .post('/api/auth/register')
+    .send({ email, name: email.split('@')[0], password: 'pass1234' });
+  if (role === 'admin') {
+    await prisma.user.update({ where: { id: res.body.id as string }, data: { role: 'admin' } });
+  }
+  return res.body.token as string;
+}
+
+describe('GET /api/hero/pool', () => {
+  let app: Express;
+
+  beforeAll(async () => {
+    // Defensive: clean up after a previous run that crashed before its afterEach.
+    await removeFakeFrameDirs();
+  });
+
+  beforeEach(async () => {
+    await resetDatabase();
+    __resetHeroFrameCache();
+    app = createTestApp();
+  });
+
+  afterEach(async () => {
+    await removeFakeFrameDirs();
+    __resetHeroFrameCache();
+  });
+
+  describe('wire shape', () => {
+    beforeEach(async () => {
+      await createBook({ id: REAL_BOOK_ID });
+    });
+
+    it('pins every field of HeroFrameSchema on the first frame', async () => {
+      const res = await request(app).get('/api/hero/pool');
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ frames: expect.any(Array) });
+      expect(res.body.frames.length).toBeGreaterThan(0);
+
+      expect(res.body.frames[0]).toMatchObject({
+        id: expect.any(String),
+        // Not expect.any(String): the literal IS the consent discriminator. A frame that
+        // ever arrives here as 'personal' must fail, and only a hard-coded value does.
+        source: 'pool',
+        src: expect.any(String),
+        src_small: expect.any(String),
+        width: expect.any(Number),
+        height: expect.any(Number),
+        alt: expect.any(String),
+        book_id: expect.any(String),
+        book_title: expect.any(String),
+      });
+
+      // Second line of defence: the same schema validate() runs, run against the parsed
+      // body, so an extra or missing key in the array shape fails here too.
+      expect(() => HeroPoolResponseSchema.parse(res.body)).not.toThrow();
+    });
+
+    it('serves real committed artifacts, ordered by page number, at 960x960', async () => {
+      const res = await request(app).get('/api/hero/pool');
+
+      expect(res.body.frames.map((f: { id: string }) => f.id)).toEqual(
+        REAL_FRAME_PAGES.map(n => `${REAL_BOOK_ID}-p${n}`),
+      );
+      expect(res.body.frames[0]).toMatchObject({
+        src: `/hero/${REAL_BOOK_ID}/p1-960.webp`,
+        src_small: `/hero/${REAL_BOOK_ID}/p1-480.webp`,
+        width: 960,
+        height: 960,
+        book_id: REAL_BOOK_ID,
+        book_title: 'A Spot for Sunny',
+      });
+    });
+
+    it('sets the 300 s public cache header', async () => {
+      const res = await request(app).get('/api/hero/pool');
+      expect(res.headers['cache-control']).toBe('public, max-age=300');
+    });
+  });
+
+  describe('the consent seam', () => {
+    /**
+     * The tripwire. The pool is a published list, not a personalised one: an admin, a
+     * signed-in reader and a stranger must all be told exactly the same thing, byte for
+     * byte. Comparing raw response text rather than parsed objects is deliberate — key
+     * order is part of "identical", and a personalised branch that merely reordered or
+     * added a field would slip past a deep-equal on parsed JSON.
+     */
+    it('returns byte-identical JSON with no token, a user token, and an admin token', async () => {
+      await createBook({ id: REAL_BOOK_ID });
+
+      const userToken = await tokenFor(app, 'reader@example.com', 'user');
+      const adminToken = await tokenFor(app, 'admin@example.com', 'admin');
+
+      const anonymous = await request(app).get('/api/hero/pool');
+      const asUser = await request(app)
+        .get('/api/hero/pool')
+        .set('Authorization', `Bearer ${userToken}`);
+      const asAdmin = await request(app)
+        .get('/api/hero/pool')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(anonymous.status).toBe(200);
+      expect(asUser.status).toBe(200);
+      expect(asAdmin.status).toBe(200);
+
+      expect(anonymous.text.length).toBeGreaterThan(0);
+      expect(asUser.text).toBe(anonymous.text);
+      expect(asAdmin.text).toBe(anonymous.text);
+    });
+
+    it('omits a flagged book whose owner has not consented', async () => {
+      await createBook({ id: REAL_BOOK_ID, is_hero_eligible: true, hero_consent_at: null });
+
+      const res = await request(app).get('/api/hero/pool');
+
+      expect(res.status).toBe(200);
+      expect(res.body.frames).toEqual([]);
+    });
+
+    it('omits a consented book that has not been flagged eligible', async () => {
+      await createBook({ id: REAL_BOOK_ID, is_hero_eligible: false });
+
+      const res = await request(app).get('/api/hero/pool');
+
+      expect(res.status).toBe(200);
+      expect(res.body.frames).toEqual([]);
+    });
+  });
+
+  describe('availability gates', () => {
+    it('omits a draft book even with both hero fields set', async () => {
+      await createBook({ id: REAL_BOOK_ID, status: 'draft' });
+
+      const res = await request(app).get('/api/hero/pool');
+
+      expect(res.body.frames).toEqual([]);
+    });
+
+    it('omits a soft-deleted book even with both hero fields set', async () => {
+      await createBook({ id: REAL_BOOK_ID, deleted_at: new Date('2026-08-01T00:00:00.000Z') });
+
+      const res = await request(app).get('/api/hero/pool');
+
+      expect(res.body.frames).toEqual([]);
+    });
+  });
+
+  describe('the artifact gate', () => {
+    it('yields no frame for a fully eligible book with nothing derived on disk', async () => {
+      // Flagged, consented, published, five illustrated pages — and no derive step run.
+      // This is the "flag without derive does nothing" case the admin toggle's
+      // hero_frames_available count exists to make visible to the operator.
+      await createBook({ id: `${FAKE_BOOK_PREFIX}underived`, title: 'Never Derived' });
+
+      const res = await request(app).get('/api/hero/pool');
+
+      expect(res.status).toBe(200);
+      expect(res.body.frames).toEqual([]);
+    });
+
+    it('keeps only the pages whose 960 artifact exists', async () => {
+      const bookId = `${FAKE_BOOK_PREFIX}partial`;
+      await createBook({ id: bookId, pageCount: 5 });
+      await writeFakeFrames(bookId, [3]);
+
+      const res = await request(app).get('/api/hero/pool');
+
+      expect(res.body.frames.map((f: { id: string }) => f.id)).toEqual([`${bookId}-p3`]);
+    });
+  });
+
+  describe('caps', () => {
+    it(`takes at most ${MAX_FRAMES_PER_BOOK} frames from a single book`, async () => {
+      const bookId = `${FAKE_BOOK_PREFIX}greedy`;
+      await createBook({ id: bookId, pageCount: 5 });
+      await writeFakeFrames(bookId, [1, 2, 3, 4, 5]);
+
+      const res = await request(app).get('/api/hero/pool');
+
+      // Page order ascending, so the cap takes the first two rather than an arbitrary two.
+      expect(res.body.frames.map((f: { id: string }) => f.id)).toEqual([
+        `${bookId}-p1`,
+        `${bookId}-p2`,
+      ]);
+    });
+
+    it(`never returns more than ${MAX_POOL_FRAMES} frames, ordered by book created_at`, async () => {
+      // Three books × 2 available frames = 6 candidates, one over the ceiling.
+      const ids = ['a', 'b', 'c'].map(suffix => `${FAKE_BOOK_PREFIX}${suffix}`);
+      for (const [index, id] of ids.entries()) {
+        await createBook({
+          id,
+          pageCount: 3,
+          created_at: new Date(`2026-0${index + 1}-01T00:00:00.000Z`),
+        });
+        await writeFakeFrames(id, [1, 2, 3]);
+      }
+
+      const res = await request(app).get('/api/hero/pool');
+
+      expect(res.body.frames).toHaveLength(MAX_POOL_FRAMES);
+      expect(res.body.frames.map((f: { id: string }) => f.id)).toEqual([
+        `${ids[0]}-p1`,
+        `${ids[0]}-p2`,
+        `${ids[1]}-p1`,
+        `${ids[1]}-p2`,
+        `${ids[2]}-p1`,
+      ]);
+    });
+  });
+
+  it('returns 200 with an empty array when nothing is eligible, not a 404', async () => {
+    // resetDatabase() seeds six books, none of them hero-eligible. An empty pool is a
+    // normal state — the client suppresses rotation and stays on the bundled frame 0 —
+    // so it must not look like a broken endpoint.
+    const res = await request(app).get('/api/hero/pool');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ frames: [] });
+  });
+});
+
+describe('deriveAlt', () => {
+  const page1 = SPOT_FOR_SUNNY_PAGES[0].illustrationDescription;
+
+  it('takes one sentence from the real page-1 illustration prompt', () => {
+    const alt = deriveAlt(page1, 'A Spot for Sunny');
+
+    expect(alt).toBe('A bright, cheerful schoolyard bathed in warm afternoon sunlight.');
+    // One sentence: no terminator followed by more text.
+    expect(alt).not.toMatch(/[.!?]\s+\S/);
+    expect(alt.length).toBeLessThanOrEqual(MAX_ALT_CHARS);
+    // The source prompt is several hundred characters of staging and styling notes.
+    expect(alt.length).toBeLessThan(page1.length);
+  });
+
+  it('describes the picture, not the product', () => {
+    // Alt text that says "AI" or "book" describes the thing the image is printed on,
+    // which a screen-reader user already knows from the surrounding page.
+    const alt = deriveAlt(page1, 'A Spot for Sunny');
+
+    expect(alt).not.toContain('AI');
+    expect(alt.toLowerCase()).not.toContain('book');
+  });
+
+  it('caps a run-on description at the limit without cutting a word in half', () => {
+    const runOn = `${'word '.repeat(60).trim()}.`;
+
+    const alt = deriveAlt(runOn, 'Fallback Title');
+
+    expect(alt.length).toBeLessThanOrEqual(MAX_ALT_CHARS);
+    expect(alt.endsWith('…')).toBe(true);
+    expect(alt).not.toMatch(/\s…$/);
+  });
+
+  it('falls back to the book title when the description is empty', () => {
+    expect(deriveAlt('   ', 'A Spot for Sunny')).toBe('A Spot for Sunny');
+  });
+});

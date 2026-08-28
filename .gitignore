@@ -20,6 +20,11 @@ server/public/*
 !server/public/illustrations/
 server/public/illustrations/*
 !server/public/illustrations/b2fa23cf-3156-4b89-83e7-82d98c32c8b7/
+# server/public/hero/ is the opposite case: nothing in it is generated at runtime.
+# Every file is a derived, byte-budgeted, hand-committed hero-rotation frame produced by
+# server/scripts/derive-hero-frames.sh, so the whole directory is re-included with no
+# per-book line. Budget is enforced by server/src/__tests__/heroFrameAssets.test.ts.
+!server/public/hero/
 server/test-results/
 
 # Playwright MCP scratch (screenshots, snapshots, console logs)

@@ -1,4 +1,5 @@
 import { expect, type APIRequestContext, type Page } from '@playwright/test';
+import { API_BASE } from '../ports';
 
 /**
  * Shared fixtures for the "withdraw to edit" e2e specs (#20, spec:
@@ -105,13 +106,13 @@ export async function registerOwner(
   const suffix = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
   const email = `${label}-${suffix}@example.com`;
 
-  const allow = await request.post('http://localhost:3001/api/_test/allow-email', {
+  const allow = await request.post(`${API_BASE}/api/_test/allow-email`, {
     data: { email },
     headers: { 'x-test-secret': 'dev-test-secret' },
   });
   expect(allow.ok()).toBeTruthy();
 
-  const res = await request.post('http://localhost:3001/api/auth/register', {
+  const res = await request.post(`${API_BASE}/api/auth/register`, {
     data: { email, name: 'Edit Published Tester', password: 'pw-test-1234' },
   });
   expect(res.ok()).toBeTruthy();
@@ -120,7 +121,7 @@ export async function registerOwner(
 
 export async function deleteUsers(request: APIRequestContext, emails: string[]): Promise<void> {
   for (const email of emails) {
-    await request.delete('http://localhost:3001/api/_test/user-by-email', {
+    await request.delete(`${API_BASE}/api/_test/user-by-email`, {
       data: { email },
       headers: { 'x-test-secret': 'dev-test-secret' },
     });

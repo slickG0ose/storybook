@@ -7,6 +7,7 @@ import ordersRouter from '../routes/orders';
 import adminRouter from '../routes/admin';
 import generateRouter from '../routes/generate';
 import uploadsRouter from '../routes/uploads';
+import heroRouter from '../routes/hero';
 
 const seedBooks = [
   { id: 'luna-star-garden', title: 'Luna and the Star Garden', author: 'AI Storybook', description: 'A story about stars.', theme: 'fantasy', age_range: '4-7', cover_emoji: '\u{1F31F}', cover_color: '#7c3aed', price: 19.99, is_featured: true, is_user_created: false },
@@ -87,6 +88,10 @@ export function createTestApp(): express.Express {
   app.use('/api/admin', adminRouter);
   app.use('/api/generate', generateRouter);
   app.use('/api/uploads', uploadsRouter);
+  // Mounted with no auth middleware, matching index.ts. If a future edit adds one here
+  // the auth-invariance test in routes/__tests__/hero.test.ts goes red, which is the
+  // point — see the header comment in routes/hero.ts.
+  app.use('/api/hero', heroRouter);
 
   return app;
 }

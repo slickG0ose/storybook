@@ -1,4 +1,5 @@
 import { defineConfig } from '@playwright/test';
+import { API_BASE, API_PORT, CLIENT_BASE, CLIENT_PORT, PREVIEW_BASE, PREVIEW_PORT } from './ports';
 
 export default defineConfig({
   testDir: './tests',
@@ -13,7 +14,7 @@ export default defineConfig({
   reporter: 'html',
 
   use: {
-    baseURL: 'http://localhost:5173',
+    baseURL: CLIENT_BASE,
     screenshot: 'only-on-failure',
     trace: 'on-first-retry',
   },
@@ -62,7 +63,7 @@ export default defineConfig({
     // instead. Same .spec.ts narrowing as the mobile projects, for the same reason.
     {
       name: 'pwa',
-      use: { browserName: 'chromium', baseURL: 'http://localhost:4173/' },
+      use: { browserName: 'chromium', baseURL: `${PREVIEW_BASE}/` },
       testMatch: /tests\/pwa\/.*\.spec\.ts$/,
     },
   ],
@@ -71,14 +72,17 @@ export default defineConfig({
     {
       command: 'npx tsx watch src/index.ts',
       cwd: '../server',
-      url: 'http://localhost:3001/api/health',
+      env: { PORT: API_PORT },
+      url: `${API_BASE}/api/health`,
       reuseExistingServer: !process.env.CI,
       timeout: 15_000,
     },
     {
       command: 'npx vite --host',
       cwd: '../client',
-      url: 'http://localhost:5173',
+      // Vite's config reads these three names; see client/vite.config.ts.
+      env: { API_PORT, CLIENT_PORT, PREVIEW_PORT },
+      url: CLIENT_BASE,
       reuseExistingServer: !process.env.CI,
       timeout: 15_000,
     },
@@ -86,9 +90,10 @@ export default defineConfig({
     // the Workbox generation step takes far longer than the 15s the dev servers need, so
     // this entry carries its own timeout rather than inheriting the default.
     {
-      command: 'npm run build && npx vite preview --port 4173 --strictPort',
+      command: `npm run build && npx vite preview --port ${PREVIEW_PORT} --strictPort`,
       cwd: '../client',
-      url: 'http://localhost:4173/',
+      env: { API_PORT, CLIENT_PORT, PREVIEW_PORT },
+      url: `${PREVIEW_BASE}/`,
       reuseExistingServer: !process.env.CI,
       timeout: 180_000,
     },
