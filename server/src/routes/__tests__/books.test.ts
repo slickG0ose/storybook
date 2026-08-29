@@ -2109,6 +2109,17 @@ describe('Books API routes', () => {
       expect(pages.status).toBe(200);
       expect(pages.body).toMatchObject({ id: 'luna-star-garden', pages: expect.any(Array) });
 
+      // The target must be in page 1's own history (#100) — the revert route no longer
+      // accepts an arbitrary string. This is the only change this test needed.
+      await prisma.illustrationVersion.create({
+        data: {
+          book_id: 'luna-star-garden',
+          page_number: 1,
+          version: 1,
+          url: '/illustrations/restored.png',
+        },
+      });
+
       const revert = await request(app)
         .put('/api/books/luna-star-garden/illustrations/1/revert')
         .set('Authorization', `Bearer ${token}`)
@@ -2121,6 +2132,119 @@ describe('Books API routes', () => {
       });
       expect(page!.illustration_url).toBe('/illustrations/restored.png');
       expect(page!.illustration_description).toBe('a new description');
+    });
+  });
+
+  /**
+   * #100. Before this, `req.body.url` went straight into `Page.illustration_url` behind
+   * nothing but Zod's `.min(1)`. The route is owner- and draft-gated, so there was never
+   * a cross-user write — what it allowed was writing arbitrary content into your OWN
+   * draft, which then ships to every reader if that draft is published.
+   *
+   * Each case below is one of the three the issue enumerates, plus the orphan path that
+   * had to keep working.
+   */
+  describe('PUT /api/books/:id/illustrations/:pageNumber/revert — history validation', () => {
+    async function setupDraftWithHistory(): Promise<string> {
+      const token = await createUserAndGetToken(app);
+      const user = await prisma.user.findFirst({ where: { email: 'author@example.com' } });
+      await prisma.book.update({
+        where: { id: 'luna-star-garden' },
+        data: { status: 'draft', created_by: user!.id },
+      });
+      await prisma.illustrationVersion.createMany({
+        data: [
+          { book_id: 'luna-star-garden', page_number: 1, version: 1, url: '/illustrations/luna-star-garden/page-1.png' },
+          { book_id: 'luna-star-garden', page_number: 1, version: 2, url: '/illustrations/luna-star-garden/page-1-v2.png' },
+          // Page 2's history. Same book, wrong page — the case a per-book check misses.
+          { book_id: 'luna-star-garden', page_number: 2, version: 1, url: '/illustrations/luna-star-garden/page-2.png' },
+        ],
+      });
+      return token;
+    }
+
+    it('accepts a URL that is in that page’s history', async () => {
+      const token = await setupDraftWithHistory();
+
+      const res = await request(app)
+        .put('/api/books/luna-star-garden/illustrations/1/revert')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ url: '/illustrations/luna-star-garden/page-1.png' });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ id: 'luna-star-garden', pages: expect.any(Array) });
+
+      const page = await prisma.page.findUnique({
+        where: { book_id_page_number: { book_id: 'luna-star-garden', page_number: 1 } },
+      });
+      expect(page!.illustration_url).toBe('/illustrations/luna-star-garden/page-1.png');
+    });
+
+    it('rejects an absolute offsite URL', async () => {
+      const token = await setupDraftWithHistory();
+      const before = await prisma.page.findUnique({
+        where: { book_id_page_number: { book_id: 'luna-star-garden', page_number: 1 } },
+      });
+
+      const res = await request(app)
+        .put('/api/books/luna-star-garden/illustrations/1/revert')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ url: 'http://evil.example/x.png' });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ error: expect.stringContaining('history') });
+
+      // The write must not have happened. Asserting the status alone would pass on a
+      // route that 400s *after* updating.
+      const after = await prisma.page.findUnique({
+        where: { book_id_page_number: { book_id: 'luna-star-garden', page_number: 1 } },
+      });
+      expect(after!.illustration_url).toBe(before!.illustration_url);
+    });
+
+    it('rejects a URL from another page of the same book', async () => {
+      const token = await setupDraftWithHistory();
+
+      const res = await request(app)
+        .put('/api/books/luna-star-garden/illustrations/1/revert')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ url: '/illustrations/luna-star-garden/page-2.png' });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ error: expect.stringContaining('history') });
+    });
+
+    it('rejects a junk path that no version ever had', async () => {
+      const token = await setupDraftWithHistory();
+
+      const res = await request(app)
+        .put('/api/books/luna-star-garden/illustrations/1/revert')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ url: '/illustrations/nope.png' });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ error: expect.stringContaining('history') });
+    });
+
+    it('still recovers an orphaned page whose illustration_url is null', async () => {
+      // #95/#99: the art is on disk and in history, but the book row lost the pointer.
+      // This route is the recovery path, so the null-current case must keep working.
+      const token = await setupDraftWithHistory();
+      await prisma.page.update({
+        where: { book_id_page_number: { book_id: 'luna-star-garden', page_number: 1 } },
+        data: { illustration_url: null },
+      });
+
+      const res = await request(app)
+        .put('/api/books/luna-star-garden/illustrations/1/revert')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ url: '/illustrations/luna-star-garden/page-1-v2.png' });
+
+      expect(res.status).toBe(200);
+      const page = await prisma.page.findUnique({
+        where: { book_id_page_number: { book_id: 'luna-star-garden', page_number: 1 } },
+      });
+      expect(page!.illustration_url).toBe('/illustrations/luna-star-garden/page-1-v2.png');
     });
   });
 
