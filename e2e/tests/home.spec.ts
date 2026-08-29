@@ -7,7 +7,7 @@ test.describe('Home page', () => {
     await expect(page.getByRole('button', { name: 'Add to Cart' }).first()).toBeVisible();
   });
 
-  test('loads with the hero section containing "Stories Made with Magic"', async ({ page }) => {
+  test('loads with the hero section containing "Stories made with Magic"', async ({ page }) => {
     await expect(page.getByRole('heading', { level: 1 })).toContainText('Magic');
   });
 

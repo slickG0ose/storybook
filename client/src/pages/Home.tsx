@@ -219,7 +219,7 @@ export default function Home() {
               the column is never half-left-half-centred. */}
           <div className="text-center lg:text-left">
             <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold text-gray-800 dark:text-gray-100 mb-5 font-display max-w-4xl mx-auto lg:mx-0">
-              Stories Made with <span className="text-purple-500 dark:text-purple-300">Magic</span>
+              Stories made with <span className="text-purple-500 dark:text-purple-300">Magic</span>
             </h1>
             <p className="text-lg sm:text-xl text-gray-600 dark:text-gray-300 max-w-[52ch] mx-auto lg:mx-0 mb-9">
               Beautiful children's books crafted by AI. Browse our collection or create a one-of-a-kind story for your little one.
