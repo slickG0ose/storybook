@@ -47,6 +47,15 @@ jobs:
           # Pages serves at: slickg0ose.github.io/storybook/.
           # If you switch to a custom domain or org root, set this to /.
           VITE_BASE_PATH: /storybook/
+          # Origin only, no path — og.config.ts fails the build on a value carrying
+          # one, because the /storybook/ prefix is applied separately above and
+          # including it here would double it. For this deploy target that means
+          # exactly `https://slickg0ose.github.io`.
+          #
+          # Unset is safe and is the current state: og:image then ships root-relative,
+          # which is what it did before #120. Set the repo variable once a canonical
+          # origin exists (#77) and Open Graph cards start resolving.
+          VITE_PUBLIC_ORIGIN: ${{ vars.VITE_PUBLIC_ORIGIN }}
         run: npm run build
       # SPA fallback: GitHub Pages has no client-side-router rewrite, so a
       # direct visit or refresh on a deep route (e.g. /storybook/book/<id>)

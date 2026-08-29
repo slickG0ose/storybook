@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import { pwaOptions } from './pwa.config'
+import { ogAbsoluteUrls } from './og.config'
 
 // Ports are env-overridable so a second checkout can run its dev servers and its e2e
 // suite without colliding with the one that already owns 3001/5173/4173 (#130). The
@@ -33,7 +34,7 @@ const proxy = {
 export default defineConfig({
   // Subpath prefix for built assets; defaults to '/' for local dev.
   base: process.env.VITE_BASE_PATH ?? '/',
-  plugins: [react(), tailwindcss(), VitePWA(pwaOptions)],
+  plugins: [react(), tailwindcss(), VitePWA(pwaOptions), ogAbsoluteUrls()],
   server: {
     port: CLIENT_PORT,
     proxy,
