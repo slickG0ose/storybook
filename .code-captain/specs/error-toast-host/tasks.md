@@ -25,6 +25,8 @@ Work happens on a fresh branch off `master` (suggested `feat/error-toast-host`),
 
 ### Task 1 — `ToastContext`: queue, dedupe, cap, route-clear
 
+Status: Done
+
 **Zone:** client
 **Depends on:** none
 **Parallel-safe with:** none (everything else builds on it)
@@ -81,6 +83,8 @@ Rules the implementation must obey, each with a one-line comment saying why:
 ---
 
 ### Task 2 — `ErrorToastHost` + mount in `main.tsx`
+
+Status: Done
 
 **Zone:** client
 **Depends on:** Task 1
