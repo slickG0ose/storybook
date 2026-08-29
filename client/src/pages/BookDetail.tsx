@@ -706,7 +706,16 @@ export default function BookDetail() {
                 })}
               </div>
             )}
-            <div className="flex items-center gap-3">
+            {/*
+              flex-wrap, not a fixed row (#124). Up to four controls land here at once —
+              Illustrate All, the approve-cast notice with its Skip-portraits escape hatch,
+              and Download PDF — and at 393px the last of them was pushed past the container
+              edge and clipped. Note that horizontal-overflow alone never caught this: the
+              child was clipped by an ancestor's bounds while documentElement.scrollWidth
+              stayed put, which is why e2e/tests/mobile/illustration-actions.spec.ts asserts
+              on each control's own right edge as well.
+            */}
+            <div className="flex flex-wrap items-center gap-3">
               {isDraft && isOwner && (
                 <button
                   onClick={() => {
@@ -731,11 +740,11 @@ export default function BookDetail() {
                 <span className="text-sm text-red-500 dark:text-red-400">{illustrateError}</span>
               )}
               {isDraft && isOwner && !canBulkIllustrate && (
-                <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-300">
+                <div className="flex flex-wrap items-center gap-2 text-sm text-amber-700 dark:text-amber-300">
                   <span>Approve cast to illustrate with consistent characters.</span>
                   <button
                     onClick={() => setSkipPortraits(true)}
-                    className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/60 cursor-pointer border-none"
+                    className="min-h-11 inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/60 cursor-pointer border-none"
                   >
                     Skip portraits — illustrate anyway
                   </button>
