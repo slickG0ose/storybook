@@ -1,6 +1,69 @@
-@import url('https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Nunito:wght@400;500;600;700&display=swap');
-
 @import "tailwindcss";
+
+/*
+ * Self-hosted webfonts (#126). This block replaced an `@import` of fonts.googleapis.com,
+ * which is the worst of the three ways to load a font: the browser cannot even begin the
+ * third-party request until this stylesheet has itself downloaded and parsed, so the
+ * round trip is serialized behind our own CSS. That cost landed on LCP on every page for
+ * every visitor.
+ *
+ * The Tailwind import stays the first rule in the file. `@import` is only valid before
+ * any other at-rule bar `@charset`/`@layer`, so moving these `@font-face` blocks above it
+ * would invalidate it.
+ *
+ * `font-weight: 400 700` is a range, not a mistake. Both families are VARIABLE fonts and
+ * one file carries the whole axis — Google's css2 response emits four `@font-face` blocks
+ * per subset that all point at the same woff2. Pinning a single weight here makes the
+ * browser synthesise the other three by faux-bolding, which reads as visibly wrong on
+ * Fredoka. Four files cover eight weight/subset combinations.
+ *
+ * Family names must match `--font-display` / `--font-body` in the @theme block below
+ * EXACTLY. A typo does not error — the app silently falls back to system sans.
+ *
+ * Files, licences, and the refresh procedure: `public/fonts/README.md`.
+ * `index.html` preloads the two latin faces so their fetch starts during HTML parse
+ * rather than waiting on this file. The latin-ext pair is deliberately not preloaded —
+ * the unicode-range keeps it unfetched unless a page actually uses those codepoints.
+ */
+/* Fredoka, latin */
+@font-face {
+  font-family: 'Fredoka';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/fredoka-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* Fredoka, latin-ext */
+@font-face {
+  font-family: 'Fredoka';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/fredoka-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* Nunito, latin */
+@font-face {
+  font-family: 'Nunito';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/nunito-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* Nunito, latin-ext */
+@font-face {
+  font-family: 'Nunito';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('/fonts/nunito-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
 
 @custom-variant dark (&:where(.dark, .dark *));
 

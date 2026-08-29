@@ -15,6 +15,21 @@
     <!-- The 📚 emoji data-URI that used to sit here shadowed the real mark in public/. -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 
+    <!--
+      Self-hosted fonts (#126). Preloaded here, not merely declared in index.css: an
+      @font-face fetch cannot start until the stylesheet has downloaded and parsed, so a
+      preload during HTML parse is the whole point of moving off the Google @import.
+
+      Only the two latin faces. latin-ext is left to its unicode-range, which keeps it
+      unfetched unless a page actually renders those codepoints — preloading it would
+      spend 40 KB on nothing for almost every visitor.
+
+      `crossorigin` is required even same-origin: fonts are always fetched in CORS mode,
+      and without it the preload is discarded and re-requested, which is worse than none.
+    -->
+    <link rel="preload" href="/fonts/fredoka-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/nunito-latin.woff2" as="font" type="font/woff2" crossorigin />
+
     <meta property="og:type" content="website" />
     <meta property="og:title" content="StoryBook — AI children's books" />
     <meta
