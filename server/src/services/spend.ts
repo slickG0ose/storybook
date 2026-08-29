@@ -21,7 +21,7 @@ import type { ImageProvider } from './imagePin';
  * on error is preferable to charging users for work they didn't get.
  */
 
-export type UsageKind = 'story' | 'illustration' | 'cover';
+export type UsageKind = 'story' | 'illustration' | 'cover' | 'style_reference';
 
 /**
  * Cost per call in whole cents.
@@ -39,6 +39,13 @@ export const COST_CENTS: Record<UsageKind, number> = {
   story: 6,
   illustration: 4,
   cover: 4,
+  // One Sonnet 4.6 vision call describing an uploaded style reference (#96).
+  // Priced at $3/M input, $15/M output. An image costs roughly (w x h)/750
+  // tokens after the API's 1568px long-edge resize, so the worst case is
+  // ~3.3K image tokens (~1.0c) plus the 200-token cap on output (~0.3c) —
+  // about 1.3c. Rounded UP to 2, like every other entry here: a spend guard
+  // that under-estimates is not a guard.
+  style_reference: 2,
 };
 
 /**
