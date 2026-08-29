@@ -109,8 +109,15 @@ export default function CreateBook() {
     try {
       const fd = new FormData()
       fd.append('image', file)
+      // The route is requireAuth + spendGate as of #96 — it makes a real vision
+      // call, so it is metered like every other paid path. No Content-Type header:
+      // fetch sets the multipart boundary itself, and setting it by hand breaks
+      // the upload.
+      const headers: Record<string, string> = {}
+      if (user?.token) headers['Authorization'] = `Bearer ${user.token}`
       const res = await fetch(api('/api/uploads/style-reference'), {
         method: 'POST',
+        headers,
         body: fd,
       })
       if (!res.ok) {

@@ -6,6 +6,9 @@ import { join } from 'path';
 import { randomUUID } from 'crypto';
 import type { Request, Response } from 'express';
 import { isUsableApiKey } from '../lib/apiKeys';
+import { requireAuth } from '../middleware/requireAuth';
+import { spendGate } from '../middleware/spendGate';
+import { recordUsage } from '../services/spend';
 
 const UPLOADS_DIR = join(import.meta.dirname, '../../public/uploads/style-refs');
 
@@ -23,7 +26,26 @@ const upload = multer({
 
 const router = Router();
 
-router.post('/style-reference', upload.single('image'), async (req: Request, res: Response) => {
+/**
+ * Style-reference upload (#96).
+ *
+ * This route was previously anonymous and unmetered while making a real Anthropic
+ * vision call, which meant any caller who could reach the server could burn tokens —
+ * and because it wrote no `UsageLog` row, those tokens were invisible to the global
+ * monthly ceiling, the one ceiling nobody is meant to bypass. CORS did not mitigate
+ * it: `CORS_ORIGIN` restricts browsers and does nothing to a direct `curl`.
+ *
+ * Middleware order is load-bearing. `spendGate` reads `res.locals.user`, so it must
+ * come after `requireAuth` — mounted the other way round it fails closed with a 401
+ * and the route would never work. `upload.single` runs last so a caller who is not
+ * allowed through never gets 5MB buffered on their behalf.
+ */
+router.post(
+  '/style-reference',
+  requireAuth,
+  spendGate('style_reference'),
+  upload.single('image'),
+  async (req: Request, res: Response) => {
   const file = req.file;
   if (!file) {
     return res.status(400).json({ error: 'No image uploaded (field name: image)' });
@@ -68,6 +90,14 @@ router.post('/style-reference', upload.single('image'), async (req: Request, res
       if (firstBlock.type === 'text') {
         descriptor = firstBlock.text.trim();
       }
+
+      // Inside the `isUsableApiKey` branch on purpose. Describing the style is
+      // best-effort — with no usable key no Anthropic call is made, and charging
+      // for a call that never happened would inflate the ceiling that protects the
+      // bill. Recorded after the call resolves, matching every other metered path:
+      // a failure throws to the catch below and consumes no quota.
+      const user = res.locals.user as { id: string };
+      await recordUsage(user.id, 'style_reference');
     }
 
     res.json({ url, descriptor });
@@ -76,6 +106,7 @@ router.post('/style-reference', upload.single('image'), async (req: Request, res
     const msg = err instanceof Error ? err.message : String(err);
     res.status(500).json({ error: 'Failed to process upload. ' + msg });
   }
-});
+  },
+);
 
 export default router;
