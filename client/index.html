@@ -21,9 +21,16 @@
       property="og:description"
       content="Illustrated children's books written by AI. Browse the collection, or create a one-of-a-kind story with your child in it."
     />
-    <!-- Vite rewrites meta[content] for the Pages base path, so this resolves under
-         /storybook/ too. It is still root-relative rather than absolute; scrapers that
-         require a full URL are tracked separately. -->
+    <!--
+      Root-relative as authored, absolute as built. Vite rewrites meta[content] for the
+      Pages base path, and og.config.ts then prepends VITE_PUBLIC_ORIGIN so scrapers that
+      refuse to resolve a relative URL get a full one (#120).
+
+      Leave the authored value root-relative. With VITE_PUBLIC_ORIGIN unset — which is the
+      case until a canonical origin exists (#77) — this ships exactly as written, which is
+      right for the browser even though it is wrong for a scraper. Hard-coding an origin
+      here would invent a fact and break the other of the two deploy targets.
+    -->
     <meta property="og:image" content="/icons/og-image.jpg" />
     <meta name="twitter:card" content="summary_large_image" />
   </head>
