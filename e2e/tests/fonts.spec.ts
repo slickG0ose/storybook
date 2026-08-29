@@ -12,12 +12,21 @@ import { forEachTheme } from './mobile/_helpers';
  */
 test.describe('Webfonts', () => {
   test('are served from this origin, never from Google', async ({ page }) => {
+    // Exact hostname, not `url.includes(...)`. A substring test matches
+    // `evil.test/?x=fonts.googleapis.com` as readily as the real host — CodeQL flags
+    // exactly that as js/incomplete-url-substring-sanitization, and it is right to.
+    const GOOGLE_FONT_HOSTS = new Set(['fonts.googleapis.com', 'fonts.gstatic.com']);
+
     const thirdParty: string[] = [];
     page.on('request', (request) => {
       const url = request.url();
-      if (url.includes('fonts.googleapis.com') || url.includes('fonts.gstatic.com')) {
-        thirdParty.push(url);
+      let hostname: string;
+      try {
+        hostname = new URL(url).hostname;
+      } catch {
+        return; // not an absolute URL; nothing this test cares about
       }
+      if (GOOGLE_FONT_HOSTS.has(hostname)) thirdParty.push(url);
     });
 
     await page.goto('/');
