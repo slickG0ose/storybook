@@ -9,6 +9,7 @@ import { isUsableApiKey } from '../lib/apiKeys';
 import { requireAuth } from '../middleware/requireAuth';
 import { spendGate } from '../middleware/spendGate';
 import { recordUsage } from '../services/spend';
+import { rateLimit } from '../middleware/rateLimit';
 
 const UPLOADS_DIR = join(import.meta.dirname, '../../public/uploads/style-refs');
 
@@ -35,14 +36,26 @@ const router = Router();
  * monthly ceiling, the one ceiling nobody is meant to bypass. CORS did not mitigate
  * it: `CORS_ORIGIN` restricts browsers and does nothing to a direct `curl`.
  *
- * Middleware order is load-bearing. `spendGate` reads `res.locals.user`, so it must
- * come after `requireAuth` — mounted the other way round it fails closed with a 401
- * and the route would never work. `upload.single` runs last so a caller who is not
- * allowed through never gets 5MB buffered on their behalf.
+ * Middleware order is load-bearing. `rateLimit` and `spendGate` both read
+ * `res.locals.user`, so both must come after `requireAuth` — mounted the other way
+ * round they fail closed with a 401 and the route would never work. `upload.single`
+ * runs last so a caller who is not allowed through never gets 5MB buffered on their
+ * behalf.
+ *
+ * Rate limiting sits BEFORE the spend gate on purpose. They guard different things:
+ * the spend gate bounds what a caller may spend, the rate limit bounds how fast they
+ * may ask. A caller who is under quota can still make a hundred multipart uploads a
+ * second, each costing a filesystem write and a model call — which is what CodeQL's
+ * js/missing-rate-limiting flags on this route, and it is right to. Cheaper to
+ * reject first.
+ *
+ * 10 per 10 minutes: a real author picking a style reference tries a handful of
+ * images. This is a ceiling on abuse, not a budget anyone should feel.
  */
 router.post(
   '/style-reference',
   requireAuth,
+  rateLimit({ max: 10, windowMs: 10 * 60 * 1000, bucket: 'style-reference' }),
   spendGate('style_reference'),
   upload.single('image'),
   async (req: Request, res: Response) => {

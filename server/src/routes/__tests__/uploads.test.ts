@@ -6,6 +6,7 @@ import { join } from 'path';
 import { createTestApp, allowEmail, resetDatabase } from '../../__tests__/setup';
 import prisma from '../../db/prisma';
 import { COST_CENTS } from '../../services/spend';
+import { resetRateLimits } from '../../middleware/rateLimit';
 
 // Stub the Anthropic SDK at the module boundary, as books/generate do. The
 // style-reference route asks Claude to describe the uploaded image; nothing
@@ -74,6 +75,8 @@ describe('POST /api/uploads/style-reference — ANTHROPIC_API_KEY config gate', 
     await resetDatabase();
     app = createTestApp();
     mockCreate.mockReset();
+    // The limiter's counters are module-level and outlive a single test.
+    resetRateLimits();
     ({ token } = await createUserAndGetToken(app));
   });
 
@@ -157,6 +160,7 @@ describe('POST /api/uploads/style-reference — auth and metering', () => {
     await resetDatabase();
     app = createTestApp();
     mockCreate.mockReset();
+    resetRateLimits();
     ({ token, userId } = await createUserAndGetToken(app));
     // A key that passes `isUsableApiKey`, so the paid branch is the one under test.
     vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-test-key');
@@ -248,5 +252,79 @@ describe('POST /api/uploads/style-reference — auth and metering', () => {
     expect(res.status).toBe(503);
     expect(res.body).toMatchObject({ error: expect.any(String), quota: { scope: 'monthly' } });
     expect(mockCreate).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Rate limiting (#96 item 3), which CodeQL independently flagged on this route as
+ * `js/missing-rate-limiting` once the route was touched.
+ *
+ * It is a separate guard from the spend gate, not a duplicate of it: the gate bounds
+ * what a caller may SPEND, this bounds how fast they may ASK. A caller comfortably
+ * under quota can still make a hundred multipart uploads a second, each costing a
+ * filesystem write and a model call.
+ */
+describe('POST /api/uploads/style-reference — rate limiting', () => {
+  let app: Express;
+  let token: string;
+
+  beforeEach(async () => {
+    await resetDatabase();
+    app = createTestApp();
+    mockCreate.mockReset();
+    resetRateLimits();
+    ({ token } = await createUserAndGetToken(app));
+    vi.stubEnv('ANTHROPIC_API_KEY', undefined);
+  });
+
+  afterEach(async () => {
+    vi.unstubAllEnvs();
+    resetRateLimits();
+    for (const filename of written.splice(0)) {
+      await rm(join(UPLOADS_DIR, filename), { force: true });
+    }
+  });
+
+  it('allows the first 10 in a window and rejects the 11th', async () => {
+    for (let i = 1; i <= 10; i++) {
+      const res = await uploadPng(app, token);
+      expect(res.status, `upload ${i} of 10 should have been allowed`).toBe(200);
+    }
+
+    const blocked = await uploadPng(app, token);
+    expect(blocked.status).toBe(429);
+    expect(blocked.body).toMatchObject({
+      error: expect.any(String),
+      retryAfterSeconds: expect.any(Number),
+    });
+    expect(blocked.headers['retry-after']).toEqual(expect.any(String));
+  });
+
+  it('counts per user, so one caller cannot exhaust another', async () => {
+    // A shared counter would be worse than none: the first noisy uploader would
+    // lock out everyone else.
+    for (let i = 0; i < 10; i++) await uploadPng(app, token);
+    expect((await uploadPng(app, token)).status).toBe(429);
+
+    const other = await createUserAndGetToken(app);
+    expect((await uploadPng(app, other.token)).status).toBe(200);
+  });
+
+  it('rejects before writing a file or reaching Anthropic', async () => {
+    // The whole point of rejecting early. Asserting only the status would pass on a
+    // limiter mounted after multer, which is the expensive half of the request.
+    vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-test-key');
+    mockCreate.mockResolvedValue({ content: [{ type: 'text', text: 'A style.' }] });
+
+    for (let i = 0; i < 10; i++) await uploadPng(app, token);
+    const callsBefore = mockCreate.mock.calls.length;
+    const filesBefore = written.length;
+
+    const blocked = await uploadPng(app, token);
+
+    expect(blocked.status).toBe(429);
+    expect(blocked.body.url).toBeUndefined();
+    expect(mockCreate.mock.calls.length).toBe(callsBefore);
+    expect(written.length).toBe(filesBefore);
   });
 });
