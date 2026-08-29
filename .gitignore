@@ -2,6 +2,11 @@ node_modules/
 dist/
 .env
 *.db
+# SQLite writes sidecars next to the database; `*.db` does not match them (#97).
+# A crashed run leaves these behind and they would otherwise show up as untracked.
+*.db-journal
+*.db-wal
+*.db-shm
 data.json
 .DS_Store
 .claude/settings.local.json
