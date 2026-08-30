@@ -14,7 +14,22 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  // 3, not 1, and not `undefined`. The suite is `fullyParallel`, so this parallelises
+  // per test, not per file: 147 tests went 6.3m -> 1.1m locally at 3 workers, twice,
+  // with no flake. Capped at 3 rather than left to Playwright's CPU heuristic because
+  // ubuntu-latest gives 4 vCPU and the tsx-watch server plus the Vite dev server are
+  // already using some of them — `undefined` would oversubscribe the runner and trade
+  // the win back for timeouts.
+  //
+  // The ceiling on raising this further is server state, not CPU. Browser state is
+  // isolated per test (localStorage cleared in beforeEach, see docs/conventions/
+  // testing.md), but all workers share one Express instance and one dev.db, and
+  // nothing resets the DB between tests. Specs that mutate shared rows — admin
+  // soft-delete/restore, publish/unpublish, illustration + version history — stay
+  // collision-free today because they generate unique data per run. Adding a spec
+  // that mutates a *seeded* row is what would break this; mark that one
+  // `test.describe.configure({ mode: 'serial' })` rather than dropping workers back.
+  workers: process.env.CI ? 3 : undefined,
   reporter: 'html',
 
   use: {

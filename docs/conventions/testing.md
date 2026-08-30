@@ -219,6 +219,28 @@ test.beforeEach(async ({ page }) => {
 });
 ```
 
+**Server state is not isolated, and CI runs 3 workers in parallel.** The block above
+isolates the *browser*. All workers share one Express instance and one `dev.db`, and
+nothing resets the database between tests — so a spec that mutates shared server state
+must not depend on that state being pristine.
+
+The rule that keeps this working: **generate the data you mutate.** Specs that publish,
+unpublish, soft-delete, restore, or version a book create their own book first, with a
+unique title (`Date.now()` / `Math.random()` are already used in ~20 places for exactly
+this). A spec that instead mutates a *seeded* row will pass alone and flake under
+parallelism, because another worker is reading the row you just changed.
+
+If a spec genuinely cannot own its data, make that spec serial rather than slowing the
+whole suite back down:
+
+```ts
+test.describe.configure({ mode: 'serial' });
+```
+
+Worker count lives in `e2e/playwright.config.ts` and is capped at 3 because
+`ubuntu-latest` has 4 vCPU shared with the dev servers — see the comment there before
+raising it.
+
 ### Running
 
 ```bash
