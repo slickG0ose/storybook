@@ -41,7 +41,7 @@ export default function UpdateToast() {
         <div className="mt-3 flex items-center gap-2">
           <button
             onClick={() => { void updateServiceWorker(true) }}
-            className="min-h-11 inline-flex items-center gap-1.5 rounded-full bg-amber-500 hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-500 px-4 text-sm font-semibold text-white transition-colors cursor-pointer"
+            className="min-h-11 inline-flex items-center gap-1.5 rounded-full bg-purple-500 hover:bg-purple-600 dark:bg-purple-500 dark:hover:bg-purple-400 px-4 text-sm font-semibold text-white transition-colors cursor-pointer"
           >
             <RefreshCw size={16} />
             Reload
