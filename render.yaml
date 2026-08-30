@@ -19,6 +19,13 @@ services:
     runtime: node
     plan: free
     region: oregon
+    # SINGLE INSTANCE IS LOAD-BEARING (ADR-018). server/src/middleware/rateLimit.ts
+    # keeps its counters in a Map in one process, so one instance is the whole fleet.
+    # Adding `numInstances: 2` here — or scaling in the Render dashboard — multiplies
+    # every rate limit by the instance count, silently: no error, no log, nothing in
+    # the response. server/src/__tests__/rateLimitScope.test.ts fails CI if this file
+    # declares more than one; the dashboard path is only caught if you also set
+    # RATE_LIMIT_INSTANCE_COUNT. Move the counter to a shared store before scaling.
     # Build notes:
     # - --include=dev is required because the server runs TypeScript at
     #   runtime via tsx (a devDep); without this, Render's build-time

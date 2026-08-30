@@ -36,11 +36,17 @@ import { bootstrapAllowlist } from './services/allowlist';
 import Anthropic from '@anthropic-ai/sdk';
 import { checkForNewerModel } from './lib/models';
 import { buildCorsPolicy } from './lib/cors';
+import { assertSingleInstanceAssumption } from './middleware/rateLimit';
 
 import type { Request, Response, NextFunction } from 'express';
 
 const app = express();
 const PORT: number = parseInt(process.env.PORT || '3001', 10);
+
+// Rate limiting is in-process, so its guarantee is only as wide as one instance
+// (ADR-018). Checked at boot rather than per-request: the answer cannot change while
+// the process runs, and a 500th-request discovery is not a discovery.
+assertSingleInstanceAssumption();
 
 const corsPolicy = buildCorsPolicy();
 if (corsPolicy.warning) {
