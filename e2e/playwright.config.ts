@@ -3,6 +3,10 @@ import { API_BASE, API_PORT, CLIENT_BASE, CLIENT_PORT, PREVIEW_BASE, PREVIEW_POR
 
 export default defineConfig({
   testDir: './tests',
+  // Refuses to start the suite against an un-hydrated database, naming the one command
+  // that fixes it. See the docblock in global-setup.ts for why this is worth a preflight
+  // request rather than a comment in the spec that needs it.
+  globalSetup: './global-setup.ts',
   timeout: 30_000,
   expect: {
     timeout: 10_000,
