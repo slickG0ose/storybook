@@ -43,10 +43,10 @@ const TRANSPORT_CLASS =
 
 const PLAY_CLASS =
   'min-h-11 min-w-11 inline-flex items-center justify-center rounded-full border-none ' +
-  'bg-amber-500 dark:bg-amber-600 text-white dark:text-white ' +
-  'hover:bg-amber-600 dark:hover:bg-amber-500 ' +
-  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 dark:focus-visible:outline-amber-400 ' +
-  'disabled:opacity-40 disabled:cursor-default disabled:hover:bg-amber-500 dark:disabled:hover:bg-amber-600 ' +
+  'bg-purple-600 dark:bg-purple-600 text-white dark:text-white ' +
+  'hover:bg-purple-700 dark:hover:bg-purple-500 ' +
+  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-500 dark:focus-visible:outline-purple-400 ' +
+  'disabled:opacity-40 disabled:cursor-default disabled:hover:bg-purple-600 dark:disabled:hover:bg-purple-600 ' +
   'transition-colors cursor-pointer'
 
 const SELECT_CLASS =

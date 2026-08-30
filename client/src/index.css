@@ -120,8 +120,7 @@
    * Amber keeps a second, non-overlapping role: brand chrome (wordmark, nav links, age
    * badges) and SELECTED state (active filter chip, active page dot, active view toggle).
    * "Do this" and "this one is picked" are different jobs and read better in different
-   * hues. Two remaining amber ACTION controls — the narration Play button and the update
-   * toast's reload — are the exception and are tracked, not intentional.
+   * hues.
    */
   --color-purple-50: #f5f3fb;
   --color-purple-100: #ebe7f6;
