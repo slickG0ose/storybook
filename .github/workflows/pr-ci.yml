@@ -99,6 +99,14 @@ jobs:
           node-version: '22'
           cache: 'npm'
       - run: npm ci
+      # Fails in seconds, before Prisma and the browser download. Until now e2e was the
+      # only zone with no type gate at all — Playwright transpiles at run time, so a type
+      # error there could only ever surface as a runtime failure inside a spec.
+      # NOTE: this is a new STEP inside the existing job on purpose. The `develop-policy`
+      # ruleset pins required checks by job NAME, so renaming this job to mention the
+      # typecheck would leave every PR waiting on a check that never reports.
+      - run: npm run typecheck
+        working-directory: e2e
       - run: npx prisma generate
         working-directory: server
       - run: npx prisma migrate deploy

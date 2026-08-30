@@ -2,6 +2,7 @@
   "name": "storybook-storefront-e2e",
   "private": true,
   "scripts": {
+    "typecheck": "npx tsc --noEmit",
     "test": "npx playwright test",
     "test:headed": "npx playwright test --headed",
     "test:ui": "npx playwright test --ui",
