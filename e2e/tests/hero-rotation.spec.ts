@@ -62,7 +62,12 @@ const NO_ROTATION =
 
 /** Waits for a pool frame to be on screen and returns its `src`. */
 async function waitForRotation(page: Page): Promise<string> {
-  await expect(layerOne(page)).toBeAttached({ timeout: SWAP_TIMEOUT_MS });
+  // The message goes on THIS assertion, not only on the poll below. An empty pool fails
+  // here first — the layer is never even attached — so the poll that used to carry the
+  // hint never ran, and the whole spec file reported a bare `toBeAttached` timeout with
+  // no mention of the database. That is indistinguishable from a real rotation
+  // regression, and cost a round of debugging a hero that was working fine.
+  await expect(layerOne(page), NO_ROTATION).toBeAttached({ timeout: SWAP_TIMEOUT_MS });
   await expect
     .poll(() => layerOne(page).getAttribute('src'), { message: NO_ROTATION, timeout: SWAP_TIMEOUT_MS })
     .toContain('/hero/');
