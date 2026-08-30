@@ -22,8 +22,14 @@ export const pwaOptions: Partial<VitePWAOptions> = {
     start_url: '.',
     scope: '.',
     display: 'standalone',
+    // Both stay amber, and that is a choice rather than a leftover. Amber is no longer
+    // the action colour — the purple-* ramp carries CTAs since the design pass — but it
+    // is still the brand chrome (wordmark, nav links, age badges), and chrome is what
+    // these two fields actually tint: the OS status bar and the PWA splash, neither of
+    // which is an action surface. Amber-500 on the cream ground is also the higher-
+    // contrast splash pairing; violet on cream is not.
     background_color: '#fffbeb', // amber-50, the app's light surface
-    theme_color: '#f59e0b', // amber-500, the primary CTA
+    theme_color: '#f59e0b', // amber-500, the brand chrome accent
     icons: [
       { src: 'icons/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
       { src: 'icons/maskable-icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'maskable' },
