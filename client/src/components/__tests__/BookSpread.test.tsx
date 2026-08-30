@@ -617,4 +617,52 @@ describe('BookSpread — re-roll style hint', () => {
 
     expect(screen.queryByText(/re-rolls match this book/i)).not.toBeInTheDocument()
   })
+
+  /**
+   * Reviewer finding 1 on #154: the reader-view row got a permanent e2e fence
+   * (`expectTapTargets` in `e2e/tests/mobile/reader-view.spec.ts`), and this row — the
+   * same fix on the same money-path argument — got nothing. No mobile e2e spec covers
+   * it: `illustration-actions.spec.ts` measures "Illustrate All" / "Skip portraits" /
+   * "Download PDF", and the only other e2e mention of `Redo` runs desktop-only and
+   * asserts visibility, not size.
+   *
+   * That inverts the usual risk ordering. The volunteered half of a change is the half
+   * most likely to be undone by a later refactor, because nobody remembers why it was
+   * there. A class pin is the cheap durable option, with in-repo precedent at
+   * `ErrorToastHost.test.tsx` ("gives the dismiss control a 44px tap target").
+   *
+   * This pins the class, not the rendered height — jsdom computes no layout, so it
+   * cannot measure 44px. It catches the realistic regression (someone swaps `min-h-11`
+   * back for `py-1.5` while tidying) and does not pretend to be the measurement the e2e
+   * helper does. A mobile e2e spec for this panel would be the fuller answer; filed
+   * separately rather than widening this PR.
+   */
+  it('holds both re-roll controls at the 44px money-path tap floor', async () => {
+    // `History` renders only when `onShowVersions` is supplied; renderSpread's defaults
+    // omit it, so without this the row is one button and the assertion below is half a test.
+    renderSpread({ book: illustratedBook, isOwner: true, isDraft: true, onShowVersions: vi.fn() })
+    await goToFirstStoryPage()
+
+    // `Redo` spends ~$0.04 on a real image generation and says so in its own label, so
+    // it is PRIMARY_TAP_MIN (44px, Apple HIG), not the 24px navbar-chrome floor.
+    const redo = screen.getByRole('button', { name: /Redo/ })
+    expect(redo.className).toContain('min-h-11')
+
+    // `History` is free, but it shares the row and matches — a 36px control beside a
+    // 44px one is the mis-tap the floor exists to prevent.
+    const history = screen.getByRole('button', { name: /^History$/ })
+    expect(history.className).toContain('min-h-11')
+  })
+
+  it('keeps the re-roll row from relying on vertical padding for its height', async () => {
+    // Guards the guard. `min-h-11` and `py-1.5` are not mutually exclusive in CSS, so a
+    // future edit could re-add the padding, pass the assertion above, and quietly change
+    // the row's visual weight back. The height must come from the min-height alone.
+    renderSpread({ book: illustratedBook, isOwner: true, isDraft: true, onShowVersions: vi.fn() })
+    await goToFirstStoryPage()
+
+    for (const name of [/Redo/, /^History$/]) {
+      expect(screen.getByRole('button', { name }).className).not.toMatch(/\bpy-\d/)
+    }
+  })
 })

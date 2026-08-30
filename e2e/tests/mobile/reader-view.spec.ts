@@ -42,8 +42,20 @@ import {
  */
 
 /**
- * The two controls in the row. Named by text rather than a testid to match the sibling
- * specs, and listed explicitly so a future exception has to be written here, in the open.
+ * The two controls in the row. Named by text rather than a testid, matching the sibling
+ * specs.
+ *
+ * Stated precisely, because the obvious reading is wrong: `has-text` is Playwright
+ * SUBSTRING matching, not the explicit two-element list it looks like. It matches exactly
+ * two controls today only because the fixture makes it so — `_editPublished.ts` gives the
+ * character `Pip` no `portrait_url`, so the cast-panel button renders `Generate portrait
+ * ($0.04)` rather than `Regenerate ($0.04)`. Give that character a portrait, a plausible
+ * edit for an unrelated test, and this selector silently grows to cover a third control
+ * that is still 36px and that this spec never claimed to measure.
+ *
+ * Left as-is rather than tightened to a testid: the failure that would produce is loud and
+ * points at a real defect (tracked separately), not a false alarm. But it is a drift the
+ * next reader should not have to rediscover.
  */
 const CONTROL_ROW = 'button:has-text("Regenerate"), button:has-text("History")';
 
