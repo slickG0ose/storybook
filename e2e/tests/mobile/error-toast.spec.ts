@@ -68,27 +68,16 @@ async function expectBelowNavbar(page: Page, theme: string): Promise<void> {
 }
 
 /**
- * The host's own horizontal fit — measured against the LAYOUT viewport, not the configured
- * one.
+ * The host's own horizontal fit — measured against the LAYOUT viewport.
  *
- * Two things are going on and only one of them is this feature's problem.
+ * This used to compare against `documentElement.scrollWidth` instead, because reader view
+ * overflowed to 464px on a 393px screen with no toast involved (#144) and a `fixed` element
+ * resolves its insets against an initial containing block Chromium expands to match. The
+ * toast measured 452px and looked like the offender; it was pinned correctly to a page that
+ * was too wide.
  *
- * The reader view already overflows with no toast on screen: at a 393px viewport its
- * per-page control row (`Regenerate` + `History` beside the feedback input) measures 464px.
- * Verified by loading reader view with no failure ever raised. Chromium's mobile emulation
- * responds with shrink-to-fit — it widens the layout viewport so the content fits, which is
- * why `window.innerWidth` reports more than the 393px we configured.
- *
- * The toast is `fixed inset-x-3`, so it sizes itself to that inflated layout viewport and
- * measures ~452px. Comparing that to the configured 393px fails, but it is measuring the
- * page's pre-existing defect, not the toast's. That defect is real and is the same class as
- * #124 — it is not this branch's, and asserting it here would either fail on day one or get
- * "fixed" by deleting the check, which would stop guarding the toast at all.
- *
- * So: assert what the toast is actually responsible for — it stays inside the page as the
- * page actually is, adding no overflow of its own. `expectNoHorizontalOverflow` still runs
- * in the spread view below, where the page is clean and the document-wide scan means
- * something.
+ * #144 fixed the page, so the two widths converge and this compares against the layout
+ * viewport directly. If reader view ever overflows again, this fails — which is the point.
  */
 async function expectHostWithinViewport(page: Page, theme: string): Promise<void> {
   await expect(host(page)).toBeVisible();
@@ -118,26 +107,11 @@ async function expectHostWithinViewport(page: Page, theme: string): Promise<void
     left,
     `[${theme}] the toast host starts at ${Math.round(left)}px, left of the layout viewport`,
   ).toBeGreaterThanOrEqual(-1);
-  // Compared against the DOCUMENT width, not the layout viewport — and that difference is
-  // the whole finding, so it is spelled out rather than tuned away.
-  //
-  // In reader view the page is 464px wide on a 393px screen, with no toast involved. A
-  // `position: fixed` element resolves its insets against the initial containing block,
-  // which Chromium expands to that overflow width, so the host measures 452px: inset by
-  // 12px on each side of 464, exactly as authored. The toast is pinned correctly; it is
-  // pinned to a page that is too wide.
-  //
-  // So this asserts what is actually this feature's to own — the toast adds NO overflow
-  // beyond what the page already has — and does not assert the page fits the screen,
-  // because it does not, and that defect is older than this branch. Once the reader view's
-  // control row is fixed (same class as #124, filed as a follow-up), documentWidth and
-  // layoutWidth converge and this assertion tightens on its own with no edit here.
   expect(
     right,
-    `[${theme}] the toast host extends to ${Math.round(right)}px, past the ${documentWidth}px ` +
-      `document (layout viewport ${layoutWidth}px) — the toast is adding overflow of its own ` +
-      'on top of what the page already has',
-  ).toBeLessThanOrEqual(documentWidth + 1);
+    `[${theme}] the toast host extends to ${Math.round(right)}px, past the ${layoutWidth}px ` +
+      `layout viewport (document ${documentWidth}px)`,
+  ).toBeLessThanOrEqual(layoutWidth + 1);
 }
 
 test.describe('Error toast on mobile', () => {

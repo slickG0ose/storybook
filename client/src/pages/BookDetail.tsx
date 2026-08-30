@@ -1014,14 +1014,29 @@ export default function BookDetail() {
                   </div>
                   {isOwner && isDraft && (
                     <div className="mt-3 space-y-2">
-                      <div className="flex gap-2">
+                      {/*
+                       * flex-wrap + min-w-0 on the input, together (#144).
+                       *
+                       * A flex item's default `min-width: auto` refuses to shrink below its
+                       * intrinsic width, and a bare <input type="text"> carries a ~175px one
+                       * from its default `size`. So this row could not shrink: at a 393px
+                       * viewport, with 128px eaten by two nested p-8 containers, the input
+                       * held its floor and pushed both whitespace-nowrap buttons out to
+                       * 464px — the document, not just the row, overflowed the phone.
+                       *
+                       * min-w-0 alone would let the input collapse to a unusably narrow
+                       * sliver next to ~197px of buttons. So the input takes its own row
+                       * below sm and the buttons wrap under it; at sm and up the single-row
+                       * layout is unchanged.
+                       */}
+                      <div className="flex flex-wrap gap-2">
                         <input
                           type="text"
                           value={illustrationFeedback}
                           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setIllustrationFeedback(e.target.value)}
                           placeholder="e.g., make the colors warmer, add more stars..."
                           disabled={illustrating}
-                          className="flex-1 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 text-sm focus:border-purple-400 focus:outline-none placeholder-gray-400 dark:placeholder-gray-500 disabled:opacity-50"
+                          className="basis-full sm:basis-auto flex-1 min-w-0 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 text-sm focus:border-purple-400 focus:outline-none placeholder-gray-400 dark:placeholder-gray-500 disabled:opacity-50"
                         />
                         <button
                           onClick={() => { void handleIllustrate(page.page_number); setIllustrationFeedback('') }}
