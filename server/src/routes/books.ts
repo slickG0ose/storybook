@@ -1003,6 +1003,30 @@ router.put(
     const { url } = req.body as BookIllustrationRevertRequest;
 
     const pageNum = parseInt(req.params.pageNumber);
+
+    // The URL must be one this server already wrote for THIS page (#100). Zod only
+    // enforces `.min(1)`, so without this the body is stored verbatim into
+    // `Page.illustration_url` and three things become possible on your own draft:
+    // an absolute `http://evil.example/x.png` rendered as your book's art and shipped
+    // to every reader if the draft is later published; another book's illustration
+    // pointed at from this one, since only the path's book id is checked; and a junk
+    // path that yields a broken image rather than an error.
+    //
+    // Checking membership in the page's own history closes all three at once, because
+    // every URL `listIllustrationVersions` returns is one we produced. It also keeps
+    // pre-`IllustrationVersion` books working: that helper synthesizes history from
+    // the filesystem when the table has no rows for the page.
+    //
+    // Deliberately not a URL-shape check. A regex allowing `/illustrations/...` would
+    // still permit another book's art, and would need revisiting the moment the
+    // storage layout moves.
+    const history = await listIllustrationVersions(book.id, pageNum);
+    if (!history.some(v => v.url === url)) {
+      return res
+        .status(400)
+        .json({ error: "That illustration is not in this page's history" });
+    }
+
     await prisma.page.update({
       where: { book_id_page_number: { book_id: book.id, page_number: pageNum } },
       data: { illustration_url: url },
