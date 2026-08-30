@@ -52,13 +52,15 @@ Prisma + SQLite. Snapshot/seed/restore conventions live in [docs/conventions/dat
 ## Testing
 
 ```bash
-npm test                             # Vitest — harness suite at repo root (44 tests)
-cd server && npm test                # Vitest + Supertest (233 tests)
-cd client && npm test                # Vitest + RTL (215 tests)
-cd e2e && npm test                   # Playwright (106 tests)
+npm test                             # Vitest — harness suite at repo root (51 tests)
+cd server && npm test                # Vitest + Supertest (408 tests)
+cd client && npm test                # Vitest + RTL (333 tests)
+cd e2e && npm test                   # Playwright (147 tests)
 cd e2e && npm run test:headed
 cd e2e && npm run test:ui
 ```
+
+Counts are a **snapshot, measured 2026-08-30** — they drift with every PR that adds a test and nothing enforces them. Treat a mismatch as a stale doc, not a missing suite. The previous figures (44 / 233 / 215 / 106) had drifted far enough that server was understating by 175 tests, which is the kind of gap that makes a reader doubt the run rather than the doc.
 
 ## CI
 
