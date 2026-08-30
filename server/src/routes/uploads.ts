@@ -51,6 +51,18 @@ const router = Router();
  *
  * 10 per 10 minutes: a real author picking a style reference tries a handful of
  * images. This is a ceiling on abuse, not a budget anyone should feel.
+ *
+ * CodeQL note (alert #23, dismissed as a false positive on 2026-08-29):
+ * `js/missing-rate-limiting` will keep pointing at this handler. That query
+ * recognises rate limiting by matching a short list of libraries by name —
+ * express-rate-limit, express-brute, express-slow-down — so the hand-rolled
+ * middleware above is invisible to it no matter how correct it is. The route IS
+ * limited; see `middleware/rateLimit.ts` and the three tests in
+ * `__tests__/uploads.test.ts` that pin it, including the one asserting the
+ * rejection happens before multer writes a file and before Anthropic is called.
+ *
+ * If the `rateLimit(...)` line above is ever removed, this comment becomes a lie
+ * and the dismissal becomes wrong. Delete both together.
  */
 router.post(
   '/style-reference',
