@@ -740,7 +740,7 @@ function PageIllustration({
               {onShowVersions && (
                 <button
                   onClick={() => void onShowVersions(page.page_number)}
-                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer border-none whitespace-nowrap"
+                  className="flex min-h-11 items-center gap-1 px-3 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer border-none whitespace-nowrap"
                 >
                   <History size={12} />
                   History
@@ -749,7 +749,7 @@ function PageIllustration({
               <button
                 onClick={onRegenerate}
                 disabled={illustrating}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 hover:bg-purple-200 cursor-pointer border-none disabled:opacity-40 whitespace-nowrap"
+                className="flex min-h-11 items-center gap-1 px-3 rounded-lg text-xs font-semibold bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 hover:bg-purple-200 dark:hover:bg-purple-900/50 cursor-pointer border-none disabled:opacity-40 whitespace-nowrap"
               >
                 {illustrating ? <Loader2 size={12} className="animate-spin" /> : <Paintbrush size={12} />}
                 Redo (~$0.04)

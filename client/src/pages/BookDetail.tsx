@@ -1036,19 +1036,19 @@ export default function BookDetail() {
                           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setIllustrationFeedback(e.target.value)}
                           placeholder="e.g., make the colors warmer, add more stars..."
                           disabled={illustrating}
-                          className="basis-full sm:basis-auto flex-1 min-w-0 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 text-sm focus:border-purple-400 focus:outline-none placeholder-gray-400 dark:placeholder-gray-500 disabled:opacity-50"
+                          className="basis-full sm:basis-auto flex-1 min-w-0 min-h-11 px-3 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 text-sm focus:border-purple-400 focus:outline-none placeholder-gray-400 dark:placeholder-gray-500 disabled:opacity-50"
                         />
                         <button
                           onClick={() => { void handleIllustrate(page.page_number); setIllustrationFeedback('') }}
                           disabled={illustrating}
-                          className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 hover:bg-purple-200 dark:hover:bg-purple-900/50 cursor-pointer border-none disabled:opacity-40 whitespace-nowrap"
+                          className="flex min-h-11 items-center gap-1.5 px-3 rounded-lg text-sm font-semibold bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 hover:bg-purple-200 dark:hover:bg-purple-900/50 cursor-pointer border-none disabled:opacity-40 whitespace-nowrap"
                         >
                           {illustrating ? <Loader2 size={14} className="animate-spin" /> : <Paintbrush size={14} />}
                           Regenerate
                         </button>
                         <button
                           onClick={() => void loadVersions(page.page_number)}
-                          className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer border-none whitespace-nowrap"
+                          className="flex min-h-11 items-center gap-1.5 px-3 rounded-lg text-sm font-semibold bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 cursor-pointer border-none whitespace-nowrap"
                         >
                           History
                         </button>
