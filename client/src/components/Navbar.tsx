@@ -37,18 +37,18 @@ export default function Navbar() {
   return (
     <nav className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-b border-amber-100 dark:border-gray-700 sticky top-0 z-50 transition-colors">
       <div className="max-w-6xl mx-auto px-3 sm:px-4 h-16 flex items-center justify-between gap-1 sm:gap-4">
-        <Link to="/" className="flex items-center gap-2 no-underline shrink-0">
+        <Link to="/" aria-label="StoryBook" className="flex items-center gap-2 no-underline shrink-0">
           <span className="text-3xl leading-none">{"\u{1F4DA}"}</span>
           <span className="hidden sm:inline text-2xl font-bold text-amber-900 dark:text-amber-300 font-display">StoryBook</span>
         </Link>
 
         <div className="flex items-center gap-0.5 sm:gap-4">
-          <Link to="/#browse" className={NAV_LINK}>
+          <Link to="/#browse" aria-label="Browse" className={NAV_LINK}>
             <BookOpen size={18} />
             <span className="hidden sm:inline">Browse</span>
           </Link>
           {user && (
-            <NavLink to="/my-books" className={navLinkClass}>
+            <NavLink to="/my-books" aria-label="My Books" className={navLinkClass}>
               <User size={18} />
               <span className="hidden sm:inline">My Books</span>
             </NavLink>
@@ -76,6 +76,7 @@ export default function Navbar() {
           </button>
           <Link
             to="/cart"
+            aria-label="Cart"
             className="text-amber-800 dark:text-amber-300 hover:text-amber-600 dark:hover:text-amber-200 no-underline flex items-center p-2 sm:p-0 rounded-full hover:bg-amber-100/60 dark:hover:bg-gray-700/60 sm:hover:bg-transparent sm:dark:hover:bg-transparent transition-colors"
           >
             {/* The badge anchors to this inner span, not the link, so the mobile-only
@@ -99,7 +100,7 @@ export default function Navbar() {
               <span className="hidden sm:inline">{user.name.split(' ')[0]}</span>
             </button>
           ) : (
-            <Link to="/login" className={NAV_LINK}>
+            <Link to="/login" aria-label="Sign In" className={NAV_LINK}>
               <User size={18} />
               <span className="hidden sm:inline">Sign In</span>
             </Link>

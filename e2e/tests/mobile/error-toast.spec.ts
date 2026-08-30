@@ -248,11 +248,8 @@ test.describe('Error toast on mobile', () => {
         // the queue ("Couldn't restore that user." is meaningless on /cart). This has to be an
         // in-app navigation — a full page load would clear it trivially and prove nothing.
         // The sticky navbar, not the in-page "Back to My Books" link: we are 4000px down
-        // the reader view and that link is at the top. Located by href rather than by
-        // accessible name because at mobile widths the navbar's label is `hidden sm:inline`
-        // and the link carries no aria-label — so it has no accessible name at all here.
-        // That is a real a11y gap, pre-existing and not this branch's; flagged in the PR.
-        await page.locator('nav a[href="/my-books"]').first().click();
+        // the reader view and that link is at the top.
+        await page.getByRole('link', { name: 'My Books', exact: true }).click();
         await expect(page).toHaveURL(/\/my-books$/);
         await expect(host(page), `[${theme}] the toast survived a route change`).toHaveCount(0);
 
