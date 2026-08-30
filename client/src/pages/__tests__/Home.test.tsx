@@ -91,13 +91,13 @@ describe('Home', () => {
     vi.restoreAllMocks()
   })
 
-  it('renders the hero section with "Stories Made with Magic"', () => {
+  it('renders the hero section with "Stories made with Magic"', () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(() =>
       Promise.resolve(new Response(JSON.stringify([]), { headers: { 'Content-Type': 'application/json' } }))
     )
 
     renderHome()
-    expect(screen.getByText(/Stories Made with/)).toBeInTheDocument()
+    expect(screen.getByText(/Stories made with/)).toBeInTheDocument()
     expect(screen.getByText('Magic')).toBeInTheDocument()
   })
 
