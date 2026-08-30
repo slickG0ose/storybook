@@ -18,7 +18,7 @@ AI-powered children's book store. React + Express + Claude API. Working storefro
 | `e2e/` | Playwright 1.52, TS | [docs/conventions/testing.md](docs/conventions/testing.md) |
 | `docs/` | Backlog archive, research notes, conventions | — |
 
-Stack details, patterns, and zone-specific conventions live in `docs/conventions/{server,client,testing,data}.md`. Agents read these on demand — they're the source of truth, not duplicated into agent prompts.
+Stack details, patterns, and zone-specific conventions live in `docs/conventions/{server,client,testing,data}.md`. Agents read these on demand — they're the source of truth, not duplicated into agent prompts. For edges that cross a zone boundary — which page calls which route, which router pulls which service, what a `@storybook/shared` schema change touches — read [docs/conventions/call-graph.md](docs/conventions/call-graph.md) instead of grepping all four workspaces.
 
 ## Branching
 
@@ -192,7 +192,7 @@ NEVER claim a feature complete until ALL of:
 - **Backlog (active):** https://github.com/slickG0ose/storybook/issues — grouped by milestone
 - **Backlog (archive):** `docs/backlog.md` — pre-migration, preserved for OPS conventions
 - **Research:** `docs/marketing-research.md`, `docs/print-publishing-research.md`
-- **Conventions:** `docs/conventions/{server,client,testing,data}.md` — stack details, patterns, when-adding-a-new-X recipes; **`docs/conventions/harness-resolution.md`** — auto-generated snapshot of how every `.claude/` item resolves
+- **Conventions:** `docs/conventions/{server,client,testing,data}.md` — stack details, patterns, when-adding-a-new-X recipes; **`docs/conventions/call-graph.md`** — cross-zone call graph (client→route, route→service, shared-schema fan-out) and the greps that regenerate it; **`docs/conventions/harness-resolution.md`** — auto-generated snapshot of how every `.claude/` item resolves
 - **Active agents:** `.claude/agents/{architect,developer,reviewer}.md`
 - **Commands:** `.claude/commands/{start-task,execute-task,ship,create-adr}.md`
 - **Mechanical-check skills:** `.claude/skills/{wire-shape-check,dark-mode-parity-check,adr-tracking-check}/SKILL.md`
