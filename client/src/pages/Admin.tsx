@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { Shield, Users, BookOpen, FolderOpen, Loader2, RotateCcw, Star, AlertCircle, Trash2, MailCheck, Plus, Gauge } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { useToast } from '../context/ToastContext'
 import { api } from '../lib/apiBase'
 import type { AdminUser, AdminBook, OrphanIllustration, AllowedEmail, AdminSpendResponse } from '../types'
 
@@ -31,6 +32,9 @@ type Tab = 'users' | 'books' | 'orphans' | 'allowlist' | 'spend'
 
 export default function Admin() {
   const { user, loading: authLoading } = useAuth()
+  // Called here, above the authLoading / !user / role early returns below, so hook order
+  // is unconditional on every render of this component.
+  const { showError } = useToast()
   const [tab, setTab] = useState<Tab>('users')
 
   // Users tab state
@@ -227,13 +231,13 @@ export default function Admin() {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (!res.ok) {
-        window.alert("Couldn't restore that user. Refresh to see the latest state.")
+        showError("Couldn't restore that user. Refresh to see the latest state.")
         return
       }
       const updated = (await res.json()) as AdminUser
       setUsers(prev => prev.map(u => (u.id === updated.id ? { ...u, ...updated } : u)))
     } catch {
-      window.alert("Couldn't restore that user. Check your connection and try again.")
+      showError("Couldn't restore that user. Check your connection and try again.")
     }
   }
 
@@ -246,13 +250,13 @@ export default function Admin() {
         headers: { Authorization: `Bearer ${token}` },
       })
       if (!res.ok) {
-        window.alert("Couldn't restore that book. Refresh to see the latest state.")
+        showError("Couldn't restore that book. Refresh to see the latest state.")
         return
       }
       const updated = (await res.json()) as AdminBook
       setBooks(prev => prev.map(b => (b.id === updated.id ? { ...b, ...updated } : b)))
     } catch {
-      window.alert("Couldn't restore that book. Check your connection and try again.")
+      showError("Couldn't restore that book. Check your connection and try again.")
     }
   }
 
@@ -313,13 +317,13 @@ export default function Admin() {
         body: JSON.stringify({ is_featured: next }),
       })
       if (!res.ok) {
-        window.alert("Couldn't update featured state. Refresh to see the latest state.")
+        showError("Couldn't update featured state. Refresh to see the latest state.")
         return
       }
       const updated = (await res.json()) as AdminBook
       setBooks(prev => prev.map(b => (b.id === updated.id ? { ...b, ...updated } : b)))
     } catch {
-      window.alert("Couldn't update featured state. Check your connection and try again.")
+      showError("Couldn't update featured state. Check your connection and try again.")
     }
   }
 

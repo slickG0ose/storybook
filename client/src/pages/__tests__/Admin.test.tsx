@@ -1,7 +1,8 @@
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act, within } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import Admin from '../Admin'
+import { ToastProvider } from '../../context/ToastContext'
 import type { AdminUser, AdminBook, OrphanIllustration, AllowedEmail, AdminSpendResponse, User } from '../../types'
 
 const adminUser: User = {
@@ -147,6 +148,12 @@ function setupFetchMock(opts: {
   restoredBook?: AdminBook
   featuredBook?: AdminBook
   deleteOrphanStatus?: number
+  /** Failure injection for the three handlers that now raise toasts. */
+  restoreUserStatus?: number
+  restoreBookStatus?: number
+  featuredStatus?: number
+  /** Reject the featured PUT outright, to exercise that handler's catch branch. */
+  featuredRejects?: boolean
 } = {}) {
   const calls: FetchCall[] = []
   vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
@@ -246,6 +253,14 @@ function setupFetchMock(opts: {
       )
     }
     if (/^\/api\/admin\/users\/[^/]+\/restore$/.test(url) && method === 'PUT') {
+      if (opts.restoreUserStatus && opts.restoreUserStatus >= 400) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: 'restore failed' }), {
+            status: opts.restoreUserStatus,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        )
+      }
       const id = url.split('/')[4]!
       const restored: AdminUser =
         opts.restoredUser ?? { ...sampleUsers[1]!, id, deleted_at: null }
@@ -257,6 +272,14 @@ function setupFetchMock(opts: {
       )
     }
     if (/^\/api\/admin\/books\/[^/]+\/restore$/.test(url) && method === 'PUT') {
+      if (opts.restoreBookStatus && opts.restoreBookStatus >= 400) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: 'restore failed' }), {
+            status: opts.restoreBookStatus,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        )
+      }
       return Promise.resolve(
         new Response(JSON.stringify(opts.restoredBook ?? sampleBooks[0]!), {
           status: 200,
@@ -265,6 +288,15 @@ function setupFetchMock(opts: {
       )
     }
     if (/^\/api\/admin\/books\/[^/]+\/featured$/.test(url) && method === 'PUT') {
+      if (opts.featuredRejects) return Promise.reject(new TypeError('Failed to fetch'))
+      if (opts.featuredStatus && opts.featuredStatus >= 400) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: 'featured failed' }), {
+            status: opts.featuredStatus,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        )
+      }
       const id = url.split('/')[4]!
       const found = (opts.books ?? sampleBooks).find(b => b.id === id) ?? sampleBooks[0]!
       const body = init?.body ? (JSON.parse(init.body as string) as { is_featured: boolean }) : { is_featured: false }
@@ -287,16 +319,30 @@ function setupFetchMock(opts: {
   return { calls }
 }
 
+/**
+ * Wrapped in the real `ToastProvider` — the six admin failure paths that used to call
+ * `window.alert()` now render their message into the shared toast host (#115).
+ */
 function renderAdmin() {
   return render(
     <MemoryRouter initialEntries={['/admin']}>
-      <Routes>
-        <Route path="/admin" element={<Admin />} />
-        <Route path="/login" element={<div data-testid="login-page">login</div>} />
-        <Route path="/" element={<div data-testid="home-page">home</div>} />
-      </Routes>
+      <ToastProvider>
+        <Routes>
+          <Route path="/admin" element={<Admin />} />
+          <Route path="/login" element={<div data-testid="login-page">login</div>} />
+          <Route path="/" element={<div data-testid="home-page">home</div>} />
+        </Routes>
+      </ToastProvider>
     </MemoryRouter>,
   )
+}
+
+/**
+ * Toast text is always read through the host. A bare `getByRole('alert')` is ambiguous on
+ * this page: the orphan rows render their own inline `role="alert"` node.
+ */
+function toastHost() {
+  return within(screen.getByTestId('error-toast-host'))
 }
 
 describe('Admin page', () => {
@@ -379,6 +425,82 @@ describe('Admin page', () => {
       // Both users now Active (was 1, now 2).
       expect(activeCells.length).toBe(2)
     })
+  })
+
+  // ---------------------------------------------------------------------
+  // Failure paths (#115). These three handlers used to call `window.alert()` and were
+  // untested; the message now has to be *visible*, so it can be asserted on directly.
+  // Every assertion is scoped to the toast host — see `toastHost()`.
+  // ---------------------------------------------------------------------
+
+  it('shows a toast when restoring a user fails, and the row stays deleted', async () => {
+    setupFetchMock({ restoreUserStatus: 500 })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderAdmin()
+
+    await waitFor(() => {
+      expect(screen.getByText('deleted@example.com')).toBeInTheDocument()
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Restore user deleted@example\.com/i }))
+    })
+
+    await waitFor(() => {
+      expect(toastHost().getByText(/Couldn't restore that user/i)).toBeInTheDocument()
+    })
+    // The row kept its deleted state — the UI did not optimistically lie.
+    expect(screen.getByRole('button', { name: /Restore user deleted@example\.com/i })).toBeInTheDocument()
+    expect(screen.getAllByText('Active').length).toBe(1)
+  })
+
+  it('shows a toast when restoring a book fails', async () => {
+    const deletedBook: AdminBook = {
+      ...sampleBooks[1]!,
+      deleted_at: new Date(Date.now() - 1000 * 60 * 5).toISOString(),
+    }
+    setupFetchMock({ books: [deletedBook], restoreBookStatus: 500 })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderAdmin()
+
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: /^Books/ }))
+    })
+
+    const restoreBtn = await screen.findByRole('button', { name: /Restore book Unfeatured Book/i })
+    await act(async () => {
+      fireEvent.click(restoreBtn)
+    })
+
+    await waitFor(() => {
+      expect(toastHost().getByText(/Couldn't restore that book/i)).toBeInTheDocument()
+    })
+    // Still deleted, so the restore affordance is still on the row.
+    expect(screen.getByRole('button', { name: /Restore book Unfeatured Book/i })).toBeInTheDocument()
+  })
+
+  it('shows a toast when the featured toggle never reaches the server, and does not flip the row', async () => {
+    // The `catch` branch rather than `!res.ok`, so both message variants are covered.
+    setupFetchMock({ featuredRejects: true })
+    renderAdmin()
+
+    await act(async () => {
+      fireEvent.click(await screen.findByRole('button', { name: /^Books/ }))
+    })
+
+    const unfeatureBtn = await screen.findByRole('button', { name: /Unfeature Featured Book/i })
+    await act(async () => {
+      fireEvent.click(unfeatureBtn)
+    })
+
+    await waitFor(() => {
+      expect(toastHost().getByText(/Couldn't update featured state/i)).toBeInTheDocument()
+    })
+    expect(toastHost().getByText(/check your connection and try again/i)).toBeInTheDocument()
+    // The label did not flip — the book is still featured.
+    expect(screen.getByRole('button', { name: /Unfeature Featured Book/i })).toBeInTheDocument()
+    // Anchored: /Feature Featured Book/ would also match "Unfeature Featured Book".
+    expect(screen.queryByRole('button', { name: /^Feature Featured Book$/i })).not.toBeInTheDocument()
   })
 
   describe('Orphans tab — delete', () => {

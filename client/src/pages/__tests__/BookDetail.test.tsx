@@ -1,7 +1,8 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import BookDetail from '../BookDetail'
+import { ToastProvider } from '../../context/ToastContext'
 import type { BookWithPages, BookVersion, IllustrationVersion } from '../../types'
 import type { CartContextValue } from '../../context/CartContext'
 
@@ -149,14 +150,29 @@ vi.mock('../../components/BookSpread', () => ({
   },
 }))
 
+/**
+ * The real `ToastProvider` — illustration failures no longer render inline in this page's
+ * header (#114); they land in the shared toast host, which the provider mounts itself.
+ */
 function renderBookDetail(opts: { search?: string } = {}) {
   return render(
     <MemoryRouter initialEntries={[`/book/book-1${opts.search ?? ''}`]}>
-      <Routes>
-        <Route path="/book/:id" element={<BookDetail />} />
-      </Routes>
+      <ToastProvider>
+        <Routes>
+          <Route path="/book/:id" element={<BookDetail />} />
+        </Routes>
+      </ToastProvider>
     </MemoryRouter>
   )
+}
+
+/**
+ * Illustration-failure assertions are scoped to the host, never a bare `getByText`. That
+ * scoping is what makes them prove the message moved out of the page header: an inline
+ * `<span>` in document flow would satisfy `getByText` just as well.
+ */
+function toastHost() {
+  return within(screen.getByTestId('error-toast-host'))
 }
 
 interface FetchCall {
@@ -541,9 +557,9 @@ describe('BookDetail — Illustrate empty-response handling', () => {
     // The new error message should mention the status code, not the browser's
     // raw "Unexpected end of JSON input" error.
     await waitFor(() => {
-      expect(screen.getByText(/Server returned 500/i)).toBeInTheDocument()
+      expect(toastHost().getByText(/Server returned 500/i)).toBeInTheDocument()
     })
-    expect(screen.getByText(/empty response/i)).toBeInTheDocument()
+    expect(toastHost().getByText(/empty response/i)).toBeInTheDocument()
     expect(screen.queryByText(/Unexpected end of JSON input/i)).not.toBeInTheDocument()
   })
 
@@ -557,7 +573,7 @@ describe('BookDetail — Illustrate empty-response handling', () => {
     fireEvent.click(illustrateBtn)
 
     await waitFor(() => {
-      expect(screen.getByText(/Server returned 502 Bad Gateway with a non-JSON body/i)).toBeInTheDocument()
+      expect(toastHost().getByText(/Server returned 502 Bad Gateway with a non-JSON body/i)).toBeInTheDocument()
     })
   })
 
@@ -576,7 +592,7 @@ describe('BookDetail — Illustrate empty-response handling', () => {
     fireEvent.click(illustrateBtn)
 
     await waitFor(() => {
-      expect(screen.getByText(/OpenAI quota exceeded/i)).toBeInTheDocument()
+      expect(toastHost().getByText(/OpenAI quota exceeded/i)).toBeInTheDocument()
     })
   })
 
@@ -592,7 +608,7 @@ describe('BookDetail — Illustrate empty-response handling', () => {
     // Should surface an error message and the book should still render
     // (title from baseBook remains visible).
     await waitFor(() => {
-      expect(screen.getByText(/Server returned 200/i)).toBeInTheDocument()
+      expect(toastHost().getByText(/Server returned 200/i)).toBeInTheDocument()
     })
     expect(screen.getByText('Test Adventure')).toBeInTheDocument()
   })
@@ -1155,9 +1171,15 @@ describe('BookDetail — publish state and the reader-view edit controls', () =>
     /** Books returned by GETs after the first one — the "second tab" refetch. */
     refetched?: BookWithPages
     illustrateStatus?: number
+    /** Per-call statuses for the illustrate route; the last entry repeats. Beats
+     *  `illustrateStatus` when present, so a retry can succeed after a failure. */
+    illustrateStatuses?: number[]
+    /** Error text the illustrate route returns when the status is non-2xx. */
+    illustrateErrorBody?: string
   }) {
     const calls: FetchCall[] = []
     let bookGets = 0
+    let illustrateCalls = 0
     vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input.toString()
       calls.push({ url, init })
@@ -1173,9 +1195,15 @@ describe('BookDetail — publish state and the reader-view edit controls', () =>
       if (url === '/api/books/book-1/unpublish' && method === 'PUT') return json(bookRowOnly(opts.book, 'draft'))
       if (url === '/api/books/book-1/publish' && method === 'PUT') return json(bookRowOnly(opts.book, 'published'))
       if (url === '/api/books/book-1/illustrate' && method === 'POST') {
-        const status = opts.illustrateStatus ?? 200
+        const seq = opts.illustrateStatuses
+        const status = seq
+          ? seq[Math.min(illustrateCalls++, seq.length - 1)]!
+          : opts.illustrateStatus ?? 200
         if (status !== 200) {
-          return json({ error: 'Published books cannot be edited. Take the book out of the catalog to edit it.' }, status)
+          return json(
+            { error: opts.illustrateErrorBody ?? 'Published books cannot be edited. Take the book out of the catalog to edit it.' },
+            status,
+          )
         }
         return json(opts.book)
       }
@@ -1276,6 +1304,54 @@ describe('BookDetail — publish state and the reader-view edit controls', () =>
 
     fireEvent.click(screen.getByRole('button', { name: /next/i }))
     expect(await screen.findByRole('button', { name: /generate illustration/i })).toBeInTheDocument()
+  })
+
+  // #114's actual repro path: the failure is raised by a per-page control in the reader
+  // view, hundreds of pixels below the header block that used to render the message. That
+  // block no longer exists — the message has to reach the fixed host or it is invisible.
+  it('raises a toast when a per-page Regenerate fails', async () => {
+    setupPublishFetchMock({
+      book: { ...twoPageBook, status: 'draft' },
+      illustrateStatus: 500,
+      illustrateErrorBody: 'Fal image request timed out after 120s',
+    })
+    renderBookDetail()
+    await readerView()
+
+    fireEvent.click(await screen.findByRole('button', { name: /^regenerate$/i }))
+
+    await waitFor(() => {
+      expect(toastHost().getByText(/Fal image request timed out after 120s/i)).toBeInTheDocument()
+    })
+    // Dismissible, and dismissing takes the whole host with it (queue of one).
+    fireEvent.click(toastHost().getByRole('button', { name: /dismiss error/i }))
+    expect(screen.queryByTestId('error-toast-host')).not.toBeInTheDocument()
+  })
+
+  // The pre-toast handler reset its inline error to '' at the top of every attempt. The
+  // toast has to be cleared the same way, or a retry runs under a stale failure and — the
+  // queue dedupes by exact text — an identical second failure is indistinguishable from
+  // the first one still sitting there.
+  it('clears the previous illustration failure when the user retries', async () => {
+    // Fail once, then succeed. A retry that works must not leave the old failure on
+    // screen — nothing else would ever clear it short of a route change.
+    setupPublishFetchMock({
+      book: { ...twoPageBook, status: 'draft' },
+      illustrateStatuses: [500, 200],
+      illustrateErrorBody: 'Fal image request timed out after 120s',
+    })
+    renderBookDetail()
+    await readerView()
+
+    fireEvent.click(await screen.findByRole('button', { name: /^regenerate$/i }))
+    await waitFor(() => {
+      expect(toastHost().getByText(/timed out after 120s/i)).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /^regenerate$/i }))
+    await waitFor(() => {
+      expect(screen.queryByTestId('error-toast-host')).not.toBeInTheDocument()
+    })
   })
 
   it('treats a 403 from an edit route as a stale view: refetches the book instead of surfacing the error', async () => {

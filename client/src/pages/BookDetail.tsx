@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, Link, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, ShoppingCart, ChevronLeft, ChevronRight, Loader2, RefreshCw, Paintbrush, Image, BookOpen, FileText, History, RotateCcw, CheckCircle2, X, GitCompare, Users, Download } from 'lucide-react'
 import { useCart } from '../context/CartContext'
 import { useAuth } from '../context/AuthContext'
+import { useToast } from '../context/ToastContext'
 import { api } from '../lib/apiBase'
 import { PER_IMAGE_COST_USD, fmtUsd, portraitStepCostNote } from '../lib/cost'
 import type { BookWithPages, BookVersion, IllustrationVersion, Page } from '../types'
@@ -89,6 +90,19 @@ export default function BookDetail() {
   }
   const { addToCart } = useCart()
   const { user, loading: authLoading } = useAuth()
+  // Illustration failures go to the shared toast host, not to a `<span>` in this header
+  // (#114): the Regenerate / Redo controls that raise them sit hundreds of pixels further
+  // down the page, so an in-flow message was invisible to anyone who had scrolled to the
+  // page they were re-rolling.
+  const { showError, dismiss, toasts } = useToast()
+  /**
+   * The message of the last illustration failure this page raised, so the next attempt can
+   * clear it. `handleIllustrate` used to reset its inline error state to '' on every attempt;
+   * without this the previous failure would sit on screen through the retry and — because
+   * the queue dedupes by exact text — an identical second failure would leave the user
+   * unable to tell whether the retry had failed too. A dismiss, never a timer.
+   */
+  const lastIllustrateError = useRef<string | null>(null)
   const [book, setBook] = useState<BookWithPages | null>(null)
   const [currentPage, setCurrentPage] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -98,7 +112,6 @@ export default function BookDetail() {
   const [revising, setRevising] = useState(false)
   const [reviseError, setReviseError] = useState('')
   const [illustrating, setIllustrating] = useState(false)
-  const [illustrateError, setIllustrateError] = useState('')
   const [illustrationFeedback, setIllustrationFeedback] = useState('')
   const [illustrationVersions, setIllustrationVersions] = useState<IllustrationVersion[]>([])
   const [showVersions, setShowVersions] = useState(false)
@@ -505,7 +518,13 @@ export default function BookDetail() {
   const handleIllustrate = async (pageNum?: number) => {
     if (!user) return
     setIllustrating(true)
-    setIllustrateError('')
+    // Clear this page's previous illustration failure before retrying — see
+    // `lastIllustrateError` above for why the retry must not inherit it.
+    if (lastIllustrateError.current !== null) {
+      const stale = toasts.find(t => t.message === lastIllustrateError.current)
+      if (stale) dismiss(stale.id)
+      lastIllustrateError.current = null
+    }
     try {
       const body: Record<string, unknown> = {}
       if (pageNum) {
@@ -530,7 +549,9 @@ export default function BookDetail() {
       }
       setBook(parsed)
     } catch (err) {
-      setIllustrateError(err instanceof Error ? err.message : 'Illustration failed')
+      const message = err instanceof Error ? err.message : 'Illustration failed'
+      lastIllustrateError.current = message
+      showError(message)
     } finally {
       setIllustrating(false)
     }
@@ -726,9 +747,6 @@ export default function BookDetail() {
                   {illustrating ? <Loader2 size={16} className="animate-spin" /> : <Paintbrush size={16} />}
                   {illustrating ? 'Illustrating...' : `Illustrate All (~$${(pages.filter(p => !p.illustration_url).length * 0.04).toFixed(2)})`}
                 </button>
-              )}
-              {illustrateError && (
-                <span className="text-sm text-red-500 dark:text-red-400">{illustrateError}</span>
               )}
               {isDraft && isOwner && !canBulkIllustrate && (
                 <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-300">

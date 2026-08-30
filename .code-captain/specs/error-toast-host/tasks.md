@@ -147,6 +147,8 @@ Status: Done
 
 ### Task 3 — MyBooks: 2 alerts → toasts
 
+Status: Done
+
 **Zone:** client
 **Depends on:** Task 2
 **Parallel-safe with:** Tasks 4, 5
@@ -181,6 +183,8 @@ const { showError } = useToast();
 
 ### Task 4 — Admin: 6 alerts → toasts, and three untested paths get tests
 
+Status: Done
+
 **Zone:** client
 **Depends on:** Task 2
 **Parallel-safe with:** Tasks 3, 5
@@ -205,6 +209,8 @@ const { showError } = useToast();
 ---
 
 ### Task 5 — BookDetail: illustration errors move to the toast (#114)
+
+Status: Done
 
 **Zone:** client
 **Depends on:** Task 2
@@ -233,6 +239,8 @@ const { showError } = useToast();
 ---
 
 ### Task 6 — Pin "no `window.alert` in client source"
+
+Status: Done
 
 **Zone:** client
 **Depends on:** Tasks 3, 4, 5
@@ -264,6 +272,8 @@ contributor nothing.
 ---
 
 ### Task 7 — Mobile e2e: the toast is visible from the bottom of the page, in both themes
+
+Status: Done
 
 **Zone:** e2e
 **Depends on:** Task 5
@@ -312,6 +322,8 @@ Set `test.setTimeout(120_000)` — two themes × two mobile projects, same shape
 ---
 
 ### Task 8 — Pre-merge follow-ups
+
+Status: Done
 
 **Zone:** docs (harness) · **Depends on:** none (run last)
 

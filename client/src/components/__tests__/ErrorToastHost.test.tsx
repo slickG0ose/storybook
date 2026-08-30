@@ -110,5 +110,8 @@ describe('ErrorToastHost', () => {
 
     const dismiss = within(host()).getByRole('button', { name: 'Dismiss error' })
     expect(dismiss.className).toContain('min-h-11')
+    // Both dimensions: height alone left a 34px-wide target, under the 44px floor the
+    // mobile e2e spec asserts with `expectTapTargets`.
+    expect(dismiss.className).toContain('min-w-11')
   })
 })

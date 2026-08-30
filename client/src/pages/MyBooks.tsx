@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { BookOpen, Sparkles, Send, Trash2, PencilLine } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { useToast } from '../context/ToastContext'
 import { api } from '../lib/apiBase'
 import type { Book, BookWithPages } from '../types'
 
@@ -9,6 +10,7 @@ type MyBook = Book & Partial<Pick<BookWithPages, 'pages'>>
 
 export default function MyBooks() {
   const { user } = useAuth()
+  const { showError } = useToast()
   const [books, setBooks] = useState<MyBook[]>([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'all' | 'draft' | 'published'>('all')
@@ -62,12 +64,12 @@ export default function MyBooks() {
         const updated = (await res.json()) as MyBook
         setBooks(prev => prev.map(b => (b.id === updated.id ? { ...b, ...updated } : b)))
       } else {
-        window.alert(
+        showError(
           "Couldn't take that book out of the catalog. It may already be a draft — refresh to see the latest state."
         )
       }
     } catch {
-      window.alert("Couldn't take that book out of the catalog. Check your connection and try again.")
+      showError("Couldn't take that book out of the catalog. Check your connection and try again.")
     } finally {
       setUnpublishingId(null)
     }

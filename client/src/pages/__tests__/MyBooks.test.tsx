@@ -1,7 +1,8 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import MyBooks from '../MyBooks'
+import { ToastProvider } from '../../context/ToastContext'
 import type { Book, Page } from '../../types'
 
 type BookWithMaybePages = Book & { pages?: Page[] }
@@ -66,6 +67,8 @@ function setupFetchMock(opts: {
   unpublishStatus?: number
   /** Hold the unpublish response open so the busy state can be observed. */
   deferUnpublish?: boolean
+  /** Reject the unpublish fetch outright, to exercise the handler's catch branch. */
+  unpublishRejects?: boolean
 } = {}) {
   const calls: FetchCall[] = []
   let releaseUnpublish: () => void = () => {}
@@ -86,6 +89,7 @@ function setupFetchMock(opts: {
       )
     }
     if (url === '/api/books/book-1/unpublish' && method === 'PUT') {
+      if (opts.unpublishRejects) return Promise.reject(new TypeError('Failed to fetch'))
       const status = opts.unpublishStatus ?? 200
       const body = status === 200 ? opts.unpublished ?? unpublishedBook : { error: 'failed' }
       const respond = () =>
@@ -114,12 +118,24 @@ function setupFetchMock(opts: {
   return { calls, releaseUnpublish: () => releaseUnpublish() }
 }
 
+/**
+ * The real `ToastProvider`, not a mock: failures on this page now land in the shared toast
+ * host, so the assertion this file cares about is the *rendered text* of the message. The
+ * provider renders `ErrorToastHost` itself, so wrapping it is all the wiring there is.
+ */
 function renderMyBooks() {
   return render(
     <MemoryRouter>
-      <MyBooks />
+      <ToastProvider>
+        <MyBooks />
+      </ToastProvider>
     </MemoryRouter>
   )
+}
+
+/** Toast assertions are always scoped to the host — inline `role="alert"` nodes exist elsewhere. */
+function toastHost() {
+  return within(screen.getByTestId('error-toast-host'))
 }
 
 /**
@@ -238,7 +254,27 @@ describe('MyBooks — Edit this book (withdraw to edit)', () => {
   it('explains a failed withdrawal in the same vocabulary', async () => {
     setupFetchMock({ unpublishStatus: 500 })
     vi.spyOn(window, 'confirm').mockReturnValue(true)
-    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {})
+
+    renderMyBooks()
+
+    await waitFor(() => {
+      expect(screen.getByText('Published')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /edit this book/i }))
+
+    // The message is visible in the DOM, not handed to a blocking browser dialog (#115).
+    await waitFor(() => {
+      expect(toastHost().getByText(/take that book out of the catalog/i)).toBeInTheDocument()
+    })
+    expect(toastHost().getByText(/refresh to see the latest state/i)).toBeInTheDocument()
+    // Still published — the card did not lie about the outcome.
+    expect(screen.getByText('Published')).toBeInTheDocument()
+  })
+
+  it('explains a withdrawal that never reached the server', async () => {
+    setupFetchMock({ unpublishRejects: true })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
 
     renderMyBooks()
 
@@ -249,11 +285,11 @@ describe('MyBooks — Edit this book (withdraw to edit)', () => {
     fireEvent.click(screen.getByRole('button', { name: /edit this book/i }))
 
     await waitFor(() => {
-      expect(alertSpy).toHaveBeenCalledTimes(1)
+      expect(toastHost().getByText(/check your connection and try again/i)).toBeInTheDocument()
     })
-    expect(alertSpy.mock.calls[0]?.[0] as string).toMatch(/take that book out of the catalog/i)
-    // Still published — the card did not lie about the outcome.
     expect(screen.getByText('Published')).toBeInTheDocument()
+    // The busy state released even though the request threw.
+    expect(screen.getByRole('button', { name: /edit this book/i })).not.toBeDisabled()
   })
 
   it('leaves the draft-book Publish control unchanged', async () => {

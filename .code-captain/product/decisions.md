@@ -4,6 +4,47 @@ Append-only log. Newest entries on top. Each entry should answer: *what was deci
 
 ---
 
+## ADR-017 — Failures reach the user through one top-anchored toast host, and `UpdateToast` keeps the bottom
+
+**Date:** 2026-08-29
+**Status:** Accepted
+**Scope:** `error-toast-host` Tasks 1-8. Spec at [.code-captain/specs/error-toast-host/spec.md](../specs/error-toast-host/spec.md), plan at [tasks.md](../specs/error-toast-host/tasks.md). Closes [#115](https://github.com/slickG0ose/storybook/issues/115) and [#114](https://github.com/slickG0ose/storybook/issues/114). **Amends ADR-011 decision 5** — read that alongside this.
+
+### The problem
+
+Two issues, one defect wearing two costumes: **a failure happens and the user does not reliably see it.**
+
+- #115 — eight `window.alert()` call sites in `MyBooks.tsx` and `Admin.tsx`. Blocking, unstyleable, ignores dark mode, reads as unfinished software.
+- #114 — illustration failures rendered into a static block near the top of the book-edit page. The control that raises the failure is hundreds of pixels below it, so a scrolled user sees nothing at all.
+
+Specifying them apart would have designed the notification surface twice, or worse, shipped two of them.
+
+### Decision
+
+**1. Toast state lives in a React context provider that renders its own host.** `ToastContext.tsx` exposes `useToast().showError(message)`; the provider renders `ErrorToastHost` itself, mounted in `main.tsx` inside `ThemeProvider` and outside `AuthProvider`. **Why:** all nine call sites are event handlers inside components, which is exactly what a context is for; a module singleton would need its own subscription plumbing to re-render. This matches the three contexts already in the tree. **Trade-off:** `ToastContext` imports `ErrorToastHost` and the host imports `useToast` — a genuine import cycle. It resolves because the hook only runs at render time, and it is deliberate: the alternative is every consumer remembering to mount the host. Flagged in the code so a future refactor does not "tidy" it into a broken state.
+
+**2. The host is top-anchored at `z-40`, and `UpdateToast` keeps the bottom.** `fixed inset-x-3 top-20 z-40`, clearing the `sticky top-0 z-50` h-16 navbar. **Why:** ADR-011 decision 5 makes "`UpdateToast` remains the app's only bottom-fixed surface" an app-wide invariant, pinned by computed-style assertions in `e2e/tests/mobile/narration.spec.ts` and `expectNotFixed` in `mobile/edit-published.spec.ts`. A bottom-anchored error toast would have forced either z-index negotiation between two independently-authored fixed surfaces — which that ADR names a bug generator — or an edit to `UpdateToast`. Top-anchoring keeps the invariant **literally true** and both existing assertions green, unmodified. **This is the amendment a future reader needs:** ADR-011 decision 5 said "bottom-fixed", not "fixed", and that word is now load-bearing. There are two fixed surfaces in this app; they do not collide because one owns the top and one owns the bottom. `error-toast.spec.ts` pins the host's side of that bargain — its bounding box must start at or below the navbar's bottom edge.
+
+**3. Persist until dismissed or until the route changes. No auto-dismiss timer.** **Why:** the host is `role="alert"` / assertive, because a failed action is not an offer the way a service-worker update is. An assertive announcement that vanishes on a timer is unusable for a screen-reader user mid-sentence (WCAG 2.2.1). Clearing on route change is the honest bound: "Couldn't restore that user." is meaningless on `/cart`. **Trade-off:** a user who ignores a toast keeps looking at it. Acceptable — the failure did not un-happen. The queue caps at 3, newest first, deduped by exact message, because Admin can fire several failures in quick succession.
+
+**4. `illustrateError` is replaced by the toast, not supplemented by it.** The four other inline error regions stay inline. **Why:** supplementing would state one failure twice in two places in different words, and would break three existing `BookDetail` `getByText` assertions on multiple matches. The four regions left alone are bound to a specific control the user is already looking at; #114 was specifically about a failure the user could not see.
+
+### Alternatives considered
+
+- **Generalise `UpdateToast` into a shared toast host** (rejected for now): it is driven by `useRegisterSW` state, not by imperative calls, and folding it in couples a PWA concern to an error concern. Recorded as `Deferred:` in the spec.
+- **Per-page inline error regions everywhere** (rejected): the shape #114 is a complaint about. An inline region can always scroll off-screen.
+- **A timer plus a pause-on-hover** (rejected): hover does not exist on touch, which is where #114 was reported.
+
+### Consequences
+
+- **`window.alert` is now pinned out of the client**, not merely removed. `client/src/__tests__/noWindowAlert.test.ts` scans the real source tree on every run, strips comments so a file may explain the ban without tripping it, and asserts it found the tree it is guarding — a broken path would make it vacuously green.
+- **#115's stated scope was wrong in both directions, and the correction is recorded in the spec.** `PublishStateBar.test.tsx` needed no change (its `getByRole('alert')` targets that component's own inline node), and `Admin.test.tsx` had no alert spy at all — the six admin failure paths were untested, so this work adds coverage rather than rewriting it. A reader going looking for a `PublishStateBar` change will not find one.
+- **Toast assertions are scoped via `within(screen.getByTestId('error-toast-host'))`**, never a bare `getByRole('alert')`, which is now ambiguous against `PublishStateBar` and the admin orphan rows.
+- **Done-criterion #2 is discharged on both halves.** Correctness: `e2e/tests/mobile/error-toast.spec.ts` under `mobile-pixel` and `mobile-small` in both themes (ADR-009). Aesthetic: the toast was looked at in both themes in a browser.
+- **A pre-existing overflow was found and deliberately not fixed here.** In reader view the per-page control row measures 464px at a 393px viewport with no toast on screen. The toast is `position: fixed`, so it resolves its insets against an initial containing block Chromium expands to that width and measures 452px — pinned correctly, to a page that is too wide. `error-toast.spec.ts` therefore asserts the toast adds **no overflow beyond what the page already has**, and says so at the assertion. Same class as #124; filed separately. When that row is fixed, the assertion tightens on its own with no edit.
+
+---
+
 ## ADR-016 — Whose art may appear in the hero pool: editorial eligibility and owner consent are separate columns with separate writers
 
 **Date:** 2026-08-26

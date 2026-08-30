@@ -52,7 +52,9 @@ export default function ErrorToastHost() {
           <button
             onClick={() => dismiss(t.id)}
             aria-label="Dismiss error"
-            className="min-h-11 shrink-0 rounded-full px-2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-red-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+            /* 44px in BOTH dimensions, not just height: `min-h-11` alone measured 34px wide,
+               under the PRIMARY_TAP_MIN floor `mobile/error-toast.spec.ts` asserts. */
+            className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-full text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-red-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
           >
             <X size={18} />
           </button>
