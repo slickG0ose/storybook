@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { expectNoHorizontalOverflow, forEachTheme } from './_helpers';
+import { PRIMARY_TAP_MIN, expectNoHorizontalOverflow, expectTapTargets, forEachTheme } from './_helpers';
 import {
   BOOK_ID,
   MIXED_PAGES,
@@ -32,16 +32,20 @@ import {
  * page fits the screen and the controls stay tappable, in both themes. Whether a stacked
  * input-then-buttons row reads well is the aesthetic half and needs a human.
  *
- * WHAT THIS DELIBERATELY DOES NOT ASSERT. Both controls in this row measure **36px tall**,
- * under the 44px `PRIMARY_TAP_MIN` floor — and `Regenerate` is a money-path control, since it
- * spends ~$0.04 per press. That is a real finding, measured here while writing this spec, but
- * it is not #144: this issue is about the page being wider than the screen, and fixing button
- * heights is a different change with its own visual review. Tracked separately in #154. Add
- * `expectTapTargets(page, CONTROL_ROW, PRIMARY_TAP_MIN)` here when that lands.
+ * WHY THE 44px FLOOR AND NOT THE 24px ONE (#154). `Regenerate` spends ~$0.04 on a real image
+ * generation per press, so a mis-tap costs the user money — `PRIMARY_TAP_MIN`, not the
+ * `NAV_TAP_MIN` reserved for navbar chrome. `History` is free but shares the row and matches.
+ * Both measured 36px when this spec was first written; the assertion below is what holds them.
  *
  * NO PAID CALL IS MADE. The book is fully mocked via `../_editPublished.ts`; nothing here
  * touches `POST /:id/illustrate`, and nothing may be changed to.
  */
+
+/**
+ * The two controls in the row. Named by text rather than a testid to match the sibling
+ * specs, and listed explicitly so a future exception has to be written here, in the open.
+ */
+const CONTROL_ROW = 'button:has-text("Regenerate"), button:has-text("History")';
 
 test.describe('Reader view control row on mobile', () => {
   test.setTimeout(120_000);
@@ -92,6 +96,7 @@ test.describe('Reader view control row on mobile', () => {
         ).toBeVisible();
 
         await expectNoHorizontalOverflow(page);
+        await expectTapTargets(page, CONTROL_ROW, PRIMARY_TAP_MIN);
       });
     });
   });
