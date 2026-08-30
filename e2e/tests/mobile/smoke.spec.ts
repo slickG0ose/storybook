@@ -192,3 +192,29 @@ test.describe('Mobile smoke: /book/:id', () => {
     });
   });
 });
+
+/**
+ * #145: below `sm` every Navbar label is `hidden sm:inline`, so the icon links carried no
+ * accessible name at a mobile viewport at all — a screen reader announced them as
+ * unlabelled links. `getByRole('link', { name })` succeeding at this viewport IS the
+ * assertion: it can only find the link via its `aria-label`, since the visible text node
+ * is not rendered here. Logged-out links only — `My Books` and `Admin` need an
+ * authenticated session and are covered at mobile width by
+ * `error-toast.spec.ts` (My Books) and `admin.spec.ts` (Admin).
+ */
+test.describe('Mobile smoke: navbar accessible names', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate(() => localStorage.clear());
+    await page.reload();
+    await expect(page.getByRole('button', { name: 'Add to Cart' }).first()).toBeVisible();
+  });
+
+  test('every logged-out navbar link has an accessible name matching its visible label', async ({ page }) => {
+    await forEachTheme(page, async () => {
+      for (const name of ['StoryBook', 'Browse', 'Create a Book', 'Cart', 'Sign In']) {
+        await expect(page.getByRole('link', { name, exact: true }), name).toBeVisible();
+      }
+    });
+  });
+});

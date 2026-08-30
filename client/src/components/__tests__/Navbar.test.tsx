@@ -85,4 +85,15 @@ describe('Navbar', () => {
     renderNavbar()
     expect(screen.getByText('Create a Book')).toBeInTheDocument()
   })
+
+  // #145: below `sm` the visible label is `hidden sm:inline`, so the accessible name has
+  // to come from `aria-label` alone. Asserting via `getByRole('link', { name, exact })`
+  // pins that the label exists and — per WCAG 2.5.3 — matches the visible text exactly,
+  // not just resembles it.
+  it('every logged-out nav link has an accessible name matching its visible label', () => {
+    renderNavbar()
+    for (const name of ['StoryBook', 'Browse', 'Create a Book', 'Cart', 'Sign In']) {
+      expect(screen.getByRole('link', { name })).toBeInTheDocument()
+    }
+  })
 })
