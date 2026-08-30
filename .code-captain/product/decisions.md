@@ -4,6 +4,64 @@ Append-only log. Newest entries on top. Each entry should answer: *what was deci
 
 ---
 
+## ADR-018 — Per-instance fixed-window rate limiting is accepted for authenticated routes, and is structurally unusable on login
+
+**Date:** 2026-08-30
+**Status:** Accepted
+**Scope:** `server/src/middleware/rateLimit.ts`, its one mount in `routes/uploads.ts`, and the three open CodeQL `js/missing-rate-limiting` alerts. Closes [#148](https://github.com/slickG0ose/storybook/issues/148). No spec — bypassed the architect chain under the CLAUDE.md size gate (3 files plus this entry, server zone, no schema change, no new dependency). Follows the ADR-015 decision 7 precedent of recording a first-of-its-kind choice so it is *discoverable rather than incidental*.
+
+### The problem
+
+`rateLimit.ts` landed in [#141](https://github.com/slickG0ose/storybook/issues/141) as the project's first rate limiter. It works for the route it guards. It carries two limitations its own docblock names — in-process/per-instance, and fixed-window rather than sliding — and until now nothing tracked either, because "revisit when the deploy stops being one box" is a code comment, and a code comment is not discoverable from the backlog.
+
+Three high-severity `js/missing-rate-limiting` alerts are open on `master`:
+
+| Alert | Path | Guards |
+|-------|------|--------|
+| #5 | `server/src/routes/admin.ts` | admin endpoints |
+| #6 | `server/src/routes/admin.ts` | admin endpoints |
+| #7 | `server/src/routes/auth.ts` | **login — brute force** |
+
+#148 was filed on the premise that the obvious way to close these is to reuse `rateLimit.ts` as-is, and that doing so on a login route would inherit a materially weaker guarantee by copy-paste.
+
+**That premise turns out to be wrong in a way that matters more, not less.** The middleware keys on `res.locals.user.id` and fails closed with a 401 when there is no authenticated user (`rateLimit.ts`, the `if (!user)` branch). `POST /api/auth/login` is unauthenticated by definition. **Mounting this middleware on the login route would 401 every login attempt** — it would not weaken brute-force protection, it would break authentication outright. The risk was never a quiet inheritance of a weaker policy on login; it is that the file most likely to be reached for cannot go there at all, and the reason is one `if` statement deep rather than stated at the top.
+
+The three alerts therefore are not one problem. Admin routes sit behind `adminGate` and are authenticated; login is not. They need different answers.
+
+### Decision
+
+**1. Per-instance, fixed-window, in-process is ACCEPTED for authenticated routes keyed by user id.** That covers the existing `style-reference` mount and both admin alerts (#5, #6). The reasoning: an authenticated key space is bounded by the user table; the caller has already passed `requireAuth` and, for admin, `adminGate`; and the purpose there is to bound sustained abuse of an expensive handler, not to smooth traffic or resist a determined attacker. The 2x fixed-window boundary burst is a real property and is acceptable at that job.
+
+**2. It is NOT acceptable for `POST /api/auth/login` or `POST /api/auth/register`, and cannot be used there regardless.** Closing alert #7 requires a separate limiter keyed on something an anonymous caller presents — IP, or the submitted email address — which reopens three questions this module deliberately closed: what to key on behind a proxy (`X-Forwarded-For` is spoofable, and Render's proxy shape has to be pinned down before it can be trusted), how to evict (see 3), and whether failing closed is still right when the failure mode is locking real users out of their own accounts. That is its own piece of work. **#148 stays open for it**, narrowed to alert #7.
+
+**3. The un-evicted `counters` Map is part of the keying decision, not separate from it.** Entries live for the process's lifetime. Bounded by the user table today, which is fine. Keyed by IP it becomes an unbounded memory-growth vector, so whoever does (2) owns eviction as part of it rather than discovering it later.
+
+**4. The single-instance assumption gets two loud failure surfaces, because neither covers the other's path.**
+
+- `server/src/__tests__/rateLimitScope.test.ts` asserts `render.yaml` declares no more than one instance. A scale-up committed to this repo fails CI on the PR that does it. This is the reliable one.
+- `assertSingleInstanceAssumption()` runs at boot from `index.ts`, reading an explicit `RATE_LIMIT_INSTANCE_COUNT`. It throws in production and warns elsewhere, matching the `ALLOW_INSECURE_TLS` guard directly above it. This covers scaling done in the Render dashboard, which never touches this repo.
+
+The second surface has a real gap: an operator who scales in the dashboard and does not set the variable still gets no signal. That is stated in the code rather than papered over. Two imperfect surfaces covering different paths beat one that looks complete.
+
+### Why
+
+- **The alerts split cleanly along authentication, so the decision should too.** Recording one blanket "per-instance is fine" would have licensed exactly the copy-paste onto login that #148 was filed to prevent — and in this case would have broken login. Recording one blanket "per-instance is unacceptable" would block two admin alerts that the current middleware closes correctly today.
+- **A shared store was rejected for now, not on principle.** Postgres is already a dependency and could hold counters without adding Redis. It is the honest fix for the fleet-wide property. But it buys nothing while one box serves all traffic, it does not answer login's keying problem — the actual blocker on the highest-severity alert — and it trades a Map read for a network round trip on every guarded request. Revisit when (2) lands or when the deploy scales, whichever is first.
+- **Free-tier Render makes the counter more volatile than "per-instance" suggests.** The service spins down after 15 minutes idle and the filesystem is ephemeral, so counters are wiped on every cold start, restart, and deploy — not merely partitioned across a fleet that happens to have one member. Recorded because it is the kind of thing that reads as a bug later if nobody wrote it down.
+
+### Alternative considered: a `Deferred:` line in the module
+
+The cheapest of the three tracking actions #148 offers, and it was genuinely on the table. Rejected because a `Deferred:` line would have restated the docblock that already exists — the same comment, in the same file, that failed to be discoverable the first time. It also would not have surfaced the login finding, which only appeared on reading the `if (!user)` branch against the alert list. The finding is the reason this is an ADR.
+
+### Consequences
+
+- Alerts #5 and #6 can be closed by mounting the existing middleware after `adminGate`, with no new decision required. Not done here — this entry is the ruling, not the implementation.
+- Alert #7 stays open with recorded reasoning, so the next person inherits the argument rather than the code.
+- Scaling the deploy now fails in CI (`render.yaml` path) or at boot (`RATE_LIMIT_INSTANCE_COUNT` path). Both messages name this ADR.
+- `COST_CENTS`-style drift risk applies here too: every `rateLimit()` call site's `max` is stated per instance. If the fleet ever grows, each one is wrong by the instance count.
+
+---
+
 ## ADR-017 — Failures reach the user through one top-anchored toast host, and `UpdateToast` keeps the bottom
 
 **Date:** 2026-08-29
