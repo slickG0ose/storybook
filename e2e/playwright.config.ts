@@ -17,7 +17,7 @@ export default defineConfig({
   // 3, not 1, and not `undefined`. The suite is `fullyParallel`, so this parallelises
   // per test, not per file: 147 tests went 6.3m -> 1.1m locally at 3 workers, twice,
   // with no flake. Capped at 3 rather than left to Playwright's CPU heuristic because
-  // ubuntu-latest gives 4 vCPU and the tsx-watch server plus the Vite dev server are
+  // ubuntu-latest gives 4 vCPU and the API server plus the Vite dev server are
   // already using some of them — `undefined` would oversubscribe the runner and trade
   // the win back for timeouts.
   //
@@ -89,7 +89,14 @@ export default defineConfig({
 
   webServer: [
     {
-      command: 'npx tsx watch src/index.ts',
+      // Watch mode locally, plain run in CI. There is nothing to watch on a CI runner —
+      // the checkout is immutable for the life of the job — and a `tsx watch` restart
+      // drops every in-flight connection, which surfaces as `socket hang up` in whichever
+      // request happened to be open. That is what #166 caught: the failure landed in a
+      // spec's `afterAll` cleanup, so Playwright attributed it to the last test in the
+      // block and named a spec whose body had already passed. Three workers did not cause
+      // it; they only widened the window to land inside a restart. See #166.
+      command: process.env.CI ? 'npx tsx src/index.ts' : 'npx tsx watch src/index.ts',
       cwd: '../server',
       env: { PORT: API_PORT },
       url: `${API_BASE}/api/health`,
