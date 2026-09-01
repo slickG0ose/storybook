@@ -119,12 +119,50 @@ export async function registerOwner(
   return (await res.json()) as RegisteredUser;
 }
 
+/**
+ * Best-effort cleanup of the users a spec registered. Called from `afterAll`, so a throw
+ * here fails the whole describe block — and Playwright attributes a failed hook to the
+ * last test in it, naming a spec whose body passed. That is exactly how #166 presented:
+ * a `socket hang up` from this loop was reported as a mobile layout assertion failing.
+ *
+ * So each delete is swallowed rather than asserted. This is cleanup, not a test: a user
+ * row left behind costs a stale row in `dev.db`, while a throw costs a false red on an
+ * unrelated spec. One retry covers the transient-reset case; anything that fails twice
+ * is left for `db:reset`.
+ *
+ * What the swallow gives up is narrower than it looks. Playwright's `request.delete` does
+ * not throw on a non-2xx, and this loop never checked `res.ok()`, so a real regression in
+ * `/api/_test/user-by-email` (a 401 from a rotated secret, a 500) was already invisible
+ * here — that contract is pinned in `server/src/routes/__tests__/test.test.ts`, not by
+ * this call. Only a transport-level failure is surrendered, and `registerOwner`'s
+ * `expect(allow.ok())` in `beforeEach` catches a dead server in the same run anyway. The
+ * `console.warn` keeps a systematic double-failure visible in the report without putting
+ * a false red back on an unrelated spec.
+ *
+ * Leaked rows are inert: `registerOwner` mints addresses with a timestamp and a random
+ * suffix, so an abandoned row cannot collide with a later run, and the endpoint already
+ * leaves the `AllowedEmail` row behind unconditionally. `emails` is cleared unconditionally
+ * only because every caller holds a describe-scoped array consumed exactly once — the
+ * clear is tidiness, not correctness.
+ */
 export async function deleteUsers(request: APIRequestContext, emails: string[]): Promise<void> {
   for (const email of emails) {
-    await request.delete(`${API_BASE}/api/_test/user-by-email`, {
-      data: { email },
-      headers: { 'x-test-secret': 'dev-test-secret' },
-    });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await request.delete(`${API_BASE}/api/_test/user-by-email`, {
+          data: { email },
+          headers: { 'x-test-secret': 'dev-test-secret' },
+          timeout: 5_000,
+        });
+        break;
+      } catch (err) {
+        if (attempt === 1) {
+          // Abandoned, not fatal — see the docblock. Logged so a systematic teardown
+          // failure is still legible in the report instead of vanishing.
+          console.warn(`[deleteUsers] giving up on ${email} after 2 attempts: ${String(err)}`);
+        }
+      }
+    }
   }
   emails.length = 0;
 }
