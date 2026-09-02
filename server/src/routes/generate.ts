@@ -14,6 +14,7 @@ import {
 import { currentImagePin, ensureBookPinned } from '../services/imagePin';
 import { parseAiJson } from '../services/parseAiJson';
 import { isUsableApiKey } from '../lib/apiKeys';
+import { defaultTypographyForAgeRange } from '../lib/typography';
 import type { Request, Response } from 'express';
 import type { Character, CharacterRole } from '../types';
 
@@ -196,6 +197,13 @@ Make the story warm, engaging, and age-appropriate. Use vivid but simple languag
         description: story.description,
         theme,
         age_range: ageRange,
+        // Creation-time seed value, NOT a runtime fallback (spec §Ruling 4).
+        // The columns are non-null with DB defaults equal to STOREFRONT_DEFAULT,
+        // so every pre-#113 row is visually unchanged; only a book being created
+        // right now gets age-appropriate typography, and nothing ever re-derives
+        // it afterwards. An unrecognised ageRange buckets to 'developing' rather
+        // than failing — creation must never die on a presentation decision.
+        ...defaultTypographyForAgeRange(ageRange),
         cover_emoji: story.coverEmoji,
         cover_color: story.coverColor,
         price: 24.99,

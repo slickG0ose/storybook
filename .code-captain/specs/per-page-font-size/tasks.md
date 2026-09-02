@@ -154,7 +154,7 @@ Defaults: `early` → `fredoka`/`large`; `developing` → `fredoka`/`standard`;
 
 ### Task 3 — Creation-time defaults in `POST /api/generate`
 
-**Status:** Not started
+**Status:** Done (2026-09-02)
 
 **Zone:** server
 **Depends on:** Tasks 1 and 2

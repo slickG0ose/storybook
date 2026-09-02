@@ -197,6 +197,10 @@ describe('POST /api/generate — image pin on a new book', () => {
       id: expect.any(String),
       image_provider: pin.provider,
       image_model: pin.model,
+      // Ships on the wire because the handler spreads the whole Book row.
+      // VALID_BODY's ageRange '5-7' buckets to 'developing'.
+      font_family: 'fredoka',
+      text_size: 'standard',
     });
 
     const book = await prisma.book.findUnique({ where: { id: res.body.id } });
@@ -223,6 +227,101 @@ describe('POST /api/generate — image pin on a new book', () => {
     const book = await prisma.book.findUnique({ where: { id: res.body.id } });
     expect(book?.image_provider).toBeNull();
     expect(mockGenerateCover).not.toHaveBeenCalled();
+  });
+});
+
+// Typography is seeded at creation time from the book's age range and never
+// re-derived afterwards (spec §Ruling 4). These pin the seeding half; the
+// "never re-derived" half is enforced by the columns being non-null with DB
+// defaults, so nothing downstream has a fallback branch to get wrong.
+//
+// Note the route does NOT validate ageRange — it is free text with two
+// divergent vocabularies in this repo (§Ruling 3) — so an unparseable value
+// must still create a book, at the safe middle.
+describe('POST /api/generate — creation-time typography defaults', () => {
+  let app: Express;
+
+  beforeEach(async () => {
+    await resetDatabase();
+    app = createTestApp();
+    mockCreate.mockReset();
+    mockGenerateCover.mockReset();
+    mockGenerateIllustration.mockReset();
+    mockIsImageGenConfigured.mockReset();
+    mockIsImageGenConfigured.mockReturnValue(false);
+    vi.stubEnv('ANTHROPIC_API_KEY', 'test-key-not-real');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  function mockStory(pageCount: number) {
+    mockCreate.mockResolvedValueOnce({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            title: 'Luna and the Typography Suite',
+            description: 'A story about letterforms.',
+            coverEmoji: '\u2b50',
+            coverColor: '#7c3aed',
+            coverDescription: 'Luna reading in a very legible font.',
+            pages: Array.from({ length: pageCount }, (_, i) => ({
+              text: `Page ${i + 1} text`,
+              illustrationDescription: `Illustration ${i + 1}`,
+            })),
+          }),
+        },
+      ],
+    });
+  }
+
+  it.each([
+    // ageRange, font_family, text_size, why
+    ['3-6', 'fredoka', 'large', 'lower bound 3 is the early band'],
+    ['6-10', 'fredoka', 'standard', 'lower bound 6 is the 5-7 developing band'],
+    // No age_range the app can produce today reaches 'independent' — the
+    // highest lower bound in either vocabulary is 6-10 — so this path is
+    // exercised by an explicit fixture rather than a realistic value. That is
+    // downstream of the vocabulary divergence (§Ruling 3), not a defect here.
+    ['8-12', 'nunito', 'cozy', 'lower bound 8 is the independent band'],
+  ])('persists %s as %s/%s (%s)', async (ageRange, fontFamily, textSize) => {
+    const token = await createUserAndGetToken(app);
+    mockStory(3);
+
+    const res = await request(app)
+      .post('/api/generate')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ...VALID_BODY, ageRange, pageCount: 3 });
+
+    expect(res.status).toBe(200);
+    const book = await prisma.book.findUnique({ where: { id: res.body.id } });
+    expect(book).toMatchObject({
+      age_range: ageRange, // untouched by this feature — still free text
+      font_family: fontFamily,
+      text_size: textSize,
+    });
+  });
+
+  it('still creates a book at standard when ageRange is unrecognised', async () => {
+    // Creation must never fail on a typography decision. 'all ages' parses to
+    // nothing, so it takes the safe middle rather than a guess at an extreme.
+    const token = await createUserAndGetToken(app);
+    mockStory(3);
+
+    const res = await request(app)
+      .post('/api/generate')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ...VALID_BODY, ageRange: 'all ages', pageCount: 3 });
+
+    expect(res.status).toBe(200);
+    const book = await prisma.book.findUnique({ where: { id: res.body.id } });
+    expect(book).toMatchObject({
+      age_range: 'all ages',
+      font_family: 'fredoka',
+      text_size: 'standard',
+    });
   });
 });
 
