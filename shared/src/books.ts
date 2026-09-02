@@ -34,6 +34,19 @@ export const PageSchema = z.object({
 export type Page = z.infer<typeof PageSchema>;
 
 // ---------------------------------------------------------------------------
+// Typography vocabulary (#113) — curated, closed sets. A free-text family must
+// not be able to reach the DB, so the enum IS the vocabulary; see spec
+// .code-captain/specs/per-page-font-size/spec.md §Curated set. OpenDyslexic is
+// deliberately excluded from v1 — widening this enum is a wire-shape change and
+// needs its own slice.
+// ---------------------------------------------------------------------------
+export const FontFamilySchema = z.enum(['fredoka', 'nunito', 'atkinson', 'lexend']);
+export type FontFamily = z.infer<typeof FontFamilySchema>;
+
+export const TextSizeSchema = z.enum(['cozy', 'standard', 'large', 'xlarge']);
+export type TextSize = z.infer<typeof TextSizeSchema>;
+
+// ---------------------------------------------------------------------------
 // Book — wire shape returned by storefront list/detail/publish/etc endpoints.
 //
 // Note on `characters_json` vs `characters`:
@@ -65,6 +78,11 @@ export const BookSchema = z.object({
   characters: z.array(CharacterSchema),
   style_descriptor: z.string().nullable(),
   style_reference_url: z.string().nullable(),
+  // Presentation-only typography (#113). Required and NOT nullable: the Prisma
+  // columns are non-null with defaults ('fredoka' / 'standard') and hydrateBook
+  // spreads the whole row, so an absent field is drift rather than a legacy row.
+  font_family: FontFamilySchema,
+  text_size: TextSizeSchema,
   // Which image provider + base model produced this book's art. Written lazily
   // on the first successful image write, so null means "not yet pinned".
   // Required-and-nullable, not `.optional()`: Prisma always returns the column

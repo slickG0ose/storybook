@@ -39,6 +39,13 @@ model Book {
   characters_json String?
   style_descriptor String?
   style_reference_url String?
+  // Presentation-only (#113). Both non-null with defaults that reproduce the
+  // pre-#113 rendering exactly, so every existing row is visually unchanged.
+  // Age-derived values are written at creation time only, never as a runtime
+  // fallback — see spec §Ruling 4. Deliberately NOT snapshotted into
+  // BookVersion — see spec §Ruling 2.
+  font_family String @default("fredoka")   // 'fredoka' | 'nunito' | 'atkinson' | 'lexend'
+  text_size   String @default("standard")  // 'cozy' | 'standard' | 'large' | 'xlarge'
   // Which image provider + base model produced this book's art. Written lazily
   // on the first successful image write (see services/imagePin.ts), NOT at
   // creation time — the pin describes art that exists, not an intention.

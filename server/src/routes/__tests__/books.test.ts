@@ -146,6 +146,13 @@ describe('Books API routes', () => {
       expect(res.body.id).toBe('luna-star-garden');
       expect(res.body.title).toBe('Luna and the Star Garden');
       expect(res.body.pages).toHaveLength(5);
+      // OPS.3 wire shape. Typography ships on every book response because
+      // hydrateBook spreads the whole row; a seeded book takes the DB defaults,
+      // which are defined to reproduce the pre-#113 rendering exactly.
+      expect(res.body).toMatchObject({
+        font_family: 'fredoka',
+        text_size: 'standard',
+      });
     });
 
     it('pages are sorted by page_number', async () => {

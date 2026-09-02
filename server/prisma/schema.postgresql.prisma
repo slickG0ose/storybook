@@ -44,6 +44,13 @@ model Book {
   characters_json String?
   style_descriptor String?
   style_reference_url String?
+  // Presentation-only (#113). Both non-null with defaults that reproduce the
+  // pre-#113 rendering exactly, so every existing row is visually unchanged.
+  // Age-derived values are written at creation time only, never as a runtime
+  // fallback — see spec §Ruling 4. Deliberately NOT snapshotted into
+  // BookVersion — see spec §Ruling 2.
+  font_family String @default("fredoka")   // 'fredoka' | 'nunito' | 'atkinson' | 'lexend'
+  text_size   String @default("standard")  // 'cozy' | 'standard' | 'large' | 'xlarge'
   // Which image provider + base model produced this book's art. Written lazily
   // on the first successful image write (see services/imagePin.ts), NOT at
   // creation time — the pin describes art that exists, not an intention.
@@ -53,6 +60,20 @@ model Book {
   created_by      String?
   deleted_at      DateTime?
   created_at      DateTime @default(now())
+  // Hero rotation (spec: .code-captain/specs/hero-rotation/spec.md). Both
+  // columns are additive; every pre-existing row keeps its data and comes out
+  // not-eligible and not-consented, so the pool is empty until opted into.
+  //
+  // Editorial quality — "this is good enough for the front page." Admin-writable
+  // via PUT /api/admin/books/:id/hero-eligible. Defaults false, so every
+  // existing row is out of the hero pool until someone deliberately opts it in.
+  is_hero_eligible Boolean @default(false)
+  // Permission for promotional display outside this book's own detail page.
+  // Deliberately has NO API writer — the only thing that sets it is the
+  // demo-seed fixture, i.e. the operator consenting to the operator's own demo
+  // book. Admin authority and owner consent are different keys on purpose;
+  // see the spec's §"The consent seam".
+  hero_consent_at DateTime?
 
   creator    User?         @relation(fields: [created_by], references: [id])
   pages      Page[]
