@@ -267,7 +267,7 @@ router.put(
 
 ### Task 5 — Vendor Atkinson Hyperlegible and Lexend
 
-**Status:** Not started
+**Status:** Done (2026-09-02)
 
 **Zone:** client (assets + CSS)
 **Depends on:** none

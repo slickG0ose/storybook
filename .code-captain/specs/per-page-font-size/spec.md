@@ -245,11 +245,22 @@ from Bitstream Vera, so the specific release must be checked, not assumed). Reco
 add it on request, with the honest framing "some readers prefer it," not "this helps
 dyslexia." Flagged for Nick to overrule if he'd rather have it in v1.
 
-**New families cost nothing until used.** A `@font-face` block is only fetched when a CSS
-rule actually applies that family, so the two additions add zero bytes to a visitor
-reading a Fredoka book. Do **not** add them to the `<link rel="preload">` pair in
-`client/index.html` — preloading a font no page may use is the one way to make them cost
-something.
+**~~New families cost nothing until used.~~ Wrong — corrected after Task 5 measured it.**
+The browser-level claim holds: a `@font-face` block is only fetched when a CSS rule
+applies that family, and the two additions are correctly kept out of the
+`<link rel="preload">` pair in `client/index.html`. But this app is a PWA.
+`client/pwa.config.ts:43` globs `**/*.{js,css,html,svg,webp,woff2}` into the Workbox
+precache, so **every** vendored font is downloaded on first visit by any service-worker
+visitor whether or not a book uses it. Measured: precache 867 KiB → 973.48 KiB, **+106
+KiB** (Lexend is ~74 KiB of it; Atkinson ships four static files, ~34 KiB).
+
+**Ruling: accept the cost; do not narrow the glob.** That glob is deliberate — the comment
+above it exists because an extension missing from the list renders a broken asset offline.
+Narrowing it so only the two default families precache would mean a book an author set to
+Atkinson or Lexend renders offline in fallback system sans: silently wrong type rather
+than a visible failure, which is the exact failure mode this project rejects elsewhere.
+The honest framing is that a curated set of four families costs 106 KiB of one-time
+precache, and that is the price of the offline render working for all four.
 
 ### Size scale — four steps, each a triple
 
