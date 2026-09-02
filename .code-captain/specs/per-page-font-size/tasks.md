@@ -568,7 +568,7 @@ stays with the manual verify in Task 8.
 
 ### Task 10 — Pre-merge follow-ups
 
-**Status:** Not started
+**Status:** Done (2026-09-02) — ADR-019, ADR-020, #171, #172, and the #113 comment
 
 **Zone:** docs (harness) · **Depends on:** none (run last)
 
