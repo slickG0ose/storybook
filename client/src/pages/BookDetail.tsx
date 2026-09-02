@@ -5,6 +5,7 @@ import { useCart } from '../context/CartContext'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { api } from '../lib/apiBase'
+import { resolveReaderTypography } from '../lib/typography'
 import { PER_IMAGE_COST_USD, fmtUsd, portraitStepCostNote } from '../lib/cost'
 import type { BookWithPages, BookVersion, FontFamily, IllustrationVersion, Page, TextSize } from '../types'
 import BookSpread from '../components/BookSpread'
@@ -262,6 +263,10 @@ export default function BookDetail() {
 
   const pages: Page[] = book.pages || []
   const page = pages[currentPage]
+  // Reader view's story text, resolved once (#113 Task 8b). Its own scale — Reader has
+  // always run larger than the spread, so `resolveTypography` here would SHRINK every
+  // existing book's reader text. See `resolveReaderTypography`.
+  const readerTextClass = resolveReaderTypography(book)
   const isOwner = user && book.created_by === user.id
   const isDraft = book.status === 'draft'
 
@@ -1146,7 +1151,7 @@ export default function BookDetail() {
                 </div>
               )}
 
-              <p className="text-xl text-gray-700 dark:text-gray-200 leading-relaxed mb-6">{page.text}</p>
+              <p className={`${readerTextClass} mb-6`}>{page.text}</p>
 
               {page.illustration_description && !page.illustration_url && (
                 <div className="bg-white/60 dark:bg-gray-600/40 rounded-xl p-4 border border-amber-200 dark:border-gray-600 flex items-start gap-3">

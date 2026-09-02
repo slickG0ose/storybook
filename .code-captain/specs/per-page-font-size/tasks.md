@@ -479,6 +479,63 @@ that the reader text updates live.
 
 ---
 
+### Task 8b — Reader view honours the picker (added 2026-09-02, Nick's ruling)
+
+**Status:** Done (2026-09-02)
+
+**Zone:** client
+**Depends on:** Tasks 6, 7, 8
+**Parallel-safe with:** none (Task 9 asserts both views)
+
+**Why this exists.** Task 8 surfaced it and the plan never covered it. `BookDetail.tsx:1149`
+renders Reader view's story text as a hard-coded
+`text-xl text-gray-700 dark:text-gray-200 leading-relaxed` — no family class. Reader view
+is a first-class toggle sitting beside Spread view (`BookDetail.tsx:993`), so an author who
+sets `atkinson`/`xlarge` and switches views sees a control that does visibly nothing. Nick
+ruled to fix it in this slice rather than ship the hole.
+
+**Why it is not a one-line call to `resolveTypography`.** Two collisions with the
+no-visual-change constraint, and they resolve differently:
+
+1. **Size — preserve exactly.** Reader view is `text-xl`; the spread's default resolves to
+   `text-base md:text-lg`, which is *smaller*. Reusing the spread's map would shrink reader
+   text on every existing book. Reader needs its own scale where **`standard` = today's
+   `text-xl`**, with the other three steps relative to it (suggested: `cozy` → `text-lg`,
+   `large` → `text-2xl`, `xlarge` → `text-3xl`). No `md:` prefix — Reader view has no
+   responsive step today; do not add one.
+2. **Family — deliberately change it, and flag it.** `body` is Nunito
+   (`client/src/index.css:234`) and Reader view sets no family, so it renders **Nunito**
+   while Spread view renders **Fredoka** via `font-display`. The two views have always
+   disagreed about the font. Applying the family in Reader view means a default
+   (`fredoka`) book's reader text goes **Nunito → Fredoka**. That is a real, visible change
+   to every existing book in one view, and it is the ruling: a picker visible beside a view
+   must affect that view, and the split was a latent inconsistency rather than a design.
+   **Call it out in the hand-back so it can be reversed cheaply if Nick dislikes it on
+   sight.**
+
+**Files to add or change:**
+- `client/src/lib/typography.ts` — `READER_SIZE_CLASSES` + `resolveReaderTypography(book)`.
+  A separate exported function, not a `view` parameter bolted onto `resolveTypography` —
+  the two maps genuinely differ and a boolean argument would hide that.
+- `client/src/pages/BookDetail.tsx` — line ~1149 consumes it.
+- `client/src/lib/__tests__/typography.test.ts` — pin `standard` → `text-xl …` exactly.
+- `client/src/pages/__tests__/BookDetail.test.tsx` — assert Reader view's rendered
+  className, both default and non-default.
+
+**Tests to write:**
+- `resolveReaderTypography` with `fredoka`/`standard` returns a string whose size segment is
+  `text-xl` and which carries `text-gray-700 dark:text-gray-200 leading-relaxed` — i.e. the
+  pre-#113 string plus a family class, differing from it in exactly that one addition.
+- Reader view rendered with `atkinson`/`xlarge` carries `font-atkinson` and `text-3xl`.
+- Toggling Spread → Reader on the same book yields two different size classes, proving the
+  two maps are actually distinct rather than one aliased to the other.
+
+**Done when:** `cd client && npm test` green, `npm run lint` clean, `npm run build` clean,
+`npx tsc --noEmit` exit 0. All classes are static literals (the Tailwind v4 tree-shaking
+trap from Task 6 applies unchanged).
+
+---
+
 ### Task 9 — e2e: typography survives both themes at a mobile viewport
 
 **Status:** Not started

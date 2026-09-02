@@ -102,3 +102,55 @@ export function resolveTypography(
 
   return `${size.scale} ${TEXT_COLOR_CLASSES} ${size.spacing} ${family}`
 }
+
+/**
+ * Reader view's own size scale (#113, Task 8b).
+ *
+ * A SEPARATE map, not a `view` flag on `SIZE_CLASSES`, because the two scales genuinely
+ * disagree: Reader view has always rendered a single full-width column at `text-xl`, which
+ * is LARGER than the spread's `standard` (`text-base md:text-lg`). Reusing the spread map
+ * here would shrink the reader text of every existing book — the exact no-visual-change
+ * breach this feature is built to avoid. `standard` therefore pins today's `text-xl`, and
+ * the other steps are relative to it.
+ *
+ * No `md:` step: Reader view is one column at every width today and this task does not add
+ * a responsive break. Line-height and tracking DO mirror the spread map, because those are
+ * part of what a size token MEANS (see spec §Text-size scale) — `large` promises looser
+ * leading in both views or the token means two different things depending on a toggle.
+ *
+ * Literal strings only, same Tailwind v4 tree-shaking trap as above.
+ */
+const READER_SIZE_CLASSES: Record<TextSize, { scale: string; spacing: string }> = {
+  cozy: { scale: 'text-lg', spacing: 'leading-relaxed' },
+  standard: { scale: 'text-xl', spacing: 'leading-relaxed' },
+  large: { scale: 'text-2xl', spacing: 'leading-loose tracking-wide' },
+  xlarge: { scale: 'text-3xl', spacing: 'leading-loose tracking-wide' },
+}
+
+/**
+ * Resolves a book's typography tokens to Reader view's story-text className
+ * (`BookDetail`'s single-page column).
+ *
+ * `fredoka` + `standard` emits exactly
+ * `text-xl text-gray-700 dark:text-gray-200 leading-relaxed font-display` — the string
+ * Reader view hard-coded before #113 PLUS the family class, and differing in nothing else.
+ *
+ * That one addition is a deliberate, visible change: Reader view set no family, so it
+ * inherited `body` (Nunito) while Spread view rendered `font-display` (Fredoka). The two
+ * views have always disagreed about the face. A picker sitting beside a view toggle has to
+ * affect both views, so the family now applies here too and a default book's reader text
+ * moves Nunito -> Fredoka. Reverting is a one-line drop of `${family}` from the return.
+ *
+ * @param page The same deferred per-page seam as `resolveTypography` (spec §Ruling 1).
+ */
+export function resolveReaderTypography(
+  book: TypographySource,
+  page?: Partial<TypographySource>,
+): ResolvedTypography {
+  void page
+
+  const size = READER_SIZE_CLASSES[book.text_size]
+  const family = FAMILY_CLASSES[book.font_family]
+
+  return `${size.scale} ${TEXT_COLOR_CLASSES} ${size.spacing} ${family}`
+}
