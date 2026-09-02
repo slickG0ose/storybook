@@ -538,7 +538,7 @@ trap from Task 6 applies unchanged).
 
 ### Task 9 — e2e: typography survives both themes at a mobile viewport
 
-**Status:** Not started
+**Status:** Done (2026-09-02)
 
 **Zone:** e2e
 **Depends on:** Task 8
