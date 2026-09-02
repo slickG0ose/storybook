@@ -71,7 +71,9 @@ describe('spend service — sums', () => {
 
   it('sums only today for the per-user window', async () => {
     await seedSpend(userId, 10);
-    // Two days ago — same month, different day.
+    // Two days ago. Unlike the monthly assertion in the admin-route suite below, this one
+    // is safe on a real clock: it only asks whether the row is outside *today*, and a row
+    // two days back is outside today in every month, including one that started yesterday.
     await seedSpend(userId, 99, new Date(Date.now() - 2 * 24 * 60 * 60 * 1000));
 
     expect(await userSpendTodayCents(userId)).toBe(10);
@@ -382,6 +384,12 @@ describe('GET /api/admin/spend', () => {
     ({ id: userId } = await makeUser(app, 'spend-user@example.com'));
   });
 
+  // One test in this block pins the clock. Restoring here rather than in that test's own
+  // `finally` keeps a failed assertion from leaking a frozen Date into every later test.
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('requires the admin role', async () => {
     const plain = await makeUser(app, 'plain@example.com');
     const res = await request(app)
@@ -412,8 +420,27 @@ describe('GET /api/admin/spend', () => {
     });
   });
 
+  /**
+   * The clock is pinned, and it has to be. This test needs a day that is *previous* but
+   * still inside the same UTC month, and on the 1st of a month no such day exists — the
+   * previous day is in the previous month, `startOfUtcMonth(now)` excludes it, and
+   * `monthlyTotalCents` comes back 0. `Date.now() - 2 days` fails for the same reason on
+   * the 1st and the 2nd.
+   *
+   * That is not hypothetical: it took down CI on 2026-09-02T00:32Z, and it would have
+   * done so on the 1st and 2nd of every month since the test was written. Nudging the
+   * offset cannot fix it, because the impossible case is structural.
+   *
+   * `toFake: ['Date']` is load-bearing — faking the whole timer set would hang supertest
+   * and Prisma, which need real `setTimeout`. Only `Date` is replaced, which is all the
+   * route reads: `startOfUtcDay`/`startOfUtcMonth` default to `new Date()`.
+   */
   it('excludes spend from previous days in the per-user view but keeps it in the month', async () => {
-    await seedSpend(userId, 7, new Date(Date.now() - 2 * 24 * 60 * 60 * 1000));
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-08-15T12:00:00.000Z'));
+
+    // Two days before the pinned now: a different UTC day, the same UTC month.
+    await seedSpend(userId, 7, new Date('2026-08-13T12:00:00.000Z'));
 
     const res = await request(app)
       .get('/api/admin/spend')
