@@ -10,6 +10,8 @@ import {
   BookDeleteResponseSchema,
   BookUpdatePageRequestSchema,
   BookUpdatePageResponseSchema,
+  BookTypographyRequestSchema,
+  BookTypographyResponseSchema,
   BookReviseRequestSchema,
   BookReviseResponseSchema,
   BookRestoreVersionResponseSchema,
@@ -24,6 +26,7 @@ import {
   CharacterPortraitVersionListResponseSchema,
   BookPdfRequestSchema,
   type BookUpdatePageRequest,
+  type BookTypographyRequest,
   type BookReviseRequest,
   type BookIllustrateRequest,
   type BookIllustrationRevertRequest,
@@ -293,6 +296,47 @@ router.put(
       include: { pages: { orderBy: { page_number: 'asc' } } },
     });
     res.json(updated ? hydrateBook(updated) : null);
+  },
+);
+
+router.put(
+  '/:id/typography',
+  requireAuth,
+  validate({
+    name: 'PUT /api/books/:id/typography',
+    request: BookTypographyRequestSchema,
+    response: BookTypographyResponseSchema,
+  }),
+  async (req: Request<{ id: string }>, res: Response) => {
+    const user = res.locals.user as { id: string };
+
+    const { font_family, text_size } = req.body as BookTypographyRequest;
+
+    const book = await prisma.book.findFirst({ where: { id: req.params.id, deleted_at: null } });
+    // Ownership first, then status. A non-owner gets 404, never 403 — a 403
+    // would confirm to a stranger that someone else's book exists.
+    if (!book || book.created_by !== user.id) {
+      return res.status(404).json({ error: 'Book not found' });
+    }
+    // Presentation-only, but still a mutation on a Book row, so published books
+    // stay immutable (ADR-012).
+    if (!isEditable(book)) {
+      return res.status(403).json({ error: PUBLISHED_IMMUTABLE_ERROR });
+    }
+
+    // DELIBERATE: no `version` bump and no `bookVersion.create` here. This is
+    // spec .code-captain/specs/per-page-font-size/spec.md §Ruling 2, not an
+    // oversight. Version history exists to make destroyed information
+    // recoverable; a typography change destroys nothing — the prior state is
+    // one of 4 x 4 tokens and is reconstructible by re-picking it. Do not
+    // "fix" this by snapshotting: it would make every chip click a new version.
+    const updated = await prisma.book.update({
+      where: { id: book.id },
+      data: { font_family, text_size },
+      include: { pages: { orderBy: { page_number: 'asc' } } },
+    });
+
+    res.json(hydrateBook(updated));
   },
 );
 

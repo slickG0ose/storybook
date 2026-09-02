@@ -210,7 +210,7 @@ Do **not** add validation of `ageRange` itself — Ruling 3 keeps that column un
 
 ### Task 4 — `PUT /api/books/:id/typography`
 
-**Status:** Not started
+**Status:** Done (2026-09-02)
 
 **Zone:** multi-zone (shared + server)
 **Depends on:** Task 1

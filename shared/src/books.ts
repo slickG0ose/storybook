@@ -156,6 +156,28 @@ export const BookUpdatePageResponseSchema = BookWithPagesSchema.nullable();
 export type BookUpdatePageResponse = z.infer<typeof BookUpdatePageResponseSchema>;
 
 // ---------------------------------------------------------------------------
+// PUT /api/books/:id/typography — set the book-level font family and text size.
+//
+// `.strict()` so a future per-page override field (spec §Ruling 1 holds it as an
+// upgrade path) cannot land silently — same reasoning as BookPdfRequestSchema.
+// Both fields are required: the picker always sends the full pair, so a partial
+// body is a caller bug, not a patch.
+// ---------------------------------------------------------------------------
+export const BookTypographyRequestSchema = z
+  .object({
+    font_family: FontFamilySchema,
+    text_size: TextSizeSchema,
+  })
+  .strict();
+export type BookTypographyRequest = z.infer<typeof BookTypographyRequestSchema>;
+
+// Not nullable, unlike BookUpdatePageResponseSchema: the handler returns the
+// row prisma.book.update just wrote, so there is no post-write lookup that can
+// race to null.
+export const BookTypographyResponseSchema = BookWithPagesSchema;
+export type BookTypographyResponse = z.infer<typeof BookTypographyResponseSchema>;
+
+// ---------------------------------------------------------------------------
 // POST /api/books/:id/revise — Claude-driven story revision
 // ---------------------------------------------------------------------------
 export const BookReviseRequestSchema = z.object({
