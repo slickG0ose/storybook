@@ -501,16 +501,23 @@ enter the print path.
 
 ## ADR-worthy decisions
 
-- [ ] **Book-level typography, per-page deferred** (Ruling 1) — hard to reverse once the
-      columns and the wire shape exist; contradicts the filed issue title. `/create-adr`.
-- [ ] **Typography is presentation-only: no version bump, excluded from `BookVersion`**
-      (Ruling 2) — sets the precedent #89 will be measured against. `/create-adr`.
-- [ ] **Non-null columns with defaults, age-derived values applied at creation only**
-      (Ruling 4) — decides that a book never changes appearance because a default moved.
-      Fold into the Ruling 1 ADR if it reads thin alone.
-- [ ] **Curated set is four families; OpenDyslexic held back** — a named, contestable
-      product call with an evidence argument behind it. ADR or an issue comment.
-- [ ] **Deferred:** PDF font registration + print-overflow measurement (§Print assessment)
-      → file as a sub-issue of [#27](https://github.com/slickG0ose/storybook/issues/27).
-- [ ] **Deferred:** `age_range` vocabulary divergence between `CreateBook.tsx` and
-      `seed.ts` (Ruling 3) → file as a standalone bug.
+All six are tracked as of 2026-09-02 (Task 10). `adr-tracking-check per-page-font-size`
+reports zero orphans.
+
+- [x] **Book-level typography, per-page deferred** (Ruling 1) → **ADR-020**.
+- [x] **Typography is presentation-only: no version bump, excluded from `BookVersion`**
+      (Ruling 2) → **ADR-019**. Cross-linked into
+      [#89](https://github.com/slickG0ose/storybook/issues/89) via the ADR's §Binding on
+      #89, which names the one way #89 could overturn it silently.
+- [x] **Non-null columns with defaults, age-derived values applied at creation only**
+      (Ruling 4) → folded into **ADR-020**. It did read thin alone, as predicted.
+- [x] **Curated set is four families; OpenDyslexic held back** → recorded as a comment on
+      [#113](https://github.com/slickG0ose/storybook/issues/113#issuecomment-5515889233),
+      with the evidence argument and the note that widening `FontFamilySchema` after this
+      merges is a wire-shape change.
+- [x] **Deferred:** PDF font registration + print-overflow measurement (§Print assessment)
+      → filed as [#171](https://github.com/slickG0ose/storybook/issues/171), sub-issue of
+      [#27](https://github.com/slickG0ose/storybook/issues/27).
+- [x] **Deferred:** `age_range` vocabulary divergence between `CreateBook.tsx` and
+      `seed.ts` (Ruling 3) → filed as
+      [#172](https://github.com/slickG0ose/storybook/issues/172).
