@@ -134,11 +134,17 @@ let capturedTheaterProp: boolean | undefined
 // image. Captured rather than rendered — the affordance it feeds is fenced in
 // BookSpread.test.tsx; what BookDetail owns is finding the history at all.
 let capturedOrphanedVersions: Record<number, IllustrationVersion[]> | undefined
+// #113 Task 8: the real picker is fenced and unit-tested in BookSpread/TypographyControls.
+// What BookDetail owns is the PUT and the state swap, so the stub renders one chip that
+// hands back a fixed pair and echoes the book's current tokens plus the saving flag.
 vi.mock('../../components/BookSpread', () => ({
   default: (props: {
+    book: BookWithPages
     theater: boolean
     onToggleTheater: () => void
     orphanedVersions?: Record<number, IllustrationVersion[]>
+    onTypographyChange?: (next: { font_family: string; text_size: string }) => Promise<void>
+    typographySaving?: boolean
   }) => {
     capturedTheaterProp = props.theater
     capturedOrphanedVersions = props.orphanedVersions
@@ -147,6 +153,16 @@ vi.mock('../../components/BookSpread', () => ({
         <button onClick={props.onToggleTheater} aria-label="theater-toggle-stub">
           theater={String(props.theater)}
         </button>
+        <button
+          aria-label="typography-chip-stub"
+          onClick={() => void props.onTypographyChange?.({ font_family: 'atkinson', text_size: 'xlarge' })}
+        >
+          typography
+        </button>
+        <span data-testid="spread-typography">
+          {props.book.font_family}/{props.book.text_size}
+        </span>
+        <span data-testid="spread-typography-saving">{String(props.typographySaving)}</span>
       </div>
     )
   },
@@ -195,6 +211,8 @@ function setupFetchMock(opts: {
   revised?: BookWithPages
   versionsAfterRevise?: BookVersion[]
   pdfStatus?: number
+  typographyStatus?: number
+  typographyBook?: BookWithPages
 }) {
   const calls: FetchCall[] = []
   let getVersionsCount = 0
@@ -235,6 +253,23 @@ function setupFetchMock(opts: {
     if (/^\/api\/books\/book-1\/versions\/\d+\/restore$/.test(url) && method === 'PUT') {
       return Promise.resolve(
         new Response(JSON.stringify(opts.restored ?? restoredBook), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+    }
+    if (url === '/api/books/book-1/typography' && method === 'PUT') {
+      const status = opts.typographyStatus ?? 200
+      if (status !== 200) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: 'Typography save failed' }), {
+            status,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        )
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify(opts.typographyBook ?? baseBook), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         })
@@ -1475,5 +1510,75 @@ describe('BookDetail — orphaned illustration recovery', () => {
     })
     expect(calls.some(c => c.url.includes('/illustrations/'))).toBe(false)
     expect(capturedOrphanedVersions).toEqual({})
+  })
+})
+
+/**
+ * Font + text-size saving (#113, Task 8). BookDetail owns the write; the picker itself is
+ * presentational and covered in `TypographyControls.test.tsx`. The two things that can only
+ * be proven here: the request carries BOTH fields (the route is `.strict()`, so a partial
+ * body is a 400), and the reader re-renders off the response rather than off an optimistic
+ * local copy.
+ */
+describe('BookDetail — typography', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const restyledBook: BookWithPages = {
+    ...baseBook,
+    font_family: 'atkinson',
+    text_size: 'xlarge',
+  }
+
+  it('PUTs both fields and re-renders the spread from the response', async () => {
+    const { calls } = setupFetchMock({ typographyBook: restyledBook })
+    renderBookDetail()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('spread-typography')).toHaveTextContent('fredoka/standard')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'typography-chip-stub' }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('spread-typography')).toHaveTextContent('atkinson/xlarge')
+    })
+
+    const put = calls.find(c => c.url === '/api/books/book-1/typography')
+    expect(put).toBeDefined()
+    expect(put?.init?.method).toBe('PUT')
+    // Both fields, always — the route rejects a partial body. Parsed rather than compared
+    // as a string so key order cannot make this pass or fail for the wrong reason.
+    expect(JSON.parse(String(put?.init?.body))).toEqual({
+      font_family: 'atkinson',
+      text_size: 'xlarge',
+    })
+    expect((put?.init?.headers as Record<string, string>)['Authorization']).toBe('Bearer test-token')
+    // Free route: no cost confirm, and nothing about spend in the request.
+    expect(calls.filter(c => c.url === '/api/books/book-1/typography')).toHaveLength(1)
+  })
+
+  it('surfaces a failed save in the toast host and leaves the book at its saved tokens', async () => {
+    setupFetchMock({ typographyStatus: 400 })
+    renderBookDetail()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('spread-typography')).toHaveTextContent('fredoka/standard')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'typography-chip-stub' }))
+
+    await waitFor(() => {
+      expect(toastHost().getByText('Typography save failed')).toBeInTheDocument()
+    })
+    // The chips read straight off `book`, so a rejected write cannot leave the picker
+    // advertising a choice the server never took.
+    expect(screen.getByTestId('spread-typography')).toHaveTextContent('fredoka/standard')
+    expect(screen.getByTestId('spread-typography-saving')).toHaveTextContent('false')
   })
 })

@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { api } from '../lib/apiBase'
 import { PER_IMAGE_COST_USD, fmtUsd, portraitStepCostNote } from '../lib/cost'
-import type { BookWithPages, BookVersion, IllustrationVersion, Page } from '../types'
+import type { BookWithPages, BookVersion, FontFamily, IllustrationVersion, Page, TextSize } from '../types'
 import BookSpread from '../components/BookSpread'
 import PublishStateBar from '../components/PublishStateBar'
 
@@ -145,6 +145,11 @@ export default function BookDetail() {
   // definition, since a book is either in the catalog or out of it.
   const [publishBusy, setPublishBusy] = useState(false)
   const [publishError, setPublishError] = useState('')
+
+  // #113 font + text-size. Only a busy flag lives here: the chips read their selection
+  // straight off `book`, so there is no local copy of the choice that a failed save could
+  // leave stranded ahead of the server.
+  const [typographySaving, setTypographySaving] = useState(false)
 
   const fetchBook = () => {
     const headers: Record<string, string> = {}
@@ -512,6 +517,37 @@ export default function BookDetail() {
     if (res.ok) {
       const updated = await res.json() as BookWithPages
       setBook(updated)
+    }
+  }
+
+  /**
+   * PUT /api/books/:id/typography — presentation only, and free: no spend gate on the
+   * route, so no cost confirm here. The response is the full `BookWithPages`, so the
+   * reader re-renders through `resolveTypography` off this one `setBook`; there is no
+   * second render path for the preview.
+   */
+  const handleTypographyChange = async (next: { font_family: FontFamily; text_size: TextSize }): Promise<void> => {
+    if (!user) return
+    setTypographySaving(true)
+    try {
+      const res = await fetch(api(`/api/books/${book.id}/typography`), {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${user.token}`,
+        },
+        body: JSON.stringify(next),
+      })
+      if (handledStale403(res)) return
+      const parsed = await safeReadJson<BookWithPages>(res)
+      if (!res.ok || parsed === null || (typeof parsed === 'object' && 'error' in parsed)) {
+        throw new Error(errorMessageFromResponse(parsed, res, 'Could not update the text appearance'))
+      }
+      setBook(parsed)
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'Could not update the text appearance')
+    } finally {
+      setTypographySaving(false)
     }
   }
 
@@ -989,6 +1025,8 @@ export default function BookDetail() {
           orphanedVersions={orphanedVersions}
           theater={theater}
           onToggleTheater={toggleTheater}
+          onTypographyChange={handleTypographyChange}
+          typographySaving={typographySaving}
         />
       )}
 

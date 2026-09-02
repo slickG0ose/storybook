@@ -23,6 +23,9 @@ export interface AdminUser {
 // Re-exported so existing in-client consumers can keep importing from '../types'.
 export type { Character, CharacterRole } from '@storybook/shared';
 export type { Book } from '@storybook/shared';
+// #113 presentation vocabulary. Re-exported here so components reach it the same way they
+// reach every other wire shape; `lib/typography.ts` imports it straight from the package.
+export type { FontFamily, TextSize } from '@storybook/shared';
 export type { BookWithPages } from '@storybook/shared';
 export type { OrphanIllustration } from '@storybook/shared';
 export type { AllowedEmail } from '@storybook/shared';

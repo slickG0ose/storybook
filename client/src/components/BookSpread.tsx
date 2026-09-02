@@ -1,8 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { ChevronLeft, ChevronRight, Image as ImageIcon, RefreshCw, Loader2, Paintbrush, Check, History, Maximize2, Minimize2 } from 'lucide-react'
-import type { BookWithPages, IllustrationVersion, Page } from '../types'
+import type { BookWithPages, FontFamily, IllustrationVersion, Page, TextSize } from '../types'
 import { api } from '../lib/apiBase'
 import { resolveTypography } from '../lib/typography'
+import TypographyControls from './TypographyControls'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useNarration } from '../hooks/useNarration'
 import NarrationPlayer from './NarrationPlayer'
@@ -49,6 +50,14 @@ interface BookSpreadProps {
   orphanedVersions?: Record<number, IllustrationVersion[]>;
   theater: boolean;
   onToggleTheater: () => void;
+  /**
+   * PUT /api/books/:id/typography, owned by the parent (#113). Optional so every other
+   * mount of this component — and the reader path for a book nobody owns — is unchanged;
+   * the picker only renders when a handler is supplied AND the viewer is the owner of a
+   * draft, matching the route's 403 on a published book.
+   */
+  onTypographyChange?: (next: { font_family: FontFamily; text_size: TextSize }) => Promise<void>;
+  typographySaving?: boolean;
 }
 
 const DEFAULT_STYLE_DESCRIPTOR = 'Whimsical, colorful, warm, suitable for young children';
@@ -97,6 +106,8 @@ export default function BookSpread({
   orphanedVersions,
   theater,
   onToggleTheater,
+  onTypographyChange,
+  typographySaving = false,
 }: BookSpreadProps) {
   const isNarrow = useMediaQuery(NARROW_QUERY)
   // Resolved once for the whole spread rather than inside StoryText, so the single-panel
@@ -441,6 +452,23 @@ export default function BookSpread({
           {theater ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
         </button>
       </div>
+
+      {/*
+        * Text appearance. Same owner+draft fence as every other editing affordance in this
+        * rail — a published book's typography is not editable, which is what the route
+        * answers 403 to. Always open rather than behind a toggle: it is free, instant, and
+        * the reader above it is the preview.
+        */}
+      {isOwner && isDraft && onTypographyChange && (
+        <div className={`mt-4 mx-auto ${frameWidthClass}`}>
+          <TypographyControls
+            fontFamily={book.font_family}
+            textSize={book.text_size}
+            onChange={onTypographyChange}
+            saving={typographySaving}
+          />
+        </div>
+      )}
 
       {/* Inline revision panel (only when the user opens it from the spread footer) */}
       {isOwner && isDraft && showFeedback && (
