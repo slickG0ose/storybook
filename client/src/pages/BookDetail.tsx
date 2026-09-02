@@ -898,13 +898,13 @@ export default function BookDetail() {
                         }
                         placeholder="e.g., curlier hair, friendlier smile, blue coat..."
                         disabled={generating}
-                        className="flex-1 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 text-sm focus:border-purple-400 focus:outline-none placeholder-gray-400 dark:placeholder-gray-500 disabled:opacity-50"
+                        className="flex-1 min-h-11 px-3 rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 text-sm focus:border-purple-400 focus:outline-none placeholder-gray-400 dark:placeholder-gray-500 disabled:opacity-50"
                       />
                       <button
                         onClick={() => void handleGeneratePortrait(index)}
                         disabled={generating}
                         aria-label={`${character.portrait_url ? 'Regenerate' : 'Generate'} portrait for ${character.name}`}
-                        className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 hover:bg-purple-200 dark:hover:bg-purple-900/50 cursor-pointer border-none disabled:opacity-40 whitespace-nowrap"
+                        className="flex min-h-11 items-center justify-center gap-1.5 px-3 rounded-lg text-sm font-semibold bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 hover:bg-purple-200 dark:hover:bg-purple-900/50 cursor-pointer border-none disabled:opacity-40 whitespace-nowrap"
                       >
                         {generating ? <Loader2 size={14} className="animate-spin" /> : <Paintbrush size={14} />}
                         {generating
