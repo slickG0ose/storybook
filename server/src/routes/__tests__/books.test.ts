@@ -305,6 +305,10 @@ describe('Books API routes', () => {
         .send({ font_family: 'atkinson', text_size: 'large' });
 
       expect(res.status).toBe(404);
+      // `validate()` exempts 4xx bodies from response validation, so nothing else pins
+      // these shapes. Assert the envelope, not just the status — a route that 404s with
+      // an empty body would otherwise pass.
+      expect(res.body).toMatchObject({ error: expect.any(String) });
     });
 
     it('returns 403 on a published book', async () => {
@@ -328,6 +332,7 @@ describe('Books API routes', () => {
         .send({ font_family: 'comic-sans', text_size: 'large' });
 
       expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ error: expect.any(String) });
     });
 
     it('returns 400 for an unknown extra key (.strict)', async () => {
@@ -339,6 +344,7 @@ describe('Books API routes', () => {
         .send({ font_family: 'atkinson', text_size: 'large', page_number: 2 });
 
       expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ error: expect.any(String) });
     });
 
     it('updates typography for the owner of a draft', async () => {

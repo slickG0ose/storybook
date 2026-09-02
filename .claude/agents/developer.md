@@ -72,13 +72,13 @@ Run the zone tests for what you changed:
 |---|---|
 | `server/` (incl. new migrations) | `cd server && npm test` |
 | `client/` | `cd client && npm test` |
-| `shared/` | `cd server && npx tsc --noEmit && cd ../client && npm run build` (no shared-package test suite; the type-check + the client build together verify both sides of the type chain. Server has no `npm run build` script — use `tsc --noEmit` instead.) |
+| `shared/` | `cd server && npx tsc --noEmit && cd ../client && npx tsc --noEmit` (no shared-package test suite). **A shared-schema change is a whole-repo typecheck event** — run `tsc --noEmit` in EVERY zone that imports the package, client included. `npm run build` is not a substitute: `client`'s build script is bare `vite build`, and esbuild strips types without checking them, so a type-broken client passes `npm test` AND `npm run build` and fails only in CI's separate typecheck step (`.github/workflows/pr-ci.yml`). #113 shipped 8 type-broken fixtures this way and the branch was red for four commits before anyone noticed. |
 | `e2e/` | `cd e2e && npm test` — only if you added/changed an e2e spec and the change is contained |
 | `.claude/` | `npm test` (from root — harness suite) |
 
 If the task says "wire-shape assertion required," verify your test file has the `toMatchObject` and that running the test FAILS when you transiently rename a field (do this manually as a sanity check, then revert).
 
-**Type-check.** `cd <zone> && npx tsc --noEmit` (or `npm run build` for client — Vite handles it). Zero new errors.
+**Type-check.** `cd <zone> && npx tsc --noEmit`. Zero new errors. Do **not** substitute `npm run build` for the client — it does not typecheck (see the `shared/` row above).
 
 If anything fails, fix it in this same dispatch — don't hand back a half-finished task and rely on the main session to clean up.
 
