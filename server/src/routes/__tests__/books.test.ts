@@ -273,6 +273,121 @@ describe('Books API routes', () => {
     });
   });
 
+  describe('PUT /api/books/:id/typography', () => {
+    // Claims luna-star-garden for the authed user at the given status.
+    async function setupOwnedBook(status: 'draft' | 'published'): Promise<string> {
+      const token = await createUserAndGetToken(app);
+      const user = await prisma.user.findFirst({ where: { email: 'author@example.com' } });
+      await prisma.book.update({
+        where: { id: 'luna-star-garden' },
+        data: { status, created_by: user!.id },
+      });
+      return token;
+    }
+
+    it('returns 401 without auth, even with an invalid body', async () => {
+      // The bad body is deliberate: requireAuth is mounted before validate(),
+      // so an unauthenticated request must 401 rather than leak 400 validation
+      // detail. A 400 here means the middleware order regressed.
+      const res = await request(app)
+        .put('/api/books/luna-star-garden/typography')
+        .send({ font_family: 'comic-sans' });
+
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 404 for another user's book", async () => {
+      const token = await createUserAndGetToken(app);
+
+      const res = await request(app)
+        .put('/api/books/luna-star-garden/typography')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ font_family: 'atkinson', text_size: 'large' });
+
+      expect(res.status).toBe(404);
+    });
+
+    it('returns 403 on a published book', async () => {
+      const token = await setupOwnedBook('published');
+
+      const res = await request(app)
+        .put('/api/books/luna-star-garden/typography')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ font_family: 'atkinson', text_size: 'large' });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe(PUBLISHED_IMMUTABLE_ERROR);
+    });
+
+    it('returns 400 for a font_family outside the curated set', async () => {
+      const token = await setupOwnedBook('draft');
+
+      const res = await request(app)
+        .put('/api/books/luna-star-garden/typography')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ font_family: 'comic-sans', text_size: 'large' });
+
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 400 for an unknown extra key (.strict)', async () => {
+      const token = await setupOwnedBook('draft');
+
+      const res = await request(app)
+        .put('/api/books/luna-star-garden/typography')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ font_family: 'atkinson', text_size: 'large', page_number: 2 });
+
+      expect(res.status).toBe(400);
+    });
+
+    it('updates typography for the owner of a draft', async () => {
+      const token = await setupOwnedBook('draft');
+
+      const res = await request(app)
+        .put('/api/books/luna-star-garden/typography')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ font_family: 'atkinson', text_size: 'large' });
+
+      expect(res.status).toBe(200);
+      // OPS.3 wire shape — both new fields pinned by name.
+      expect(res.body).toMatchObject({
+        font_family: 'atkinson',
+        text_size: 'large',
+      });
+      expect(res.body.pages).toHaveLength(5);
+
+      const row = await prisma.book.findUnique({ where: { id: 'luna-star-garden' } });
+      expect(row).toMatchObject({ font_family: 'atkinson', text_size: 'large' });
+    });
+
+    it('does not bump book.version and writes no BookVersion snapshot', async () => {
+      // The mechanical proof of spec §Ruling 2: a typography write destroys no
+      // information, so there is nothing for a snapshot to protect. These two
+      // absences are what make the route safe to call on every chip click.
+      const token = await setupOwnedBook('draft');
+      const before = await prisma.book.findUnique({ where: { id: 'luna-star-garden' } });
+      const snapshotsBefore = await prisma.bookVersion.count({
+        where: { book_id: 'luna-star-garden' },
+      });
+
+      const res = await request(app)
+        .put('/api/books/luna-star-garden/typography')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ font_family: 'lexend', text_size: 'xlarge' });
+      expect(res.status).toBe(200);
+
+      const after = await prisma.book.findUnique({ where: { id: 'luna-star-garden' } });
+      expect(after!.version).toBe(before!.version);
+      expect(res.body.version).toBe(before!.version);
+
+      const snapshotsAfter = await prisma.bookVersion.count({
+        where: { book_id: 'luna-star-garden' },
+      });
+      expect(snapshotsAfter).toBe(snapshotsBefore);
+    });
+  });
+
   describe('PUT /api/books/:id/versions/:version/restore', () => {
     async function setupDraftWithSnapshot(token: string) {
       const user = await prisma.user.findFirst({ where: { email: 'author@example.com' } });
