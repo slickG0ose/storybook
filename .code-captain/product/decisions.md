@@ -4,6 +4,101 @@ Append-only log. Newest entries on top. Each entry should answer: *what was deci
 
 ---
 
+## ADR-020 — Typography is book-level, seeded from `age_range` at creation and never re-derived
+
+**Date:** 2026-09-02
+**Status:** Accepted
+**Scope:** `Book.font_family` / `Book.text_size`, `server/src/lib/typography.ts`, `client/src/lib/typography.ts`. Implements [#113](https://github.com/slickG0ose/storybook/issues/113). Spec: `.code-captain/specs/per-page-font-size/spec.md` §Ruling 1, 3, 4.
+
+### The decision
+
+Three parts, which are one decision because each only holds given the others:
+
+1. **The tokens live on `Book`, not `Page`** — despite #113's title saying "per-page".
+2. **Defaults are derived from `age_range` at creation time only.** Nothing re-derives typography for a row that already exists.
+3. **`age_range` is not enumerated.** Defaults key off a tolerant parse of the string's leading integer: ≤4 `early`, 5–7 `developing`, ≥8 `independent`, anything unparseable `developing`.
+
+### Why book-level
+
+#113 item 3 asks whether a chosen size still reflows acceptably at print trim. That question is **unanswered and unmeasured**. Book-level means one overflow check per book; per-page means one per page. Multiplying an unmeasured risk by page count is the wrong order of operations.
+
+It is also the wrong control for the real need. Mixing families page-to-page inside one picture book is a defect, not a feature. The legitimate per-page case is narrower — *this page's text is long and overflows* — which is a **fit** problem, and the answer to a fit problem is an automatic fit rule, not a knob that makes noticing the author's job.
+
+Per-page is **deferred, not rejected.** `Page.font_family` / `Page.text_size` would be additive, and both resolvers already carry the signature that accommodates it:
+
+```ts
+resolveTypography(book: TypographySource, page?: Partial<TypographySource>): ResolvedTypography
+```
+
+The `page` parameter is unused today and documented as the seam.
+
+### Why creation-time and not a runtime fallback
+
+This is the part that is easy to get wrong, and getting it wrong is visible to every existing user.
+
+A `4-7` book buckets to `early`, whose default size is `large` — **strictly bigger than what that book renders today**. If age-derived defaults were resolved at read time, every existing `4-7` book would visibly grow the moment this deployed. Nobody asked for their book to change.
+
+So the columns are non-null with DB defaults `'fredoka'` / `'standard'`, which are *defined* to reproduce the pre-#113 class string exactly. Existing rows take those defaults and are byte-identical. `POST /api/generate` writes the age-derived values explicitly for new books. `fredoka` + `standard` is therefore also the answer to #113 item 2 — the reader-facing default before any customisation.
+
+### Why the age bands are a parse, not an enum
+
+Because `age_range` is free-text and the codebase carries **two vocabularies that disagree**: `client/src/pages/CreateBook.tsx:26` offers `2-4, 3-6, 4-7, 5-9, 6-10`, while `server/prisma/seed.ts` uses `2-5, 3-6, 4-7, 4-8, 5-9`. `2-5` and `4-8` are shoppable but uncreatable; `2-4` and `6-10` are creatable but in no book. The server validates nothing.
+
+Enumerating bands would mean normalising that column — a seed-data shape change plus a data migration, two CLAUDE.md guardrails — for a problem that is #113's neighbour, not its content. A tolerant parse survives both vocabularies and any third, and keeps working unchanged if the column is normalised later. The divergence is filed separately.
+
+**Known consequence:** the `independent` bucket is unreachable from every `age_range` value the app can currently produce — the highest lower bound anywhere is `6-10`. `nunito`/`cozy` ships unit-tested only until the column is normalised or a wider band is offered.
+
+### Considered instead
+
+- **Book default with per-page override.** Deferred as above. Shipping it now means shipping a control for a fit problem nobody has measured, and every override is another print-overflow case.
+- **Runtime derivation from `age_range`.** Rejected: it changes existing books without being asked.
+- **Nullable columns meaning "derive".** Same failure as above, plus it makes every read site carry fallback logic.
+
+### Consequence
+
+#113's title is now inaccurate. Recorded on the issue rather than silently left to diff against this ADR.
+
+---
+
+## ADR-019 — A typography change is presentation-only: no version bump, no `BookVersion` snapshot
+
+**Date:** 2026-09-02
+**Status:** Accepted
+**Scope:** `PUT /api/books/:id/typography`. Implements part of [#113](https://github.com/slickG0ose/storybook/issues/113). Spec: `.code-captain/specs/per-page-font-size/spec.md` §Ruling 2. **Cross-cuts [#89](https://github.com/slickG0ose/storybook/issues/89)** — see §Binding on #89.
+
+### The decision
+
+Changing a book's font or text size does **not** increment `book.version` and does **not** write a `BookVersion` row.
+
+### Why — the criterion is reversibility, not the word "presentation"
+
+"Presentation vs content" is a slogan, and slogans lose arguments later. The actual criterion:
+
+**A text edit destroys information.** Overwrite the words and the previous words are gone unless something snapshotted them. The snapshot is the only copy.
+
+**A typography change destroys nothing.** The prior state is one of four enum values, the author can see which one is selected, and setting it back costs a click and nothing else. There is no lost information for a snapshot to protect.
+
+Shape agrees. `BookVersion` carries `pages_json`, `description`, `characters_json`. A font token is not page-shaped, so it has no home in `pages_json`, and the two book-level fields already snapshotted are content — the blurb and the cast.
+
+The practical consequence of ruling the other way: version history fills with entries whose entire diff is "font: fredoka → nunito", and the history stops being useful for the thing it exists for.
+
+### What enforces it
+
+Two tests that assert an **absence** — after a successful write, `book.version` is unchanged and `prisma.bookVersion.count({ where: { book_id } })` is unchanged. The route carries a comment naming this ADR, because "there is no snapshot here" looks exactly like an oversight to a future reader who has not read this entry.
+
+### Binding on #89
+
+[#89](https://github.com/slickG0ose/storybook/issues/89) (direct per-page text editing) debates the same question for text edits and **may rule differently without contradicting this** — under the reversibility criterion a text edit is the case *for* snapshotting.
+
+But one thing here does bind it: **#89 must not sweep typography into `pages_json`.** If per-page typography later lands (ADR-020's deferred seam) and #89 has widened the page snapshot to carry every page field, a font change becomes version-bumping through the back door and this ruling is overturned silently, with no test failing to say so.
+
+### Considered instead
+
+- **Bump the version, skip the snapshot.** Worst of both: history claims a change it cannot show.
+- **Snapshot typography in a new column on `BookVersion`.** Storage and code for a state that is one click to restore.
+
+---
+
 ## ADR-018 — Per-instance fixed-window rate limiting is accepted for authenticated routes, and is structurally unusable on login
 
 **Date:** 2026-08-30
