@@ -104,7 +104,7 @@ clean.
 
 ### Task 2 — Server typography defaults: `ageBucketFor` + `defaultTypographyForAgeRange`
 
-**Status:** Not started
+**Status:** Done (2026-09-02)
 
 **Zone:** server
 **Depends on:** Task 1 (imports `FontFamily` / `TextSize` from `@storybook/shared`)
@@ -181,7 +181,15 @@ Do **not** add validation of `ageRange` itself — Ruling 3 keeps that column un
 
 **Tests to write:**
 - `ageRange: '3-6'` → book persists `{ font_family: 'fredoka', text_size: 'large' }`
-- `ageRange: '6-10'` → `{ font_family: 'nunito', text_size: 'cozy' }`
+- `ageRange: '6-10'` → `{ font_family: 'fredoka', text_size: 'standard' }` — lower bound 6
+  falls in the 5–7 band, i.e. `developing`. **Corrected 2026-09-02:** this line originally
+  expected `nunito`/`cozy`, which contradicts §Ruling 3's ≤4 / 5–7 / ≥8 split. The bands
+  are right and this fixture was wrong; Task 2 shipped the bands unchanged.
+- `ageRange: '8-12'` → `{ font_family: 'nunito', text_size: 'cozy' }` — the `independent`
+  case, which needs a lower bound ≥ 8. Note that **no `age_range` value in the codebase
+  today reaches this bucket** (highest lower bound in either vocabulary is `6-10`), so
+  this path is exercised by unit tests only until the column is normalised. That is
+  downstream of the vocabulary divergence in Task 10 item 4, not a defect here.
 - an unrecognised `ageRange` still creates a book, at `standard`
 - Wire-shape assertion required: no new response field (Task 1 already pinned them), but
   the generate response now carries them — extend its existing `toMatchObject` rather
