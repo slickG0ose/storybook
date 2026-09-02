@@ -387,7 +387,7 @@ Colour classes (`text-gray-700 dark:text-gray-200`) stay constant across every t
 
 ### Task 7 — `BookSpread` consumes the resolved class
 
-**Status:** Not started
+**Status:** Done (2026-09-02)
 
 **Zone:** client
 **Depends on:** Task 6

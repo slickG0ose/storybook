@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { ChevronLeft, ChevronRight, Image as ImageIcon, RefreshCw, Loader2, Paintbrush, Check, History, Maximize2, Minimize2 } from 'lucide-react'
 import type { BookWithPages, IllustrationVersion, Page } from '../types'
 import { api } from '../lib/apiBase'
+import { resolveTypography } from '../lib/typography'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useNarration } from '../hooks/useNarration'
 import NarrationPlayer from './NarrationPlayer'
@@ -98,6 +99,9 @@ export default function BookSpread({
   onToggleTheater,
 }: BookSpreadProps) {
   const isNarrow = useMediaQuery(NARROW_QUERY)
+  // Resolved once for the whole spread rather than inside StoryText, so the single-panel
+  // and two-panel branches cannot drift apart: both story call sites read this one value.
+  const storyTextClass = resolveTypography(book)
   const frameWidthClass = theater
     ? 'max-w-[min(90vw,1600px)]'
     : 'max-w-[900px]'
@@ -241,6 +245,7 @@ export default function BookSpread({
                   <StoryText
                     page={spread.page}
                     className="shrink-0 mt-4"
+                    textClassName={storyTextClass}
                     chunks={narration.chunks}
                     position={narration.position}
                     onSeek={narrationAvailable ? narration.play : undefined}
@@ -295,6 +300,7 @@ export default function BookSpread({
                     <StoryText
                       page={spread.page}
                       className="flex-1 flex flex-col justify-between p-2"
+                      textClassName={storyTextClass}
                       chunks={narration.chunks}
                       position={narration.position}
                       onSeek={narrationAvailable ? narration.play : undefined}
@@ -556,9 +562,12 @@ function CoverArt({ book, className }: { book: BookWithPages; className: string 
  * reading experience to duplicate the Previous/Next sentence buttons, which are the
  * accessible seek path. Click-to-seek is a redundant pointer convenience on top of them.
  */
-function StoryText({ page, className, chunks, position, onSeek }: {
+function StoryText({ page, className, textClassName, chunks, position, onSeek }: {
   page: Page;
   className: string;
+  /** The book's resolved story-text classes (#113) — size, colour and family together.
+   *  Passed in rather than resolved here so both spread layouts share one value. */
+  textClassName: string;
   chunks?: NarrationChunk[];
   position?: NarrationPosition | null;
   onSeek?: (chunkIndex: number) => void;
@@ -570,7 +579,7 @@ function StoryText({ page, className, chunks, position, onSeek }: {
 
   return (
     <div className={className}>
-      <p className="text-base md:text-lg text-gray-700 dark:text-gray-200 leading-relaxed font-display">
+      <p className={textClassName}>
         {highlight
           ? highlight.chunks.map((chunk, i) => {
               const active = i === highlight.activeIndex

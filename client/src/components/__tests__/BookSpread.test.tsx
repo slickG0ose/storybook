@@ -668,3 +668,93 @@ describe('BookSpread — re-roll style hint', () => {
     }
   })
 })
+
+/**
+ * Story-text typography (#113, Task 7). This is the second half of the no-visual-change
+ * pin: `client/src/lib/__tests__/typography.test.ts` proves the resolver emits the exact
+ * pre-#113 string, and the assertion below proves BookSpread actually renders that string
+ * on the story `<p>`. Both halves have to hold — a correct resolver wired to nothing looks
+ * identical to a green suite.
+ */
+describe('BookSpread — story text typography', () => {
+  const realMatchMedia = window.matchMedia
+
+  afterEach(() => {
+    Object.defineProperty(window, 'matchMedia', { writable: true, value: realMatchMedia })
+  })
+
+  /** The literal className at BookSpread.tsx:573 before #113. Do not edit to make a
+   *  failure pass: an edit here means an existing book's text changed appearance. */
+  const PRE_113_STORY_TEXT_CLASS =
+    'text-base md:text-lg text-gray-700 dark:text-gray-200 leading-relaxed font-display'
+
+  it('renders a fredoka/standard book with the exact pre-#113 class string', async () => {
+    renderSpread()
+    await goToFirstStoryPage()
+
+    expect(screen.getByText('Page 1 text').className).toBe(PRE_113_STORY_TEXT_CLASS)
+  })
+
+  it('renders the same string in the single-panel layout below md', async () => {
+    matchOnly(NARROW_QUERY)
+    renderSpread()
+    await goToFirstStoryPage()
+
+    expect(screen.getByText('Page 1 text').className).toBe(PRE_113_STORY_TEXT_CLASS)
+  })
+
+  it('applies the book\'s own family and size when they are not the defaults', async () => {
+    const largePrintBook: BookWithPages = {
+      ...mockBook,
+      font_family: 'atkinson',
+      text_size: 'xlarge',
+    }
+    renderSpread({ book: largePrintBook })
+    await goToFirstStoryPage()
+
+    const paragraph = screen.getByText('Page 1 text')
+    expect(paragraph.className).toContain('font-atkinson')
+    expect(paragraph.className).toContain('text-xl md:text-2xl')
+    expect(paragraph.className).not.toContain('font-display')
+    // Contrast is invariant across tokens — the picker changes family and size only.
+    expect(paragraph.className).toContain('text-gray-700')
+    expect(paragraph.className).toContain('dark:text-gray-200')
+  })
+})
+
+/**
+ * Regression fence for the narration path, which shares the story `<p>`: replacing that
+ * element's className must not disturb the highlight spans rendered inside it.
+ */
+describe('BookSpread — typography and narration share one paragraph', () => {
+  const realMatchMedia = window.matchMedia
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    localStorage.removeItem('storybook-narration')
+    installFakeSpeech()
+  })
+
+  afterEach(() => {
+    uninstallFakeSpeech()
+    vi.useRealTimers()
+    localStorage.removeItem('storybook-narration')
+    Object.defineProperty(window, 'matchMedia', { writable: true, value: realMatchMedia })
+  })
+
+  it('keeps the highlight spans inside a paragraph carrying the resolved classes', () => {
+    renderSpread({
+      book: { ...narrationBook, font_family: 'lexend', text_size: 'large' },
+    })
+    clickNextSpread()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Play' }))
+
+    const paragraph = screen.getByTestId('narration-highlight').closest('p')
+    expect(paragraph).not.toBeNull()
+    expect(paragraph?.className).toContain('font-lexend')
+    expect(paragraph?.className).toContain('text-lg md:text-xl')
+    expect(paragraph?.className).toContain('dark:text-gray-200')
+    expect(sentenceSpans()).toHaveLength(2)
+  })
+})
