@@ -100,6 +100,15 @@ export type TextSize = z.infer<typeof TextSizeSchema>;
 schema and the migration went out of sync), no new TS errors, `npx prisma migrate status`
 clean.
 
+> **Retrospective (added 2026-09-02, after Task 6).** These criteria were not enough. They
+> named the *server* typecheck but not the *client* one, and adding two required fields to
+> `BookSchema` left 8 client test fixtures typed as `Book` / `BookWithPages` / `AdminBook`
+> missing them. Vitest passed anyway — esbuild strips types — so the breakage was invisible
+> to `npm test` and to `npm run build`, but CI's client job runs `tsc --noEmit` and the
+> branch was red from `b975b65` until Task 6 fixed it. **A shared-schema change is a
+> whole-repo typecheck event.** Any future task touching `@storybook/shared` must run
+> `cd client && npx tsc --noEmit` in its done-criteria, not just the server's.
+
 ---
 
 ### Task 2 — Server typography defaults: `ageBucketFor` + `defaultTypographyForAgeRange`
@@ -311,7 +320,7 @@ only once something on screen uses it.
 
 ### Task 6 — Client typography resolver + Tailwind class maps
 
-**Status:** Not started
+**Status:** Done (2026-09-02)
 
 **Zone:** client
 **Depends on:** Tasks 1 and 5

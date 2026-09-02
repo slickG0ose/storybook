@@ -21,6 +21,8 @@ const baseBook: BookWithPages = {
   description: 'A test adventure story.',
   theme: 'adventure',
   age_range: '3-5',
+  font_family: 'fredoka',
+  text_size: 'standard',
   cover_emoji: '🦊',
   cover_color: '#ff6600',
   cover_url: null,
