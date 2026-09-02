@@ -108,7 +108,7 @@ service.** Each zone re-exports through its own barrel:
 
 - `client/src/types.ts` re-exports `Book`, `BookWithPages`, `Page`, `Character`,
   `CartItem`, `Order`, `OrderItem`, `HeroFrame`, `AllowedEmail`, `AdminSpend*`,
-  `OrphanIllustration`, `IllustrationVersion`, `BookVersion`.
+  `OrphanIllustration`, `IllustrationVersion`, `BookVersion`, `FontFamily`, `TextSize`.
 - `server/src/types.ts` re-exports the same wire shapes and adds server-only DB shapes.
 
 The narrow exceptions, all of which import a **schema** (not a type) because they

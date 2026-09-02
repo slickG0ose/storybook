@@ -1,4 +1,4 @@
-import type { FontFamily, TextSize } from '@storybook/shared'
+import type { FontFamily, TextSize } from '../types'
 
 /**
  * Token -> Tailwind class resolution for story text (#113, spec `per-page-font-size`).
