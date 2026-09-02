@@ -4,6 +4,56 @@ Append-only log. Newest entries on top. Each entry should answer: *what was deci
 
 ---
 
+## ADR-019 — Version restore keeps the art on pages that did not change; the clear-predicate is exact equality on `text` + `illustration_description`, keyed by `page_number`
+
+**Date:** 2026-09-02
+**Status:** Accepted
+**Scope:** `server/src/routes/books.ts` (the `PUT /:id/versions/:version/restore` handler), its tests, and the two restore copy strings in `client/src/pages/BookDetail.tsx`. Closes [#95](https://github.com/slickG0ose/storybook/issues/95) items 1 and 3; item 2 shipped separately in [#99](https://github.com/slickG0ose/storybook/pull/99) / `c2322e2`. Spec: `.code-captain/specs/restore-keeps-unchanged-art/`.
+
+**This entry reverses a documented intent.** The handler previously carried a comment asserting that resetting `illustration_url` to `null` on *every* restored page was deliberate ("the old image URLs no longer correspond to the restored text/description"). That comment is gone from the file and is now reachable only through `git blame`; a reader who finds it there should land here. The claim it made is true of *changed* pages and false of unchanged ones, and the handler applied it to both.
+
+### The problem
+
+Restore replaced the book's pages by deleting all of them and re-creating each from the snapshot with `illustration_url: null`, unconditionally. The PNGs on disk and the `IllustrationVersion` rows both survive a restore — the cascade hangs off `Book`, not `Page` — so nothing was ever deleted. Only the pointer was dropped.
+
+The cost was paid in regeneration. Rolling a 5-page book back one version to fix a typo on page 3 discarded four valid illustrations, and the offered way back was to redraw them: 20¢ at current Fal pricing, $1.25 on a book pinned to OpenAI per ADR-013. Observed on the real `dev.db` (book `b2fa23cf`, "A Spot for Sunny"): all 5 pages `NULL`, 7 `IllustrationVersion` rows, every referenced file present on disk.
+
+The revise handler in the same file already got this right — it clears art only when `text` or `illustration_description` actually moved. Restore was the outlier, and the two flows disagreed about the same question.
+
+### Decision
+
+**1. A restored page keeps its `illustration_url` iff a current page exists at the same `page_number` and both its `text` and its `illustration_description` are exactly equal to the snapshot's.** Anything else — either field differs, or no current page carries that number — yields `null`. This is the predicate the revise handler already applied, so **restore and revise are now governed by one rule** rather than two that can drift.
+
+**2. Exact equality, not trimmed or whitespace-normalized.** Two reasons. `pages_json` is a `JSON.stringify` of the DB values written back verbatim, so no formatting pass anywhere in the round-trip can introduce cosmetic whitespace — a whitespace diff is one a user actually typed, and trimming could only ever mask a real edit. More importantly the failure modes are **asymmetric**: clearing art that could have been kept costs the user a free re-attach from the page's own illustration history (#99), while keeping art that should have been cleared ships a page whose picture contradicts its text — and if that book is then published it becomes immutable under ADR-012, so the mismatch is expensive to walk back. When the two errors are not equally bad, the predicate leans toward the cheap one. **#99 is what makes this bias safe**, and this decision depends on it: over-clearing is recoverable in two clicks precisely because that work shipped first.
+
+**3. Matching is keyed on `page_number`, not array position.** Snapshots do not guarantee contiguous `1..N` numbering — the `?? i + 1` synthesis only fills in *missing* numbers, and `books.test.ts` pins that a snapshot carrying `page_number: 10, 20` keeps those values. Positional matching would silently pair the wrong pages on such a snapshot; keyed matching cannot.
+
+**4. The handler keeps its `deleteMany` + `create`-per-page shape.** The preserved URL threads through a `page_number`-keyed lookup built from the already-loaded `book.pages` **before** the transaction opens — necessarily before, since the `deleteMany` inside it drops the very rows that lookup reads. `Page.id` churn is not load-bearing: no table takes a foreign key on `Page.id` (`IllustrationVersion` keys on `(book_id, page_number, version)`), which is exactly why the art survives the delete at all.
+
+**5. Accepted risk: a kept illustration can contradict a restored *cast*.** Restore also rolls back `characters_json`. If the cast changed between versions but a page's `text` and `illustration_description` did not, that page keeps art drawn under the *newer* cast while the book now describes the older one. This is the strongest form of the argument the old comment was making, and it is accepted rather than solved: the image derives from the page's `illustration_description` plus the style anchor, so a cast edit leaving every page description untouched is unlikely to have changed what the art depicts, and where it does, the per-page re-roll and the free revert are both one click away. Widening the predicate to "any book-level field changed" would clear all art on every restore that touches the cast — i.e. re-introduce the bug for a rarer case.
+
+### Alternatives considered
+
+- **Carry `illustration_url` in `BookVersion.pages_json`.** More faithful to "restore this version" in principle. Rejected: it changes the snapshot shape (which ADR-012 already names as the blocker for the "old version stays public" fork), every pre-existing `BookVersion` row lacks the field so the compare-based path would be needed as a fallback anyway and carried forever, and a stored URL might point at a file a later cleanup removed — so restore would have to stat the filesystem or verify against `IllustrationVersion` before trusting it. Strictly more machinery for a case the compare-based rule already covers.
+
+- **Extend `BookRestoreVersionResponseSchema` with a list of cleared page numbers**, so the client could say "3 illustrations were cleared — put them back for free". **Rejected, and worth recording so it is not re-opened cold.** Decisively: the confirm dialog fires *before* the request, so it can never consume a response field, and the panel blurb is static — no copy needs it. Beyond that, the client already holds the pre-restore book and receives the post-restore pages, so "had a URL, now `null`" is a local computation; #99's probe already keys off `illustration_url === null` and surfaces the free re-attach on exactly those pages. The cost would be real: the schema stops being a bare alias of `BookWithPagesSchema`, requiring a `shared/` edit, a fresh wire-shape assertion (OPS.3 / ADR-003), and a client type update, for a field with no consumer. **Upgrade path:** if a post-restore toast is ever wanted, extend then, the way `BookIllustrateResponseSchema` extends `BookWithPagesSchema` today.
+
+- **Rewrite restore into revise's update-overlap / create-additions / delete-tail shape.** Rejected: revise can index positionally because it always writes contiguous `1..N`; restore must honor whatever `page_number` values the snapshot carries, so the same shape becomes a three-way keyed diff — more branches and more ways to get a legacy snapshot wrong, buying only `Page.id` stability that nothing references.
+
+- **Auto-re-attach the newest surviving `IllustrationVersion` on changed pages.** Rejected on the merits: on a *changed* page the surviving art is precisely the art that no longer matches the text, so auto-attaching it performs the mismatch this design exists to avoid, silently. #99 already offers the one-click version with consent.
+
+- **Trimmed comparison** — see decision 2.
+
+### Consequences
+
+- Restore is now a **spend reduction**. It has no `spendGate` and makes no provider call, before or after; it simply stops creating avoidable regeneration work.
+- **The UI copy changed and is fenced against regressing.** Both strings in `BookDetail.tsx` previously promised that cleared illustrations "need to be regenerated" — false since #99. The new copy states the keep/clear rule and names the free recovery path, quoting no price. Client and e2e tests both assert the message does **not** match `/regenerat/i`, so the pre-#99 promise cannot creep back.
+- **Books already orphaned by past restores are not backfilled.** #99's re-attach covers them interactively; no migration walks the table.
+- **Malformed snapshots are unchanged.** A snapshot carrying a duplicate `page_number` still violates `@@unique([book_id, page_number])` on the second `create`, rolls the transaction back, and 500s. Out of scope here.
+- If a third caller ever needs this predicate, extract it (e.g. `pageContentChanged` in `server/src/lib/`) and update revise at the same time. It is inlined in both handlers today, deliberately — extracting it now would have meant editing revise, which this change kept out of scope.
+
+---
+
 ## ADR-018 — Per-instance fixed-window rate limiting is accepted for authenticated routes, and is structurally unusable on login
 
 **Date:** 2026-08-30

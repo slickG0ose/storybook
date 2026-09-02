@@ -218,9 +218,13 @@ test.describe('Version history — restore prior version', () => {
 
     await restoreBtn.click();
 
-    // Confirm dialog warns about illustrations being cleared.
+    // Confirm dialog states the keep-unchanged / clear-changed rule.
     await expect.poll(() => dialogMessage).toContain('Illustrations');
     expect(dialogMessage.toLowerCase()).toContain('cleared');
+    // Negative fence: the pre-#99 copy promised cleared art "need[s] to be
+    // regenerated". #99 made recovery free from illustration history, so the
+    // dialog must never re-acquire that promise.
+    expect(dialogMessage).not.toMatch(/regenerat/i);
 
     // Book updates to the restored snapshot (v1 description + v1 page 1 text).
     await expect(page.getByText(V1_DESCRIPTION)).toBeVisible();
@@ -236,7 +240,7 @@ test.describe('Version history — restore prior version', () => {
     await expect.poll(() => versionsHits).toBeGreaterThan(hitsBeforeRestore);
   });
 
-  test('restore prompt warns about illustrations being cleared and dismiss leaves book unchanged', async ({ page }) => {
+  test('restore prompt states the keep-unchanged/clear-changed rule and dismiss leaves book unchanged', async ({ page }) => {
     let dialogMessage = '';
     page.once('dialog', dialog => {
       dialogMessage = dialog.message();
@@ -250,9 +254,11 @@ test.describe('Version history — restore prior version', () => {
     await expect(restoreBtn).toBeVisible();
     await restoreBtn.click();
 
-    // Dialog message mentions illustrations being cleared.
+    // Dialog message states the keep-unchanged / clear-changed rule.
     await expect.poll(() => dialogMessage).toContain('Illustrations');
     expect(dialogMessage.toLowerCase()).toContain('cleared');
+    // Same negative fence as the accept path above.
+    expect(dialogMessage).not.toMatch(/regenerat/i);
 
     // Book is unchanged — still v2 description, restore endpoint never called.
     await expect(page.getByText(V2_DESCRIPTION)).toBeVisible();

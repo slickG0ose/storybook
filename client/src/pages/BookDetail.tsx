@@ -410,7 +410,9 @@ export default function BookDetail() {
   const handleRestore = async (version: number) => {
     if (!user) return
     const proceed = window.confirm(
-      `Restore version ${version}? This replaces the current story text and illustration prompts. Illustrations on changed pages will be cleared and need to be regenerated.`
+      `Restore version ${version}? This replaces the current story text and illustration prompts. ` +
+        `Illustrations are kept on pages that don't change and cleared on pages that do — a cleared page ` +
+        `can be put back for free from its illustration history.`
     )
     if (!proceed) return
     setRestoringVersion(version)
@@ -1222,7 +1224,9 @@ export default function BookDetail() {
             Version history
           </h2>
           <p className="text-gray-500 dark:text-gray-400 mb-4">
-            Restore a previous draft of the story. Illustrations on changed pages will be cleared.
+            Restore a previous draft of the story. Pages whose text and prompt are unchanged keep their
+            illustrations; changed pages have theirs cleared, and can be put back for free from the page's
+            own history.
           </p>
 
           {versionsLoading && (

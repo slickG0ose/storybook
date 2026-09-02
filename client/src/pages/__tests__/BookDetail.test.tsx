@@ -316,6 +316,24 @@ describe('BookDetail — Version History', () => {
     expect(screen.getAllByRole('button', { name: /restore version/i })).toHaveLength(2)
   })
 
+  it('describes the keep-unchanged-art rule in the version history blurb', async () => {
+    setupFetchMock({})
+    renderBookDetail()
+
+    await waitFor(() => {
+      expect(screen.getByText('Version history')).toBeInTheDocument()
+    })
+
+    // The blurb is a single JSX text node wrapped across source lines; RTL
+    // normalizes the whitespace, so match the rendered sentence.
+    expect(
+      screen.getByText(/pages whose text and prompt are unchanged keep their illustrations/i)
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(/put back for free from the page's own history/i)
+    ).toBeInTheDocument()
+  })
+
   it('shows the empty state when only the current version exists', async () => {
     setupFetchMock({ versions: [versionsResponse[0]!] })
     renderBookDetail()
@@ -341,8 +359,18 @@ describe('BookDetail — Version History', () => {
 
     expect(confirmSpy).toHaveBeenCalledTimes(1)
     const confirmMessage = confirmSpy.mock.calls[0]?.[0] as string
-    expect(confirmMessage).toMatch(/illustration/i)
+    // The dialog must state the post-#95-item-1 rule: art survives on pages
+    // that don't change, is cleared on pages that do, and comes back for free.
+    // `Illustrations` is the literal substring the e2e dialog assertions in
+    // e2e/tests/version-history.spec.ts match on — keep it spelled that way.
+    expect(confirmMessage).toContain('Illustrations')
     expect(confirmMessage).toMatch(/cleared/i)
+    expect(confirmMessage).toMatch(/free/i)
+    // Negative fence, and the point of this assertion block: the pre-#99 copy
+    // promised that cleared illustrations "need to be regenerated". That became
+    // false when #99 shipped the free re-attach from illustration history, and
+    // this is what stops it creeping back into the string.
+    expect(confirmMessage).not.toMatch(/regenerat/i)
 
     // Restore endpoint hit with the right URL + auth header.
     await waitFor(() => {

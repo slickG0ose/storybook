@@ -306,6 +306,68 @@ describe('Books API routes', () => {
       return { user: user!, token, snapshotPages };
     }
 
+    // --- Fixtures for the keep-unchanged-art predicate ---------------------
+    //
+    // Restore keeps a page's illustration_url only when a current page exists
+    // at the same page_number and BOTH its text and its illustration_description
+    // are exactly equal to the snapshot's. Exercising that needs a snapshot
+    // that matches the current pages byte-for-byte except where a case
+    // deliberately perturbs it — so the snapshot is derived from the seeded
+    // rows read back out of the DB rather than hardcoded. A seed change then
+    // breaks these cases loudly instead of silently un-matching every page.
+
+    type SnapshotPage = { page_number: number; text: string; illustrationDescription: string };
+
+    // Distinct URL per page, so an assertion can tell "kept page 2's art" apart
+    // from "kept some other page's art".
+    const urlFor = (pageNumber: number) => `https://example.com/current-${pageNumber}.png`;
+
+    async function setupDraftWithDerivedSnapshot(
+      mutate: (pages: SnapshotPage[]) => SnapshotPage[] = pages => pages,
+    ) {
+      const user = await prisma.user.findFirst({ where: { email: 'author@example.com' } });
+      await prisma.book.update({
+        where: { id: 'luna-star-garden' },
+        data: { status: 'draft', created_by: user!.id, version: 2 },
+      });
+
+      const current = await prisma.page.findMany({
+        where: { book_id: 'luna-star-garden' },
+        orderBy: { page_number: 'asc' },
+      });
+      for (const p of current) {
+        await prisma.page.update({
+          where: {
+            book_id_page_number: { book_id: 'luna-star-garden', page_number: p.page_number },
+          },
+          data: { illustration_url: urlFor(p.page_number) },
+        });
+      }
+
+      const snapshotPages = mutate(
+        current.map(p => ({
+          page_number: p.page_number,
+          text: p.text,
+          illustrationDescription: p.illustration_description,
+        })),
+      );
+      await prisma.bookVersion.create({
+        data: {
+          book_id: 'luna-star-garden',
+          version: 1,
+          pages_json: JSON.stringify(snapshotPages),
+        },
+      });
+
+      return { user: user!, snapshotPages };
+    }
+
+    async function restoreV1(token: string) {
+      return request(app)
+        .put('/api/books/luna-star-garden/versions/1/restore')
+        .set('Authorization', `Bearer ${token}`);
+    }
+
     it('returns 401 without auth', async () => {
       const res = await request(app).put('/api/books/luna-star-garden/versions/1/restore');
       expect(res.status).toBe(401);
@@ -408,7 +470,13 @@ describe('Books API routes', () => {
       expect(preRestorePages[0].text).toBe('Page 1 text');
     });
 
-    it('clears illustration_url on every restored page', async () => {
+    it('clears illustration_url on pages whose content changed', async () => {
+      // NOTE: this case passes both before and after the keep-unchanged-art
+      // change, because setupDraftWithSnapshot's snapshot differs from the
+      // current pages on ALL three restored pages. It is therefore NOT evidence
+      // that the keep/clear predicate works — it only pins the clear half. The
+      // preservation cases below carry that coverage. (It was previously named
+      // 'clears illustration_url on every restored page', which over-claimed.)
       const token = await createUserAndGetToken(app);
       await setupDraftWithSnapshot(token);
 
@@ -420,6 +488,175 @@ describe('Books API routes', () => {
       for (const page of res.body.pages) {
         expect(page.illustration_url).toBeNull();
       }
+    });
+
+    it('keeps illustration_url on a page identical to its snapshot counterpart', async () => {
+      const token = await createUserAndGetToken(app);
+      // Page 2 stays byte-identical to the current row; every other page's
+      // text is edited, so only page 2 is eligible to keep its art.
+      await setupDraftWithDerivedSnapshot(pages =>
+        pages.map(p => (p.page_number === 2 ? p : { ...p, text: `${p.text} (edited)` })),
+      );
+
+      const res = await restoreV1(token);
+      expect(res.status).toBe(200);
+      expect(res.body.pages).toHaveLength(5);
+      expect(res.body.pages[1].illustration_url).toBe(urlFor(2));
+      for (const page of res.body.pages) {
+        if (page.page_number !== 2) expect(page.illustration_url).toBeNull();
+      }
+    });
+
+    it('clears illustration_url when only the text differs', async () => {
+      const token = await createUserAndGetToken(app);
+      // Swap the last word of page 3's text; its description is untouched.
+      await setupDraftWithDerivedSnapshot(pages =>
+        pages.map(p =>
+          p.page_number === 3 ? { ...p, text: p.text.replace(/\w+$/, 'elsewhere') } : p,
+        ),
+      );
+
+      const res = await restoreV1(token);
+      expect(res.status).toBe(200);
+      expect(res.body.pages[2].illustration_url).toBeNull();
+      // Controls: the untouched pages still keep theirs.
+      expect(res.body.pages[0].illustration_url).toBe(urlFor(1));
+      expect(res.body.pages[4].illustration_url).toBe(urlFor(5));
+    });
+
+    it('clears illustration_url when only the illustration description differs', async () => {
+      const token = await createUserAndGetToken(app);
+      await setupDraftWithDerivedSnapshot(pages =>
+        pages.map(p =>
+          p.page_number === 4
+            ? { ...p, illustrationDescription: `${p.illustrationDescription} at dusk` }
+            : p,
+        ),
+      );
+
+      const res = await restoreV1(token);
+      expect(res.status).toBe(200);
+      expect(res.body.pages[3].illustration_url).toBeNull();
+      expect(res.body.pages[0].illustration_url).toBe(urlFor(1));
+      expect(res.body.pages[4].illustration_url).toBe(urlFor(5));
+    });
+
+    it('clears illustration_url on a whitespace-only text difference', async () => {
+      const token = await createUserAndGetToken(app);
+      // Page 1's snapshot text is the current text plus a trailing space and
+      // nothing else. This is the case that pins EXACT equality: if anyone
+      // later softens the predicate with .trim(), this test goes red.
+      await setupDraftWithDerivedSnapshot(pages =>
+        pages.map(p => (p.page_number === 1 ? { ...p, text: `${p.text} ` } : p)),
+      );
+
+      const res = await restoreV1(token);
+      expect(res.status).toBe(200);
+      expect(res.body.pages[0].illustration_url).toBeNull();
+      expect(res.body.pages[1].illustration_url).toBe(urlFor(2));
+    });
+
+    it('restores a snapshot page number with no current counterpart as null', async () => {
+      const token = await createUserAndGetToken(app);
+      // Page 3's exact content, renumbered to a slot no current page occupies.
+      // Matching is keyed on page_number, so this must NOT inherit page 3's
+      // art even though it is byte-identical to it — and note it still sits at
+      // array index 2, so a positional implementation would hand it page 3's
+      // URL and fail here.
+      await setupDraftWithDerivedSnapshot(pages =>
+        pages.map(p => (p.page_number === 3 ? { ...p, page_number: 9 } : p)),
+      );
+
+      const res = await restoreV1(token);
+      expect(res.status).toBe(200);
+      expect(res.body.pages).toHaveLength(5);
+      expect(res.body.pages.map((p: { page_number: number }) => p.page_number)).toEqual([
+        1, 2, 4, 5, 9,
+      ]);
+      expect(res.body.pages[4].illustration_url).toBeNull();
+      expect(res.body.pages[0].illustration_url).toBe(urlFor(1));
+      expect(res.body.pages[2].illustration_url).toBe(urlFor(4));
+    });
+
+    it('drops surplus pages when the snapshot is shorter, keeping art on the survivors', async () => {
+      const token = await createUserAndGetToken(app);
+      // 5 current pages, 2-page snapshot: page 1 unchanged, page 2 reworded.
+      await setupDraftWithDerivedSnapshot(pages => [
+        pages[0],
+        { ...pages[1], text: `${pages[1].text} (edited)` },
+      ]);
+
+      const res = await restoreV1(token);
+      expect(res.status).toBe(200);
+      expect(res.body.pages).toHaveLength(2);
+      expect(res.body.pages[0].illustration_url).toBe(urlFor(1));
+      expect(res.body.pages[1].illustration_url).toBeNull();
+
+      // The surplus pages are really gone, not merely absent from the response.
+      const remaining = await prisma.page.findMany({ where: { book_id: 'luna-star-garden' } });
+      expect(remaining).toHaveLength(2);
+    });
+
+    it('creates the extra pages with null when the snapshot is longer', async () => {
+      const token = await createUserAndGetToken(app);
+      await setupDraftWithDerivedSnapshot(pages => [
+        ...pages,
+        { page_number: 6, text: 'Page 6 text', illustrationDescription: 'Illustration 6' },
+        { page_number: 7, text: 'Page 7 text', illustrationDescription: 'Illustration 7' },
+      ]);
+
+      const res = await restoreV1(token);
+      expect(res.status).toBe(200);
+      expect(res.body.pages).toHaveLength(7);
+      // The five overlapping pages are byte-identical, so all keep their art.
+      for (const page of res.body.pages.slice(0, 5)) {
+        expect(page.illustration_url).toBe(urlFor(page.page_number));
+      }
+      // The two additions have no current counterpart to inherit from.
+      expect(res.body.pages[5].illustration_url).toBeNull();
+      expect(res.body.pages[6].illustration_url).toBeNull();
+    });
+
+    it('leaves IllustrationVersion rows intact for a page whose art was cleared', async () => {
+      const token = await createUserAndGetToken(app);
+      await setupDraftWithDerivedSnapshot(pages =>
+        pages.map(p => (p.page_number === 3 ? { ...p, text: `${p.text} (edited)` } : p)),
+      );
+      await prisma.illustrationVersion.createMany({
+        data: [
+          {
+            book_id: 'luna-star-garden',
+            page_number: 3,
+            version: 1,
+            url: '/illustrations/luna-star-garden/page-3.png',
+            feedback: null,
+          },
+          {
+            book_id: 'luna-star-garden',
+            page_number: 3,
+            version: 2,
+            url: '/illustrations/luna-star-garden/page-3-v2.png',
+            feedback: 'brighter moon',
+          },
+        ],
+      });
+
+      const res = await restoreV1(token);
+      expect(res.status).toBe(200);
+      expect(res.body.pages[2].illustration_url).toBeNull();
+
+      // Restore deletes and re-creates every Page row. IllustrationVersion
+      // cascades from Book, not Page, so its rows must survive that — which is
+      // exactly what the free re-attach of cleared art (#99) depends on.
+      const history = await prisma.illustrationVersion.findMany({
+        where: { book_id: 'luna-star-garden', page_number: 3 },
+        orderBy: { version: 'asc' },
+      });
+      expect(history).toHaveLength(2);
+      expect(history.map(v => v.url)).toEqual([
+        '/illustrations/luna-star-garden/page-3.png',
+        '/illustrations/luna-star-garden/page-3-v2.png',
+      ]);
     });
 
     it('restores a legacy snapshot whose pages_json has no page_number keys', async () => {

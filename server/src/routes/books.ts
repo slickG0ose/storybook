@@ -551,6 +551,18 @@ router.put(
         }[]
       ).map((p, i) => ({ ...p, page_number: p.page_number ?? i + 1 }));
 
+      // Current art + content, keyed by page_number, for the keep/clear decision
+      // in the create loop below. Built from the SAME already-loaded book.pages
+      // array that currentPages is built from, so the two cannot disagree — and
+      // built HERE, before $transaction opens, because the deleteMany inside it
+      // drops the very rows this reads.
+      const currentByPageNumber = new Map(
+        book.pages.map(p => [
+          p.page_number,
+          { text: p.text, description: p.illustration_description, url: p.illustration_url },
+        ]),
+      );
+
       // Same transactional + self-healing pattern as the revise flow: a
       // partial failure here used to leave a BookVersion row at book.version
       // without bumping book.version, breaking subsequent restores/revises
@@ -573,19 +585,48 @@ router.put(
           },
         });
 
-        // Replace pages with the snapshot. illustration_url is intentionally
-        // reset to null on every restored page: the old image URLs no longer
-        // correspond to the restored text/description, so showing them would
-        // be misleading. The user can re-illustrate as needed.
+        // Replace pages with the snapshot. A restored page KEEPS the current
+        // page's illustration_url when a current page exists at the same
+        // page_number and both its text and its illustration_description are
+        // exactly equal to the snapshot's; in every other case — either field
+        // differs, or no current page carries that number — the new row gets
+        // null, because the art no longer corresponds to the restored
+        // text/description and showing it would be misleading.
+        //
+        // This is the same predicate the revise handler applies a few dozen
+        // lines up (its `contentChanged` check), so both flows are governed by
+        // one rule rather than two that can drift.
+        //
+        // Exact equality, deliberately not trimmed: nothing in the
+        // snapshot/restore round-trip introduces cosmetic whitespace, so a
+        // whitespace diff is one a user actually typed. Clearing art that could
+        // have been kept costs a free re-attach from the page's illustration
+        // history (#99); keeping art that should have been cleared ships a
+        // text/image mismatch onto a book that may then be published and become
+        // immutable (ADR-012). The cheap error is the one to lean toward.
+        //
+        // This reverses the earlier unconditional reset that the comment here
+        // used to document as intentional. ADR-019 records the reversal, the
+        // accepted cast-rollback risk, and why the response deliberately does
+        // NOT report which pages were cleared.
         await tx.page.deleteMany({ where: { book_id: book.id } });
         for (const p of restoredPages) {
+          // Keyed on page_number, not array position: snapshots do not
+          // guarantee contiguous 1..N numbering (the `?? i + 1` synthesis above
+          // only fills in missing numbers), so positional matching would pair
+          // the wrong pages on a snapshot carrying e.g. page_number 10 and 20.
+          const current = currentByPageNumber.get(p.page_number);
+          const unchanged =
+            current !== undefined &&
+            current.text === p.text &&
+            current.description === p.illustrationDescription;
           await tx.page.create({
             data: {
               book_id: book.id,
               page_number: p.page_number,
               text: p.text,
               illustration_description: p.illustrationDescription,
-              illustration_url: null,
+              illustration_url: unchanged ? current.url : null,
             },
           });
         }
