@@ -1581,4 +1581,49 @@ describe('BookDetail — typography', () => {
     expect(screen.getByTestId('spread-typography')).toHaveTextContent('fredoka/standard')
     expect(screen.getByTestId('spread-typography-saving')).toHaveTextContent('false')
   })
+
+  /**
+   * Task 8b. Reader view is a first-class toggle beside the spread, so the picker has to
+   * move it too. These assert the rendered className rather than the resolver — that is
+   * unit-tested in `lib/__tests__/typography.test.ts`; what BookDetail owns is that Reader
+   * view calls the READER resolver at all, and the spread's (smaller) one never leaks here.
+   */
+  const readerParagraph = () => screen.getByText('Page 1 current')
+
+  it('renders reader-view story text at the reader scale, with the family applied', async () => {
+    setupFetchMock({})
+    renderBookDetail()
+
+    fireEvent.click(await screen.findByRole('button', { name: /reader view/i }))
+
+    // Exactly the pre-#113 reader string plus `font-display`. `mb-6` is layout the page
+    // owns, not typography, so it stays outside the resolved segment.
+    expect(readerParagraph()).toHaveClass(
+      'text-xl',
+      'text-gray-700',
+      'dark:text-gray-200',
+      'leading-relaxed',
+      'font-display',
+      'mb-6',
+    )
+    // The spread's default scale must not reach the reader — it is smaller than today's.
+    expect(readerParagraph().className).not.toContain('text-base')
+    expect(readerParagraph().className).not.toContain('md:')
+  })
+
+  it('renders reader-view story text at the book\'s chosen family and size', async () => {
+    setupFetchMock({ book: { ...baseBook, font_family: 'atkinson', text_size: 'xlarge' } })
+    renderBookDetail()
+
+    fireEvent.click(await screen.findByRole('button', { name: /reader view/i }))
+
+    expect(readerParagraph()).toHaveClass(
+      'text-3xl',
+      'font-atkinson',
+      'leading-loose',
+      'tracking-wide',
+      'dark:text-gray-200',
+    )
+    expect(readerParagraph().className).not.toContain('font-display')
+  })
 })
