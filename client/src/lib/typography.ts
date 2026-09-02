@@ -33,6 +33,24 @@ export interface TypographySource {
 }
 
 /**
+ * The DB defaults, which are defined to reproduce the pre-#113 rendering exactly.
+ *
+ * These exist because the resolvers must not be able to blank the page. The columns are
+ * non-null server-side and `hydrateBook` spreads the whole row, so in the happy path a
+ * book always carries both tokens — but "the server guarantees it" is not the same as "it
+ * is always there". A book row cached by the service worker before the migration, a
+ * response from a stale offline cache, or a fixture written against the older shape all
+ * yield `undefined`, and indexing a Record with that returns `undefined` too. Dereferencing
+ * `.scale` on it throws inside render, React unmounts the tree, and the reader goes blank —
+ * a silent total failure in exchange for a missing font preference.
+ *
+ * So both resolvers fall back to these instead. An unknown token degrades to the default
+ * rendering, which is the same thing every un-customised book shows.
+ */
+const DEFAULT_FAMILY: FontFamily = 'fredoka'
+const DEFAULT_SIZE: TextSize = 'standard'
+
+/**
  * Colour is constant across every token — the picker changes family and size only, never
  * contrast. Both halves of the dark-mode pair live here so no caller can forget one.
  */
@@ -97,8 +115,8 @@ export function resolveTypography(
 ): ResolvedTypography {
   void page
 
-  const size = SIZE_CLASSES[book.text_size]
-  const family = FAMILY_CLASSES[book.font_family]
+  const size = SIZE_CLASSES[book.text_size] ?? SIZE_CLASSES[DEFAULT_SIZE]
+  const family = FAMILY_CLASSES[book.font_family] ?? FAMILY_CLASSES[DEFAULT_FAMILY]
 
   return `${size.scale} ${TEXT_COLOR_CLASSES} ${size.spacing} ${family}`
 }
@@ -149,8 +167,8 @@ export function resolveReaderTypography(
 ): ResolvedTypography {
   void page
 
-  const size = READER_SIZE_CLASSES[book.text_size]
-  const family = FAMILY_CLASSES[book.font_family]
+  const size = READER_SIZE_CLASSES[book.text_size] ?? READER_SIZE_CLASSES[DEFAULT_SIZE]
+  const family = FAMILY_CLASSES[book.font_family] ?? FAMILY_CLASSES[DEFAULT_FAMILY]
 
   return `${size.scale} ${TEXT_COLOR_CLASSES} ${size.spacing} ${family}`
 }

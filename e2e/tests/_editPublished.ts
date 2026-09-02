@@ -41,6 +41,34 @@ export interface PageFixture {
   illustration_url: string | null;
 }
 
+/**
+ * The two typography tokens `Book` carries since #113 (`font_family` / `text_size`).
+ *
+ * Re-declared here rather than imported from `@storybook/shared`: `e2e/` has no dependency
+ * on the workspace package, and every other shape in this file (`PageFixture`,
+ * `RegisteredUser`) is a local structural copy for the same reason.
+ *
+ * **These fields are not optional in the mock.** `resolveTypography` indexes its class maps
+ * by these values and dereferences the result, so a book row that omits them throws inside
+ * `BookSpread`'s render — the page mounts to a blank screen with no `<h1>`, and every spec
+ * built on this fixture fails at its first `toBeVisible`. Leaving them out is not a
+ * degraded fixture; it is a broken one.
+ */
+export type MockFontFamily = 'fredoka' | 'nunito' | 'atkinson' | 'lexend';
+export type MockTextSize = 'cozy' | 'standard' | 'large' | 'xlarge';
+
+export interface MockTypography {
+  font_family: MockFontFamily;
+  text_size: MockTextSize;
+}
+
+/**
+ * The Prisma column defaults, which are defined to reproduce the pre-#113 rendering
+ * exactly. Every spec that does not care about typography gets these, so the fixture's
+ * appearance is unchanged from before #113 landed.
+ */
+export const DEFAULT_TYPOGRAPHY: MockTypography = { font_family: 'fredoka', text_size: 'standard' };
+
 /** Both pages illustrated — publishing needs no unillustrated confirm. */
 export const ILLUSTRATED_PAGES: PageFixture[] = [
   {
@@ -189,14 +217,25 @@ export interface BookMockOptions {
   pages: PageFixture[];
   /** Bearer token the transition routes assert on. Omit to skip the check. */
   token?: string;
+  /**
+   * Starting `font_family` / `text_size` (#113). Defaults to the DB defaults. The
+   * `PUT /:id/typography` mock overwrites this in place, so a later GET — including the
+   * reload `forEachTheme` does between themes — agrees with the write that just happened.
+   */
+  typography?: MockTypography;
 }
 
 export interface BookMocks {
   /** Transition-request counts. `expect(mocks.hits.unpublish).toBe(0)` is the confirm fence. */
-  hits: { unpublish: number; publish: number };
+  hits: { unpublish: number; publish: number; typography: number };
   /** Current mocked `status`, so a spec can assert the server's view, not just the DOM's. */
   status(): 'published' | 'draft';
-  /** Restore the initial status and zero the counters — for `forEachTheme`'s repeat passes. */
+  /** Current mocked typography, so a spec can assert what the PUT actually sent. */
+  typography(): MockTypography;
+  /**
+   * Restore the initial status and typography, and zero the counters — for `forEachTheme`'s
+   * repeat passes, where each theme should start from the same book the previous one did.
+   */
   reset(): void;
 }
 
@@ -212,8 +251,10 @@ export interface BookMocks {
  */
 export async function installBookMocks(page: Page, opts: BookMockOptions): Promise<BookMocks> {
   const initialStatus = opts.status;
+  const initialTypography = opts.typography ?? DEFAULT_TYPOGRAPHY;
   let status: 'published' | 'draft' = opts.status;
-  const hits = { unpublish: 0, publish: 0 };
+  let typography: MockTypography = initialTypography;
+  const hits = { unpublish: 0, publish: 0, typography: 0 };
 
   const bookRow = () => ({
     id: BOOK_ID,
@@ -235,6 +276,10 @@ export async function installBookMocks(page: Page, opts: BookMockOptions): Promi
     style_reference_url: null,
     image_provider: null,
     image_model: null,
+    // Non-null on the wire since #113 — `hydrateBook` spreads the whole Prisma row and the
+    // columns have DB defaults, so every real book response carries both.
+    font_family: typography.font_family,
+    text_size: typography.text_size,
     created_by: opts.createdBy,
     created_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
   });
@@ -288,13 +333,39 @@ export async function installBookMocks(page: Page, opts: BookMockOptions): Promi
     });
   });
 
+  /**
+   * `PUT /:id/typography` (#113). Free — no spend gate on the real route — so unlike
+   * `/revise` and `/illustrate` this one is mocked for state, not for cost: the write has to
+   * stick so the GET that follows a `forEachTheme` reload returns what the chip just set.
+   *
+   * Responds with the FULL book including `pages`, matching `BookTypographyResponseSchema`
+   * (= `BookWithPagesSchema`). `BookDetail` replaces its whole `book` state with this
+   * response, so a mock that echoed only the row would blank the reader.
+   */
+  await page.route(`**/api/books/${BOOK_ID}/typography`, async route => {
+    hits.typography += 1;
+    expect(route.request().method()).toBe('PUT');
+    if (opts.token) {
+      expect(route.request().headers()['authorization']).toBe(`Bearer ${opts.token}`);
+    }
+    typography = JSON.parse(route.request().postData() ?? '{}') as MockTypography;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(fullBook()),
+    });
+  });
+
   return {
     hits,
     status: () => status,
+    typography: () => typography,
     reset: () => {
       status = initialStatus;
+      typography = initialTypography;
       hits.unpublish = 0;
       hits.publish = 0;
+      hits.typography = 0;
     },
   };
 }

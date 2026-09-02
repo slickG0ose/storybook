@@ -131,3 +131,42 @@ describe('resolveReaderTypography', () => {
     expect(resolveReaderTypography(book, { text_size: 'cozy' })).toBe(resolveReaderTypography(book))
   })
 })
+
+/**
+ * Regression fence for the blank-page failure found while landing Task 9.
+ *
+ * Four e2e specs mocked a book row predating #113 — no `font_family`, no `text_size`. The
+ * resolvers indexed their Records with `undefined`, got `undefined` back, and threw on
+ * `.scale`. The throw happens inside render, so React unmounted the whole tree: no <h1>,
+ * no story text, a blank page. The tests reported it as "element(s) not found", which
+ * reads like a selector problem and is not.
+ *
+ * The columns are non-null server-side, so this cannot happen from a fresh API response.
+ * It can happen from anything holding an older row: a service-worker cached response (this
+ * app precaches), an offline snapshot, or a fixture written against the older shape. A
+ * missing font preference must never cost the reader the page.
+ */
+describe('resolvers degrade rather than throw on a pre-#113 book row', () => {
+  const legacyRow = {} as TypographySource
+
+  it('resolveTypography falls back to the default rendering', () => {
+    expect(() => resolveTypography(legacyRow)).not.toThrow()
+    expect(resolveTypography(legacyRow)).toBe(
+      resolveTypography({ font_family: 'fredoka', text_size: 'standard' }),
+    )
+  })
+
+  it('resolveReaderTypography falls back to the default rendering', () => {
+    expect(() => resolveReaderTypography(legacyRow)).not.toThrow()
+    expect(resolveReaderTypography(legacyRow)).toBe(
+      resolveReaderTypography({ font_family: 'fredoka', text_size: 'standard' }),
+    )
+  })
+
+  it('an unknown token degrades too, rather than emitting "undefined" into the className', () => {
+    const bogus = { font_family: 'comic-sans', text_size: 'gigantic' } as unknown as TypographySource
+
+    expect(resolveTypography(bogus)).not.toContain('undefined')
+    expect(resolveReaderTypography(bogus)).not.toContain('undefined')
+  })
+})
