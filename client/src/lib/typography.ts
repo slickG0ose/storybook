@@ -50,7 +50,13 @@ const SIZE_CLASSES: Record<TextSize, { scale: string; spacing: string }> = {
   xlarge: { scale: 'text-xl md:text-2xl', spacing: 'leading-loose tracking-wide' },
 }
 
-const FAMILY_CLASSES: Record<FontFamily, string> = {
+/**
+ * Exported so the picker can render each family chip's label IN that family — the preview
+ * IS the affordance. Deliberately shared rather than re-typed in `TypographyControls`:
+ * a second copy would drift from the resolver and the chip would advertise a face the
+ * story text does not use. Same reasoning as `FONT_LABELS` below.
+ */
+export const FAMILY_CLASSES: Record<FontFamily, string> = {
   fredoka: 'font-display',
   nunito: 'font-body',
   atkinson: 'font-atkinson',

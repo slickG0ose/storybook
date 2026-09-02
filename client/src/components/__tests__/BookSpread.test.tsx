@@ -758,3 +758,52 @@ describe('BookSpread — typography and narration share one paragraph', () => {
     expect(sentenceSpans()).toHaveLength(2)
   })
 })
+
+/**
+ * The typography picker's fence (#113, Task 8). BookSpread's job here is only "who may see
+ * it" — what the chips do is `TypographyControls.test.tsx`, and what the PUT does is
+ * `BookDetail.test.tsx`. The fence is `isOwner && isDraft`, matching the route's 404 for a
+ * non-owner and 403 on a published book: an affordance a reader can see but never use is
+ * the failure this guards.
+ */
+describe('BookSpread — typography picker visibility', () => {
+  const publishedBook: BookWithPages = { ...mockBook, status: 'published' }
+
+  it('renders the picker for the owner of a draft', () => {
+    renderSpread({ isOwner: true, isDraft: true, onTypographyChange: vi.fn() })
+    expect(screen.getByTestId('typography-controls')).toBeInTheDocument()
+    expect(screen.getAllByTestId('typography-chip')).toHaveLength(8)
+  })
+
+  it('hides the picker from a non-owner', () => {
+    renderSpread({ isOwner: false, isDraft: true, onTypographyChange: vi.fn() })
+    expect(screen.queryByTestId('typography-controls')).not.toBeInTheDocument()
+  })
+
+  it('hides the picker on a published book, even for its owner', () => {
+    renderSpread({ book: publishedBook, isOwner: true, isDraft: false, onTypographyChange: vi.fn() })
+    expect(screen.queryByTestId('typography-controls')).not.toBeInTheDocument()
+  })
+
+  it('renders nothing when no handler is supplied, so other mounts are unchanged', () => {
+    renderSpread({ isOwner: true, isDraft: true })
+    expect(screen.queryByTestId('typography-controls')).not.toBeInTheDocument()
+  })
+
+  it('seeds the chips from the book and passes the saving flag through', () => {
+    renderSpread({
+      book: { ...mockBook, font_family: 'lexend', text_size: 'cozy' },
+      isOwner: true,
+      isDraft: true,
+      onTypographyChange: vi.fn(),
+      typographySaving: true,
+    })
+
+    const pressed = screen
+      .getAllByTestId('typography-chip')
+      .filter(chip => chip.getAttribute('aria-pressed') === 'true')
+      .map(chip => chip.textContent)
+    expect(pressed).toEqual(['Lexend', 'Cozy'])
+    expect(screen.getByTestId('typography-saving')).toBeInTheDocument()
+  })
+})

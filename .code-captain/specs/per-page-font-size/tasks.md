@@ -425,7 +425,7 @@ pixel-identical to `master` before any picker exists.
 
 ### Task 8 — `TypographyControls` picker + `BookDetail` wiring
 
-**Status:** Not started
+**Status:** Done (2026-09-02)
 
 **Zone:** client
 **Depends on:** Tasks 4, 6, 7
