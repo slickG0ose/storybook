@@ -31,6 +31,8 @@ const mockBook: Book = {
   description: 'A story about a courageous fox who explores the forest.',
   theme: 'adventure',
   age_range: '3-5',
+  font_family: 'fredoka',
+  text_size: 'standard',
   cover_emoji: '🦊',
   cover_color: '#ff6600',
   cover_url: null,
