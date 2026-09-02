@@ -96,6 +96,29 @@ test.describe('Illustration actions on mobile', () => {
     });
   });
 
+  /**
+   * #161. Separate from the row test above because it measures a different control in a
+   * different container: the cast panel is denser than the action row, so a regression in
+   * one would not show up in the other.
+   *
+   * The selector matches on `aria-label` rather than visible text on purpose. The label is
+   * `Generate portrait for Pip` / `Regenerate portrait for Pip` regardless of state, while
+   * the visible text swaps between `Generate portrait ($0.04)` and `Regenerate ($0.04)`
+   * depending on whether the character has a `portrait_url`. A text selector here would
+   * silently stop matching the moment a fixture gave Pip a portrait — which is exactly the
+   * trap #161 flagged in `reader-view.spec.ts`, and there is no reason to rebuild it here.
+   */
+  test('the cast-panel portrait button is tappable', async ({ page }) => {
+    await forEachTheme(page, async () => {
+      const portrait = page.getByRole('button', { name: /portrait for Pip/ });
+      await expect(portrait).toBeVisible();
+
+      // Money path, not chrome: this button spends PER_IMAGE_COST_USD per press and
+      // prints the price in its own label, so it takes the 44px floor like the row above.
+      await expectTapTargets(page, 'button[aria-label*="portrait for"]', PRIMARY_TAP_MIN);
+    });
+  });
+
   test('a long failure message wraps instead of widening the row', async ({ page }) => {
     // Stated precisely, because it is easy to over-claim: this does NOT prove the
     // flex-wrap fix — I checked, and the message wraps either way, because a text span's
