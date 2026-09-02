@@ -11,7 +11,14 @@ import {
 } from '../_editPublished';
 
 /**
- * The illustration action row on `/book/:id` at mobile width (#124).
+ * The illustration-spend controls on `/book/:id` at mobile width — the action row (#124)
+ * and the cast-panel portrait control (#161).
+ *
+ * Both live behind the same precondition, which is why they share a file rather than a
+ * fixture: a signed-in owner viewing a draft whose cast has no portraits. Splitting them
+ * would duplicate that setup and add two more browser contexts across the mobile projects
+ * for one height assertion. They are separate tests, though — different containers, and a
+ * regression in one would not surface in the other.
  *
  * The row holds up to four controls at once — "Illustrate All (~$0.08)", the "Approve cast
  * to illustrate with consistent characters." notice with its "Skip portraits" escape hatch,
@@ -115,7 +122,14 @@ test.describe('Illustration actions on mobile', () => {
 
       // Money path, not chrome: this button spends PER_IMAGE_COST_USD per press and
       // prints the price in its own label, so it takes the 44px floor like the row above.
-      await expectTapTargets(page, 'button[aria-label*="portrait for"]', PRIMARY_TAP_MIN);
+      // The feedback input is in the selector because this diff resizes it too. Below `sm:`
+      // the row is a column, so flex stretch cannot equalise it against the button — it has
+      // to clear the floor on its own, and nothing else in any suite measures it.
+      await expectTapTargets(
+        page,
+        'button[aria-label*="portrait for"], input[placeholder*="curlier hair"]',
+        PRIMARY_TAP_MIN,
+      );
     });
   });
 
