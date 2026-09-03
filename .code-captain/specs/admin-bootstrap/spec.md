@@ -2,7 +2,7 @@
 
 > Status: Accepted
 > Last updated: 2026-09-02
-> Backlog: no issue yet — file one alongside the ADRs (see Pre-merge follow-ups)
+> Backlog: [#157](https://github.com/slickG0ose/storybook/issues/157) (MVP beta) and [#77](https://github.com/slickG0ose/storybook/issues/77) (restore the deploy). Follow-up filed: [#174](https://github.com/slickG0ose/storybook/issues/174).
 
 ## Problem
 
@@ -432,10 +432,28 @@ password `demo!2026` from `server/prisma/demo-seed.ts:28`.
 
 ## ADR-worthy decisions
 
-- [ ] **Admin set is reconciled from `ADMIN_BOOTSTRAP_EMAILS` on every boot, not seeded once** — diverges from `bootstrapAllowlist()`'s empty-table rule; hard to reverse once operators rely on it. Write via `/create-adr` after spec approval.
-- [ ] **Demotion is in scope, with unset/blank/unparseable as total no-ops and `none` as the demote-all sentinel** — this is the lever for the "no live admin access once we have real tester data" end state, and the sentinel is a magic value future readers will otherwise question.
-- [ ] **Deferred: no in-app role management UI or endpoint** — record as deferred scope so a later reader knows it was considered and why (see Alternatives).
-- [ ] **Scope 2: email normalization is backfill + normalise-on-write, with a plain normalised read path** (Decision 5) — hard to reverse once the `User` table is converged, and it forecloses the case-insensitive-lookup design. Write via `/create-adr`.
-- [ ] **Scope 2: collision rule — elect one row, skip the rest, never merge or delete; tombstones participate in election** (Decision 6) — a deliberate, permanent account-reachability trade-off that a future reader will otherwise read as a bug. May share one ADR with the item above if they read as a single decision; say so in the spec if merged.
-- [ ] **Scope 2 follow-up issue: case-insensitive unique index on `User.email`** (`citext` or a functional index on `lower(email)`) — the only thing that closes the duplicate-account hole at the database layer. Postgres-only, unrunnable while a collision exists, so it depends on the backfill's `collisions` log being empty. File as an issue, not an ADR.
-- [ ] **Deferred: no `AuthUserResponseSchema` in `@storybook/shared`** — `/register` and `/login` stay unvalidated by `validate()`; the response shape is unchanged and adding auth-route middleware exceeds the approved scope. Record as a `Deferred:` line or a filed issue.
+> **All seven tracked, 2026-09-02.** Two ADRs written, one issue filed, two `Deferred:` rulings
+> recorded below. Items 1+2 merged into ADR-021 and items 4+5 into ADR-022 — in each pair the
+> second decision is what makes the first safe, so splitting them would leave either ADR
+> incomplete on its own.
+
+**Deferred: no in-app role management UI or endpoint.** A `PATCH /api/admin/users/:id/role`
+does not solve the bootstrap — it needs an admin to already exist — and it adds
+privilege-escalation surface to a demo-grade product for no gain over an env edit. Recorded in
+ADR-021 §Consequences. Revisit only if the admin set must change without a restart.
+
+**Deferred: no `AuthUserResponseSchema` in `@storybook/shared`.** `/register` and `/login` stay
+outside `validate()`. Their response shape is unchanged by this work, and adding response-
+validation middleware to the auth routes exceeds the approved scope. Check 4 is instead
+discharged by `toMatchObject` assertions pinning all five fields on both routes in
+`server/src/routes/__tests__/auth-normalization.test.ts` — which is more coverage than these
+routes had before, since nothing in the repo pinned them at all.
+
+
+- [x] **Admin set is reconciled from `ADMIN_BOOTSTRAP_EMAILS` on every boot, not seeded once** — diverges from `bootstrapAllowlist()`'s empty-table rule; hard to reverse once operators rely on it. Write via `/create-adr` after spec approval.
+- [x] **Demotion is in scope, with unset/blank/unparseable as total no-ops and `none` as the demote-all sentinel** — this is the lever for the "no live admin access once we have real tester data" end state, and the sentinel is a magic value future readers will otherwise question.
+- [x] **Deferred: no in-app role management UI or endpoint** — record as deferred scope so a later reader knows it was considered and why (see Alternatives).
+- [x] **Scope 2: email normalization is backfill + normalise-on-write, with a plain normalised read path** (Decision 5) — hard to reverse once the `User` table is converged, and it forecloses the case-insensitive-lookup design. Write via `/create-adr`.
+- [x] **Scope 2: collision rule — elect one row, skip the rest, never merge or delete; tombstones participate in election** (Decision 6) — a deliberate, permanent account-reachability trade-off that a future reader will otherwise read as a bug. May share one ADR with the item above if they read as a single decision; say so in the spec if merged.
+- [x] **Scope 2 follow-up issue: case-insensitive unique index on `User.email`** — filed as [#174](https://github.com/slickG0ose/storybook/issues/174). (`citext` or a functional index on `lower(email)`) — the only thing that closes the duplicate-account hole at the database layer. Postgres-only, unrunnable while a collision exists, so it depends on the backfill's `collisions` log being empty. File as an issue, not an ADR.
+- [x] **Deferred: no `AuthUserResponseSchema` in `@storybook/shared`** — `/register` and `/login` stay unvalidated by `validate()`; the response shape is unchanged and adding auth-route middleware exceeds the approved scope. Record as a `Deferred:` line or a filed issue.

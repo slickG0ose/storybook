@@ -409,6 +409,11 @@ line and the PR body.
 
 ## Open questions
 
+> **Both resolved 2026-09-02.** Q1 is an operator sequencing note, carried into the PR body's
+> post-merge steps rather than left here. Q2 is answered by the first post-deploy boot log and
+> is the stated prerequisite of [#174](https://github.com/slickG0ose/storybook/issues/174).
+> Neither is an orphaned ADR-worthy item.
+
 - Which address goes in the production var first? The owner's registration must exist before
   the promotion has anything to act on — order is: merge, set var, register, restart.
 - Nobody can enumerate production `User` rows until scope 1 ships, so it is unknown whether any

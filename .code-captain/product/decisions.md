@@ -4,6 +4,104 @@ Append-only log. Newest entries on top. Each entry should answer: *what was deci
 
 ---
 
+## ADR-022 — `User.email` is normalised on write and converged by a boot backfill; collisions elect one row and never merge
+
+**Date:** 2026-09-02
+**Status:** Accepted
+**Scope:** `server/src/routes/auth.ts`, `server/src/services/emailBackfill.ts`. Spec: `.code-captain/specs/admin-bootstrap/spec.md` §Scope 2, Decisions 5 and 6.
+
+### The decision
+
+Three parts, which are one decision because the first is unsafe without the second and the second is unsafe without the third:
+
+1. **`normalizeEmail` is applied on write in `/register` and on lookup in `/register` and `/login`.**
+2. **`backfillUserEmails()` converges pre-existing rows at boot**, lowercasing any `User.email` that is not already normalised.
+3. **Read paths do a plain normalised equality lookup — no case-insensitive fallback.**
+
+### The bug this closes
+
+`routes/auth.ts` never imported `normalizeEmail`. `/register` called `isEmailAllowed(email)`, which normalises *internally, for the `AllowedEmail` lookup only*, then stored `prisma.user.create({ data: { email } })` — the raw request value. `/login` looked the raw value up.
+
+So registering as `Nick@Gmail.com` and logging in as `nick@gmail.com` was a permanent 401. Mobile testers hit this by default rather than by accident: iOS autocapitalises the first letter, and no email input in the client set `autoCapitalize` (fixed in the same PR).
+
+`CLAUDE.md` actively hid this. Its allowlist section read *"Emails are normalised (trim + lowercase) on both write and check"* — true of `AllowedEmail`, never true of `User.email`. It documented a guarantee the auth path did not implement.
+
+### Why both backfill and normalise-on-write, rather than either alone
+
+**Normalise-on-write alone inverts the bug.** A stored `Nick@Gmail.com` becomes permanently unreachable by the corrected lookup — the same failure, now hitting existing accounts instead of new ones.
+
+Whether such rows exist is genuinely unknown and was unknowable at decision time: the production Postgres dates to roughly 2026-06-16, `AllowedEmail` only landed 2026-08-15 in `8ca0eda`, so the June window had no registration gate at all, and `/api/admin/users` needs the admin that [[ADR-021]] is still building. A design that assumes the table is clean is a design that cannot be checked.
+
+**Backfill alone leaves the hole open** for the next mixed-case registration.
+
+**Why no case-insensitive fallback on read.** Prisma's `mode: 'insensitive'` is Postgres-only and would break the SQLite dev/test path. The portable alternatives are a full-table scan per login or SQLite's ASCII-only `LIKE`. The backfill converges the data once so the login path can stay one boring indexed lookup.
+
+### Why collisions elect rather than merge
+
+`User.email` is already `String @unique` — but string equality is **case-sensitive in both Postgres and SQLite**, so `Nick@G.com` and `nick@g.com` are distinct values and both rows can exist under that index today. Lowercasing one into the other's value raises `P2002`. Unhandled, that is an unhandled rejection in a startup path.
+
+So grouping and election happen in application code and `P2002` is never reached: one row per normalised group is elected — **a live row beats a tombstone; between two live rows the older `created_at` wins; `id` breaks a millisecond tie** so the elected row cannot change between boots — and only that row is rewritten. Every other row is left byte-for-byte intact and reported in `collisions` with a `console.warn`.
+
+**The cost, stated rather than hidden:** a non-elected live row loses `/login` reachability. It is not deleted and not merged, because only a human can decide whether two such accounts are one person. `/api/admin/users` is the resolution path — which is precisely what [[ADR-021]] unblocks.
+
+**Tombstones participate in election**, and that is mandatory rather than tidy: the unique index spans soft-deleted rows, so ignoring a tombstoned `Nick@G.com` means the lowercasing of a live `nick@g.com` throws — the exact case the backfill exists to handle. A tombstoned row with no collision *is* normalised, so a later restore cannot resurrect the bug.
+
+### Consequences
+
+- `/register`'s duplicate check drops its `deleted_at: null` filter. With it, a tombstoned row let the `create` throw `P2002` and the global handler answered a generic 500 where 409 is honest.
+- The backfill is idempotent: once converged it is one `findMany` and zero writes per boot.
+- It runs **before** `reconcileAdmins()`, chained via `.finally` so a failed backfill still cannot cost the deployment its admin.
+- **Not closed:** the duplicate-account hole at the database layer. That needs a case-insensitive unique index (`citext` or a functional index on `lower(email)`), which is Postgres-only, has no SQLite equivalent for the dev/test path, and is unrunnable while a collision exists — so it depends on the `collisions` log being empty. Filed as a follow-up issue.
+
+---
+
+## ADR-021 — Admin roles are reconciled from `ADMIN_BOOTSTRAP_EMAILS` on every boot, and revocation is in scope
+
+**Date:** 2026-09-02
+**Status:** Accepted
+**Scope:** `server/src/services/adminBootstrap.ts`, `server/src/index.ts`, `render.yaml`. Spec: `.code-captain/specs/admin-bootstrap/spec.md` §Decisions 1 and 2. Relates to [#157](https://github.com/slickG0ose/storybook/issues/157), [#77](https://github.com/slickG0ose/storybook/issues/77).
+
+### The decision
+
+`ADMIN_BOOTSTRAP_EMAILS` is the **source of truth** for who holds `role: 'admin'`, reconciled on every server boot — not seeded once. Removing an address demotes that admin on the next restart. Reaching zero admins takes the literal sentinel value `none`.
+
+### The problem
+
+Production had no admin and no supported way to create one. `render.yaml` runs `prisma/seed.ts` at build time — 6 demo books, zero users. The only code in the repo that ever writes `role: 'admin'` is `prisma/demo-seed.ts`, which is not in the build command. `ALLOWLIST_BOOTSTRAP_EMAILS` decides who may *register*; it grants no role. So `/admin` and every `/api/admin/*` route returned 403 to everyone including the repo owner, and the only door was a manual `psql UPDATE`.
+
+Adding `demo-seed.ts` to the build was rejected outright: it would publish a live admin account with the hardcoded password `demo!2026`.
+
+### Why every boot, not seeded once
+
+`bootstrapAllowlist()` guards on "only while the table is empty", and that guard is **unavailable here** — the `User` table is never empty once anyone registers. Mirroring it literally would mean "promote only on the very first boot against a fresh database", which is the state that produced this problem.
+
+The deciding requirement is the other direction. The stated end state is **no standing admin access once there is real tester data**, so revocation has to be as cheap as granting — an env edit plus a restart, never a code deploy. Promote-once offers no revocation path without either a manual `psql UPDATE` (the problem being solved) or a new role-editing endpoint (more code, more privilege-escalation surface, and useless for bootstrap since it needs an admin to already exist).
+
+Reconciling also resolves the ordinary case for free: an address is normally listed days before that person registers, and every boot retries.
+
+### Why demotion needs a sentinel
+
+Demotion is real: an admin whose email is not in the var is set back to `role: 'user'`. Three guards stop that from becoming a footgun:
+
+1. **Unset or blank ⇒ total no-op**, no DB access. An absent var means "this deployment does not manage admins here" — correct for local dev.
+2. **Set but no parseable address ⇒ total no-op plus a warning.** A var of `,,` is a typo, not an instruction to clear the admin set. This is what stops a fat-fingered dashboard edit from locking everyone out.
+3. **Demotion never deletes.** It writes `role: 'user'` and nothing else; account, books, orders, and token survive. Re-add the email, restart, admin returns.
+
+Guards 1 and 2 make "clear the var" inert, so reaching zero admins needs an explicit instruction: **`ADMIN_BOOTSTRAP_EMAILS=none`**. `none` has no `@`, so it cannot collide with a real address, and it is checked *before* parsing — otherwise `parseEmailList` would filter it out and it would fall into guard 2 and silently do nothing.
+
+There is deliberately **no** "never demote the last admin" rule. Such a rule would make the stated end state unreachable, and that end state is the requirement that matters most.
+
+### Consequences
+
+- **An admin promoted by hand is demoted on the next boot** whenever the var is set. Intended. Leave the var unset in local `.env` so the seeded `demo@storybook.local` admin survives.
+- Matching happens in **application code**, not in the `where` clause. At the time this shipped, stored emails were not normalised (see [[ADR-022]], landing in the same PR), so `where: { email: { in: [...] } }` over lowercased addresses would have silently missed exactly the admin it meant to promote. `mode: 'insensitive'` is Postgres-only and would break SQLite. The application-level match stays correct either way.
+- Demotion ignores `deleted_at` while promotion does not: leaving a tombstoned row at `role: 'admin'` would hand back admin the moment someone restored the account.
+- A listed address with no account is logged and retried each boot; it never creates a user row and no password ever appears in config.
+- Single-instance is load-bearing (ADR-018), so two processes cannot race the reconcile.
+- **Deferred:** no in-app role management UI or endpoint. It does not solve bootstrap (it needs an admin to exist first) and adds privilege-escalation surface to a demo-grade product. Worth revisiting only if the admin set must change without a restart.
+
+---
+
 ## ADR-020 — Typography is book-level, seeded from `age_range` at creation and never re-derived
 
 **Date:** 2026-09-02
