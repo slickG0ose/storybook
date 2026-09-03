@@ -62,7 +62,12 @@ router.delete(
   async (req: Request, res: Response) => {
     const { email } = req.body as TestUserDeleteRequest;
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    // Normalised to match how /register now stores addresses. Without this a
+    // spec that registers `Test@Example.com` would get a silent
+    // `{ ok: true, deleted: 0 }` here and leak the row — the cleanup would
+    // report success having found nothing. Sibling route allow-email already
+    // normalises; this one was missed.
+    const user = await prisma.user.findUnique({ where: { email: normalizeEmail(email) } });
     if (!user) {
       // Idempotent — missing user is not an error.
       return res.json({ ok: true, deleted: 0 });

@@ -283,6 +283,12 @@ Algorithm, in order — resolve collisions in application code so `P2002` is nev
    emails. **Never merge, never delete, never touch the non-elected rows' data.**
 5. Groups of one needing a rewrite: single `update` by `id`.
 
+> **Amended during execution (2026-09-02).** The `index.ts` snippet below is **superseded**:
+> its `.then()` block logged `normalized` and each collision, and `emailBackfill.ts` logs both
+> as well, so every collision printed twice at boot. As shipped, the service does all its own
+> reporting — matching `reconcileAdmins()` — and `index.ts` only handles failure. The
+> `.finally()` chaining below is unchanged and is what shipped.
+
 Then in `server/src/index.ts`, sequence the backfill ahead of `reconcileAdmins()` — both write
 `User` rows, so chaining is cheaper to reason about than two racing `void` blocks. This
 supersedes the standalone block specified in Task 2:
