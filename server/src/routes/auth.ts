@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import prisma from '../db/prisma';
 import { hashPassword, verifyPassword, isLegacyHash } from '../lib/password';
-import { isEmailAllowed } from '../services/allowlist';
+import { isEmailAllowed, normalizeEmail } from '../services/allowlist';
 import type { Request, Response } from 'express';
 
 const router = Router();
@@ -47,15 +47,28 @@ router.post('/register', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Password must be at least 8 characters' });
   }
 
+  // Addresses are case-insensitive in practice, so one identity must have one
+  // stored form. Normalising here (and on the /login lookup below) is what
+  // stops `Nick@Gmail.com` registering and then failing to log in as
+  // `nick@gmail.com`, and what stops the two becoming separate accounts
+  // against a single AllowedEmail row. Existing rows are converged by
+  // backfillUserEmails() at boot; see services/emailBackfill.ts.
+  const normalized = normalizeEmail(email);
+
   // Allowlist gate (F4a / #5). Checked before the duplicate-account lookup so
   // a non-allowed email learns nothing about which accounts exist.
-  if (!(await isEmailAllowed(email))) {
+  if (!(await isEmailAllowed(normalized))) {
     return res.status(403).json({
       error: 'Registration is currently limited to approved email addresses.',
     });
   }
 
-  const existing = await prisma.user.findFirst({ where: { email, deleted_at: null } });
+  // NOTE the deliberately absent `deleted_at: null` filter. User.email is
+  // @unique and that index spans tombstoned rows, so filtering them out here
+  // meant the create below threw P2002 and the global error handler returned a
+  // generic 500. A 409 is the honest answer, and it says nothing a caller who
+  // already passed the allowlist gate cannot learn by registering.
+  const existing = await prisma.user.findFirst({ where: { email: normalized } });
   if (existing) {
     return res.status(409).json({ error: 'An account with this email already exists' });
   }
@@ -63,7 +76,7 @@ router.post('/register', async (req: Request, res: Response) => {
   const token = uuidv4();
   const user = await prisma.user.create({
     data: {
-      email,
+      email: normalized,
       name,
       password_hash: hashPassword(password),
       token,
@@ -81,8 +94,13 @@ router.post('/login', async (req: Request, res: Response) => {
   }
 
   // Soft-deleted users should not be able to log in; treat them like a missing
-  // account so we don't leak that the row still exists.
-  const user = await prisma.user.findFirst({ where: { email, deleted_at: null } });
+  // account so we don't leak that the row still exists. The lookup is a plain
+  // normalised equality match — no case-insensitive fallback (spec Decision 5),
+  // because /register normalises on write and the boot backfill converges the
+  // rows that predate it.
+  const user = await prisma.user.findFirst({
+    where: { email: normalizeEmail(email), deleted_at: null },
+  });
 
   if (!user || !verifyPassword(password, user.password_hash)) {
     return res.status(401).json({ error: 'Invalid email or password' });
