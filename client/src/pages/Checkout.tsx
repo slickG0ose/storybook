@@ -90,6 +90,9 @@ export default function Checkout() {
               <label className="block text-sm font-semibold text-gray-600 dark:text-gray-400 mb-1">Email</label>
               <input
                 type="email"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 value={email}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
                 required
