@@ -27,15 +27,30 @@ If the path doesn't resolve, or it's not under `server/src/routes/`, stop and re
 
 ## Procedure
 
-### Step 1 — Locate the test file
+### Step 1 — Locate the test file(s)
 
-Convention (per `docs/conventions/testing.md`): `server/src/routes/foo.ts` → `server/src/routes/__tests__/foo.test.ts`.
+A route's coverage may live in one test file or be split across suffixed siblings. Resolve **both** shapes and take the union — for `server/src/routes/foo.ts`:
 
-If the test file is missing, that's a finding by itself:
+| Pattern | Example |
+|---|---|
+| `server/src/routes/__tests__/foo.test.ts` | `orders.ts` → `orders.test.ts` |
+| `server/src/routes/__tests__/foo-*.test.ts` | `auth.ts` → `auth-hashing.test.ts`, `auth-normalization.test.ts` |
 
-> **Finding: wire-shape — no test file.** Route `<path>` has no matching `__tests__/*.test.ts`. The OPS.3 / ADR-003 rule is "every route has a wire-shape-asserted test" — a route without any test fails the check unconditionally.
+```bash
+find server/src/routes/__tests__ -name '<name>.test.ts' -o -name '<name>-*.test.ts'
+```
 
-Don't continue without a test file. Hand back.
+(Quote the patterns and let `find` match them. An unquoted `ls <name>-*.test.ts` aborts under zsh when a route has no siblings, which is most of them.)
+
+**Every matched file counts as one test surface.** A field is pinned if *any* of them asserts it — `auth.ts`'s `/register` 201 shape is satisfied whether the `toMatchObject` sits in `auth-hashing.test.ts` or `auth-normalization.test.ts`. Do not report a field as unpinned without checking all matches, and name every file you read in the report's **Test file** line.
+
+Match on the exact stem only. `foo-*.test.ts` picks up `foo-hashing.test.ts` but must not pull in `foobar.test.ts` — the hyphen is load-bearing.
+
+If the union is empty, that's a finding by itself:
+
+> **Finding: wire-shape — no test file.** Route `<path>` has no `__tests__/<name>.test.ts` and no `__tests__/<name>-*.test.ts`. The OPS.3 / ADR-003 rule is "every route has a wire-shape-asserted test" — a route without any test fails the check unconditionally.
+
+Don't continue with an empty union. Hand back.
 
 ### Step 2 — Enumerate response shapes in the route
 
@@ -120,6 +135,7 @@ If the route is binary and all three are present, the handler passes.
 - **Routes that 204 with no body.** Nothing to assert. Note in the report.
 - **Routes that stream JSON (SSE, NDJSON).** Out of scope for this skill today — flag as `<not supported by skill>` and ask the human to review manually.
 - **Routes that delegate to a service.** The shape is whatever the route emits, not what the service returns. Trace the data flow up to the `res.json` call.
+- **Split test suites.** Some routes have no `<name>.test.ts` at all and are covered only by suffixed siblings — `auth.ts` is the live example. Step 1's glob union handles this; the failure mode to avoid is reading one sibling, missing a field it doesn't cover, and reporting a false High.
 
 ## Output format
 
@@ -128,7 +144,7 @@ Always hand back a structured report, even when everything passes:
 ```
 # wire-shape-check — <route file>
 
-**Test file:** <path or "NOT FOUND">
+**Test file(s):** <every path read, comma-separated, or "NOT FOUND">
 **Handlers inspected:** <N>
 
 ## Findings
