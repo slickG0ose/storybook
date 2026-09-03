@@ -65,6 +65,26 @@ services:
       # AllowedEmail table is empty; after that, manage it in the admin UI.
       - key: ALLOWLIST_BOOTSTRAP_EMAILS
         sync: false
+      # Grants role:'admin' to ALREADY-REGISTERED users at server start
+      # (server/src/services/adminBootstrap.ts). Comma-separated.
+      #
+      # UNLIKE the allowlist bootstrap above, this reconciles on EVERY boot:
+      # the var is the source of truth, so removing an address DEMOTES that
+      # admin on the next restart, and an admin promoted by hand (psql, or a
+      # local demo-seed.ts run) is demoted too. That is deliberate — revoking
+      # admin has to be an env edit, never a code deploy.
+      #
+      # Unset, blank, or unparseable (`,,`) = total no-op, so a fat-fingered
+      # dashboard edit cannot mass-demote. Because that makes "clear the var"
+      # inert, reaching ZERO admins takes the literal value `none` — that is
+      # the lever for going live with no standing admin access.
+      #
+      # Never creates a user and never holds a password: list the address,
+      # have them register normally, then restart. A listed address still
+      # needs an ALLOWLIST entry to register in the first place — the two vars
+      # are independent.
+      - key: ADMIN_BOOTSTRAP_EMAILS
+        sync: false
       # Locks Access-Control-Allow-Origin to the deployed client instead of
       # the wide-open `*` this service shipped with. This is the ORIGIN only
       # — scheme + host. The /storybook/ path the Pages project site serves

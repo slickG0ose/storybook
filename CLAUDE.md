@@ -105,13 +105,33 @@ AI calls cost real money, so every paid operation is metered and capped. Code li
 
 A malformed limit falls back to the default rather than to `Infinity`, so a typo can't disable the gate.
 
-## Registration allowlist
+## Registration allowlist and admin bootstrap
+
+Two independent env vars, both read at server start, and it is worth keeping them straight: `ALLOWLIST_BOOTSTRAP_EMAILS` decides **who may create an account**, `ADMIN_BOOTSTRAP_EMAILS` decides **which existing accounts hold `role: 'admin'`**. Being promotable does not imply being allowed to register — a listed admin still needs an allowlist entry to sign up in the first place.
+
+### Registration allowlist
 
 Registration is **closed by default**. An address must be on the `AllowedEmail` table before `POST /api/auth/register` will accept it. Code: [server/src/services/allowlist.ts](server/src/services/allowlist.ts).
 
 - Admin endpoints in [server/src/routes/admin.ts](server/src/routes/admin.ts): `GET /api/admin/allowlist`, `POST /api/admin/allowlist`, `DELETE /api/admin/allowlist/:email`.
-- `bootstrapAllowlist()` runs once at server start and seeds from `ALLOWLIST_BOOTSTRAP_EMAILS` (comma-separated) **only while the table is empty**, so a fresh deploy isn't locked out of its own signup. It no-ops afterwards, and a failure is logged rather than fatal.
-- Emails are normalised (trim + lowercase) on both write and check, so casing can't create a bypass.
+- `bootstrapAllowlist()` runs once at server start and seeds from `ALLOWLIST_BOOTSTRAP_EMAILS` (comma-separated) **only while the table is empty**, so a fresh deploy isn't locked out of its own signup. It no-ops afterwards, and a failure is logged rather than fatal. Practical consequence: seed **every** address you want in that first window — once one row exists the var is inert forever, and later additions go through the admin UI.
+- `AllowedEmail.email` is normalised (trim + lowercase) on both write and check, so casing can't create an allowlist bypass.
+
+### Admin bootstrap
+
+`ADMIN_BOOTSTRAP_EMAILS` (comma-separated) is the source of truth for who is an admin. Code: [server/src/services/adminBootstrap.ts](server/src/services/adminBootstrap.ts).
+
+- **Reconciled on every boot, not seeded once.** `bootstrapAllowlist()`'s empty-table guard is unavailable here — the `User` table is never empty once anyone registers. So removing an address **demotes** that admin on the next restart, and an admin promoted by hand (psql, or a local `demo-seed.ts` run) is demoted too. That is the point: revoking admin is an env edit, never a code deploy.
+- **Three guards against a fat-fingered edit:** unset or blank is a total no-op; set-but-unparseable (`,,`) is a total no-op plus a warning; demotion writes `role: 'user'` and nothing else — account, books, orders, and token survive.
+- Because those guards make "clear the var" inert, reaching **zero admins** takes the literal value `ADMIN_BOOTSTRAP_EMAILS=none`. That is the lever for going live with no standing admin access.
+- It **never creates a user** and never holds a password. Order of operations: allowlist the address → they register normally → restart promotes them.
+- Leave it **unset** in local `.env`, so the `demo@storybook.local` admin from `db:seed-demo` survives.
+
+### `User.email` normalisation
+
+Normalised (trim + lowercase) on write in `/register` and on lookup in `/register` and `/login`. `backfillUserEmails()` ([server/src/services/emailBackfill.ts](server/src/services/emailBackfill.ts)) lowercases legacy rows at boot, electing one row per collision group — live beats tombstone, older `created_at` breaks a tie — and reports the rest rather than merging or deleting.
+
+`User.email` is `@unique`, but string equality is **case-sensitive** in both Postgres and SQLite, so that index alone does not stop `Nick@G.com` and `nick@g.com` from coexisting. Closing that at the database level needs a case-insensitive index (`citext` or `lower(email)`), which is Postgres-only and unrunnable while a collision exists — tracked as a follow-up, not done here.
 
 **Tests must opt an address in explicitly** via the `allowEmail()` helper in `server/src/__tests__/setup.ts`. That is deliberately not a bypass flag — a test that forgets it fails exactly the way a real un-allowlisted signup does.
 
