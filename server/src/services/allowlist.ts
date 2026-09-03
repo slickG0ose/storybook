@@ -25,6 +25,28 @@ export async function isEmailAllowed(email: string): Promise<boolean> {
 }
 
 /**
+ * Parse a comma-separated env var into a de-duplicated list of normalized
+ * addresses.
+ *
+ * Shared by `bootstrapAllowlist()` here and by `reconcileAdmins()` in
+ * `adminBootstrap.ts` so there is exactly one definition of "what counts as a
+ * listed address". The `includes('@')` filter is deliberately loose — it is
+ * there to drop typos and stray separators (`,,`, `not-an-email`), not to
+ * validate deliverability.
+ */
+export function parseEmailList(raw: string | undefined): string[] {
+  if (!raw?.trim()) return [];
+  return Array.from(
+    new Set(
+      raw
+        .split(',')
+        .map(normalizeEmail)
+        .filter(e => e.length > 0 && e.includes('@')),
+    ),
+  );
+}
+
+/**
  * Seed the allowlist from ALLOWLIST_BOOTSTRAP_EMAILS (comma-separated) when it
  * is empty.
  *
@@ -41,14 +63,7 @@ export async function bootstrapAllowlist(): Promise<string[]> {
   const existing = await prisma.allowedEmail.count();
   if (existing > 0) return [];
 
-  const emails = Array.from(
-    new Set(
-      raw
-        .split(',')
-        .map(normalizeEmail)
-        .filter(e => e.length > 0 && e.includes('@')),
-    ),
-  );
+  const emails = parseEmailList(raw);
   if (emails.length === 0) return [];
 
   await prisma.allowedEmail.createMany({
