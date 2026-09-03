@@ -34,6 +34,7 @@ import testRouter from './routes/test';
 import { snapshotDb } from './db/snapshot';
 import { bootstrapAllowlist } from './services/allowlist';
 import { reconcileAdmins } from './services/adminBootstrap';
+import { backfillUserEmails } from './services/emailBackfill';
 import Anthropic from '@anthropic-ai/sdk';
 import { checkForNewerModel } from './lib/models';
 import { buildCorsPolicy } from './lib/cors';
@@ -128,18 +129,36 @@ app.listen(PORT, () => {
     })
     .catch((err: unknown) => console.error('[allowlist] bootstrap failed', err));
 
-  // Reconcile admin roles against ADMIN_BOOTSTRAP_EMAILS. Unlike the allowlist
-  // bootstrap above, this runs on EVERY boot: the env var is the source of
-  // truth, so removing an address demotes that admin on the next restart.
-  // Unset, blank, or unparseable is a total no-op. reconcileAdmins() does its
-  // own reporting — promoted, demoted, and not-yet-registered each log there —
-  // so this block only has to handle failure. Logged, never fatal: a server
-  // that will not boot is worse than one whose admin needs another restart.
+  // Converge User.email onto its lowercase form before anything else reads a
+  // user row. Rows registered before the auth path normalized on write can hold
+  // mixed case, which the fixed /login lookup would never find. Idempotent:
+  // once converged this is one query and zero writes on every later boot.
+  // Collisions are resolved in application code and reported, never merged.
   //
-  // Independent of the allowlist bootstrap on purpose; neither reads the
-  // other's result, and being promotable does not imply being allowed to
-  // register.
-  void reconcileAdmins().catch((err: unknown) =>
-    console.error('[admin-bootstrap] reconcile failed', err),
-  );
+  // reconcileAdmins() is chained off this rather than fired alongside it —
+  // both write User rows, and one sequence is cheaper to reason about than two
+  // racing void blocks. It runs from .finally, not .then, so a failed backfill
+  // still cannot cost the deployment its admin.
+  // backfillUserEmails() does its own reporting, same as reconcileAdmins()
+  // below, so this block only handles failure — otherwise every collision
+  // printed twice at boot.
+  void backfillUserEmails()
+    .catch((err: unknown) => console.error('[email-backfill] failed', err))
+    .finally(() => {
+      // Reconcile admin roles against ADMIN_BOOTSTRAP_EMAILS. Unlike the
+      // allowlist bootstrap above, this runs on EVERY boot: the env var is the
+      // source of truth, so removing an address demotes that admin on the next
+      // restart. Unset, blank, or unparseable is a total no-op.
+      // reconcileAdmins() does its own reporting — promoted, demoted, and
+      // not-yet-registered each log there — so this block only has to handle
+      // failure. Logged, never fatal: a server that will not boot is worse than
+      // one whose admin needs another restart.
+      //
+      // Independent of the allowlist bootstrap on purpose; neither reads the
+      // other's result, and being promotable does not imply being allowed to
+      // register.
+      void reconcileAdmins().catch((err: unknown) =>
+        console.error('[admin-bootstrap] reconcile failed', err),
+      );
+    });
 });
