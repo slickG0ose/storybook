@@ -771,6 +771,9 @@ function AllowlistTab({
         <form onSubmit={e => void submit(e)} className="flex flex-col sm:flex-row gap-2">
           <input
             type="email"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
             value={email}
             onChange={e => setEmail(e.target.value)}
             placeholder="person@example.com"

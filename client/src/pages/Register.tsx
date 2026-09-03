@@ -55,6 +55,9 @@ export default function Register() {
             <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Email</label>
             <input
               type="email"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               value={email}
               onChange={e => setEmail(e.target.value)}
               required
