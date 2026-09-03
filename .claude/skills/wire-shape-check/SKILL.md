@@ -29,12 +29,14 @@ If the path doesn't resolve, or it's not under `server/src/routes/`, stop and re
 
 ### Step 1 — Locate the test file(s)
 
-A route's coverage may live in one test file or be split across suffixed siblings. Resolve **both** shapes and take the union — for `server/src/routes/foo.ts`:
+A route's coverage is frequently **not** in one file named after it. Run both substeps below and take the union; a field is pinned if **any** file in that union asserts it.
+
+#### 1a — By name
 
 | Pattern | Example |
 |---|---|
-| `server/src/routes/__tests__/foo.test.ts` | `orders.ts` → `orders.test.ts` |
-| `server/src/routes/__tests__/foo-*.test.ts` | `auth.ts` → `auth-hashing.test.ts`, `auth-normalization.test.ts` |
+| `__tests__/<name>.test.ts` | `orders.ts` → `orders.test.ts` |
+| `__tests__/<name>-*.test.ts` | `auth.ts` → `auth-hashing.test.ts`, `auth-normalization.test.ts` |
 
 ```bash
 find server/src/routes/__tests__ -name '<name>.test.ts' -o -name '<name>-*.test.ts'
@@ -42,13 +44,36 @@ find server/src/routes/__tests__ -name '<name>.test.ts' -o -name '<name>-*.test.
 
 (Quote the patterns and let `find` match them. An unquoted `ls <name>-*.test.ts` aborts under zsh when a route has no siblings, which is most of them.)
 
-**Every matched file counts as one test surface.** A field is pinned if *any* of them asserts it — `auth.ts`'s `/register` 201 shape is satisfied whether the `toMatchObject` sits in `auth-hashing.test.ts` or `auth-normalization.test.ts`. Do not report a field as unpinned without checking all matches, and name every file you read in the report's **Test file** line.
-
 Match on the exact stem only. `foo-*.test.ts` picks up `foo-hashing.test.ts` but must not pull in `foobar.test.ts` — the hyphen is load-bearing.
 
-If the union is empty, that's a finding by itself:
+#### 1b — By mount path (always run this too)
 
-> **Finding: wire-shape — no test file.** Route `<path>` has no `__tests__/<name>.test.ts` and no `__tests__/<name>-*.test.ts`. The OPS.3 / ADR-003 rule is "every route has a wire-shape-asserted test" — a route without any test fails the check unconditionally.
+**Name-matching alone silently under-resolves**, and the failure is invisible: you get a plausible-looking file, read it, and report every handler it happens not to cover as unpinned. Sibling suites are often named for a *topic* rather than the route.
+
+Find the router's mount prefix, then sweep the whole test directory for it:
+
+```bash
+grep -n "Router)" server/src/index.ts | grep '<name>Router'   # -> app.use('/api/<mount>', <name>Router)
+grep -rln "'/api/<mount>" server/src/routes/__tests__
+```
+
+Add every file that appears to the union. Live example — `admin.ts` is one router at `/api/admin` with 12 handlers, and 1a finds only the first of these three:
+
+| File | Admin endpoints covered |
+|---|---|
+| `admin.test.ts` | `/api/admin/books`, `/api/admin/users` |
+| `allowlist.test.ts` | `/api/admin/allowlist` |
+| `spend.test.ts` | `/api/admin/spend` |
+
+Neither `allowlist` nor `spend` matches `admin.test.ts` or `admin-*.test.ts`. Resolving `admin.ts` by name alone reports two-thirds of its surface as unpinned.
+
+**On over-matching.** 1b is deliberately generous, and for auth-shaped routes it over-matches badly — `grep -rln "'/api/auth"` returns 10 of the 12 test files, because almost every suite registers or logs in a user as setup. That is safe in the direction that matters: a larger union can only *prevent* a false unpinned finding, never cause one. If the list is too long to read, narrow the sweep from the mount prefix to the specific handler path (`'/api/auth/me'` rather than `'/api/auth`) — but never narrow it back to 1a alone.
+
+#### Report what you resolved
+
+Name every file in the union in the report's **Test file(s)** line, and say which substep found it. If the union is empty:
+
+> **Finding: wire-shape — no test file.** Route `<path>` has no `__tests__/<name>.test.ts`, no `__tests__/<name>-*.test.ts`, and no test referencing its mount path `/api/<mount>`. The OPS.3 / ADR-003 rule is "every route has a wire-shape-asserted test" — a route without any test fails the check unconditionally.
 
 Don't continue with an empty union. Hand back.
 
@@ -135,7 +160,7 @@ If the route is binary and all three are present, the handler passes.
 - **Routes that 204 with no body.** Nothing to assert. Note in the report.
 - **Routes that stream JSON (SSE, NDJSON).** Out of scope for this skill today — flag as `<not supported by skill>` and ask the human to review manually.
 - **Routes that delegate to a service.** The shape is whatever the route emits, not what the service returns. Trace the data flow up to the `res.json` call.
-- **Split test suites.** Some routes have no `<name>.test.ts` at all and are covered only by suffixed siblings — `auth.ts` is the live example. Step 1's glob union handles this; the failure mode to avoid is reading one sibling, missing a field it doesn't cover, and reporting a false High.
+- **Split test suites — two distinct shapes, both live.** (1) *Suffixed siblings*: `auth.ts` has no `auth.test.ts` at all, only `auth-hashing` and `auth-normalization`. Step 1a catches these. (2) *Topic-named siblings*: `admin.ts` is covered by `admin.test.ts`, `allowlist.test.ts`, and `spend.test.ts` — names with no lexical relationship to the route, which **only** Step 1b catches. Shape (2) is the reason 1b is not optional. The failure mode in both: read one file, miss a field it doesn't happen to cover, report a false High.
 
 ## Output format
 
