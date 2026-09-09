@@ -323,6 +323,9 @@ export type { AgeRange } from '@storybook/shared';
 **Depends on:** 1, 2, 3, 4, 5
 **Parallel-safe with:** none (it describes the finished state)
 
+**Status:** Done (2026-09-09) — the done-when grep over `server client docs` is empty;
+remaining hits live only in `.code-captain/specs/`, which the criterion allows as history.
+
 **Files to add or change:**
 - `server/src/lib/typography.ts` — the §Ruling 3 docblock (lines ~8–13) currently states the
   repo carries two vocabularies. Rewrite: there is now one canonical enum, `ageBucketFor()`

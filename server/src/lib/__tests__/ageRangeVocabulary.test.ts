@@ -9,7 +9,7 @@ import { AGE_RANGES } from '@storybook/shared';
  * The seed catalog IS the canonical list — user ruling, 2026-09-09 — so the two
  * are the same set by definition. Nothing in the type system connects a string
  * literal in `seed.ts` to `AGE_RANGES`, and that gap is exactly how the repo
- * ended up with two divergent vocabularies in the first place. Read the seed as
+ * once ended up with two conflicting age lists in the first place. Read the seed as
  * text so a new book with an off-list age range, or a widened enum with no book
  * behind it, fails here instead of shipping.
  *
