@@ -336,7 +336,9 @@ describe('spendGate middleware over /api/generate', () => {
     vi.unstubAllEnvs();
   });
 
-  const body = { theme: 'space', ageRange: '5-7', characterName: 'Luna' };
+  // '5-9' is canonical (#172); POST /api/generate now validates ageRange, and
+  // the old '5-7' fixture would 400 at validate() before spendGate ever ran.
+  const body = { theme: 'space', ageRange: '5-9', characterName: 'Luna' };
 
   it('returns 429 with Retry-After when the daily cap is hit', async () => {
     vi.stubEnv('QUOTA_DAILY_PER_USER_CENTS', '1');
