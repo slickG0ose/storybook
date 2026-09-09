@@ -44,6 +44,8 @@ is 4 (rewrites existing `Book` rows) — it needs an explicit user go-ahead befo
 **Depends on:** none
 **Parallel-safe with:** none (everything else imports this)
 
+**Status:** Done (2026-09-09)
+
 **Files to add or change:**
 - `shared/src/books.ts` — add `AgeRangeSchema`, `AgeRange`, `AGE_RANGES` next to
   `FontFamilySchema` (same curated-closed-set comment style)
