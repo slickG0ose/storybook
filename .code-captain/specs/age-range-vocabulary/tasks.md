@@ -275,6 +275,10 @@ local no-op is confirmed against the actual `dev.db`.
 **Depends on:** 1
 **Parallel-safe with:** 2, 3, or 4 (different zone, different test DB)
 
+**Status:** Done (2026-09-09) — mechanical half only; the aesthetic manual-verify
+(light/dark legibility of the selected chip, 44px tap targets at mobile) is still
+outstanding and needs a human.
+
 **Files to add or change:**
 - `client/src/lib/ageRanges.ts` — **new**, thin re-export so a page never imports
   `@storybook/shared` directly (call-graph rule). Mirrors `client/src/lib/cost.ts`

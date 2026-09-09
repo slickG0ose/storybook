@@ -1,11 +1,24 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+import { render, screen, fireEvent } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { PER_IMAGE_COST_USD, portraitStepCostNote } from '../../lib/cost'
-import {
+import { AGE_RANGES } from '../../lib/ageRanges'
+import CreateBook, {
   quickModeCostLabel,
   coverModeCostLabel,
   fullModeCostLabel,
   laterClickCostNote,
 } from '../CreateBook'
+
+vi.mock('../../context/AuthContext', () => ({
+  useAuth: () => ({
+    user: { id: 'user-1', email: 'test@example.com', name: 'Test User', token: 'test-token', role: 'user' as const },
+    loading: false,
+    login: vi.fn(),
+    register: vi.fn(),
+    logout: vi.fn(),
+  }),
+}))
 
 describe('CreateBook — cost copy', () => {
   it('quick mode reports zero image AI cost', () => {
@@ -49,5 +62,70 @@ describe('CreateBook — cost copy', () => {
 
     // Regenerate price is the single per-image constant, not a second figure.
     expect(portraitStepCostNote(2)).toContain(`Each regenerate is ~$${PER_IMAGE_COST_USD.toFixed(2)}`)
+  })
+})
+
+// Step 2 (Cast & Age) is where the age picker lives. Getting there is: pick a
+// theme on step 1, hit Next.
+const renderAtStepTwo = (): void => {
+  render(
+    <MemoryRouter>
+      <CreateBook />
+    </MemoryRouter>,
+  )
+  fireEvent.click(screen.getByRole('button', { name: /Adventure/ }))
+  fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+}
+
+// The age buttons are the only ones on this step labelled "Ages <range>".
+const ageButtons = (): HTMLElement[] => screen.getAllByRole('button', { name: /^Ages / })
+
+describe('CreateBook — age range picker', () => {
+  it('renders exactly one button per canonical AGE_RANGES entry', () => {
+    renderAtStepTwo()
+
+    // Iterating the imported constant is the point: re-typing the literals here
+    // would let the client and server vocabularies diverge without failing a
+    // test, which is the drift this exists to catch (#172).
+    expect(ageButtons()).toHaveLength(AGE_RANGES.length)
+    for (const range of AGE_RANGES) {
+      expect(screen.getByRole('button', { name: `Ages ${range}` })).toBeInTheDocument()
+    }
+  })
+
+  it('renders no button for the retired 2-4 / 6-10 vocabulary', () => {
+    renderAtStepTwo()
+
+    for (const retired of ['2-4', '6-10']) {
+      expect(screen.queryByRole('button', { name: `Ages ${retired}` })).not.toBeInTheDocument()
+      expect(AGE_RANGES).not.toContain(retired)
+    }
+  })
+
+  it('selects an age on click and lets step 2 advance', () => {
+    renderAtStepTwo()
+
+    fireEvent.change(screen.getByPlaceholderText('Name (e.g., Luna)'), {
+      target: { value: 'Luna' },
+    })
+
+    // A named primary character alone is not enough — an age range is required
+    // to leave step 2.
+    const next = screen.getByRole('button', { name: 'Next' })
+    expect(next).toBeDisabled()
+
+    const chosen = AGE_RANGES[0]!
+    const chosenButton = screen.getByRole('button', { name: `Ages ${chosen}` })
+    fireEvent.click(chosenButton)
+
+    // Selected state is the purple fill; unselected chips keep the gray surface.
+    expect(chosenButton.className).toContain('bg-purple-500')
+    expect(
+      screen.getByRole('button', { name: `Ages ${AGE_RANGES[1]!}` }).className,
+    ).not.toContain('bg-purple-500')
+
+    expect(next).toBeEnabled()
+    fireEvent.click(next)
+    expect(screen.getByText('Any Special Requests?')).toBeInTheDocument()
   })
 })
