@@ -114,7 +114,12 @@ service.** Each zone re-exports through its own barrel:
 The narrow exceptions, all of which import a **schema** (not a type) because they
 validate at runtime: `client/src/lib/cartCache.ts` (`CartGetResponseSchema`),
 `client/src/lib/useHeroPool.ts` (`HeroPoolResponseSchema`), and the routers that pass
-schemas to `validate()` (`books`, `cart`, `orders`, `admin`, `hero`, `test`).
+schemas to `validate()` (`books`, `cart`, `orders`, `admin`, `hero`, `test`, `generate`).
+
+One further exception, for the same underlying reason — it needs a **value** at
+runtime, not a type: `client/src/lib/ageRanges.ts` re-exports `AGE_RANGES`, so it cannot
+ride the types-only `client/src/types.ts` barrel. `CreateBook.tsx` imports the list from
+there rather than from `@storybook/shared`.
 
 Changing a schema in `shared/src/<domain>.ts` means checking, in order: the router that
 validates it → the client barrel → the wire-shape test

@@ -5,12 +5,26 @@
  * starts at. Two rulings from `.code-captain/specs/per-page-font-size/spec.md`
  * shape everything here:
  *
- * - **Ruling 3** — `age_range` is a free-text column and this repo carries two
- *   divergent vocabularies for it (`CreateBook.tsx` offers `2-4 3-6 4-7 5-9
- *   6-10`; `seed.ts` uses `2-5 3-6 4-7 4-8 5-9`). So we bucket by parsing the
- *   string's lower bound rather than enumerating age bands — no new enum to keep
- *   in sync, and it survives a third vocabulary and a later normalisation of the
- *   column unchanged.
+ * - **Ruling 3** — bucket by parsing the `age_range` string's lower bound rather
+ *   than enumerating age bands. #172 has since made `AGE_RANGES` in
+ *   `@storybook/shared` the one canonical vocabulary (`2-5 3-6 4-7 4-8 5-9`),
+ *   enforced on write by `validate(GenerateRequestSchema)` on `POST
+ *   /api/generate`, so the two divergent lists this file was written against are
+ *   gone. The tolerant parse **stays** anyway, deliberately: `age_range` is still
+ *   a free-text `String` column read tolerantly (`BookSchema.age_range` is
+ *   `z.string()`), so an off-vocabulary value can still arrive from a legacy row,
+ *   a restored `BookVersion`, or a prod row `backfillBookAgeRanges()` reports as
+ *   unmapped rather than rewrites. Parsing survives all three; a match table
+ *   would not. See `.code-captain/specs/age-range-vocabulary/spec.md`.
+ *
+ *   One consequence: the `independent` bucket is **unreachable** through the app.
+ *   It needs a lower bound ≥ 8 and the canonical vocabulary tops out at `5-9`, so
+ *   only a hand-written string reaches `nunito`/`cozy`. Left that way on purpose —
+ *   making it reachable means widening the vocabulary, which is a product call,
+ *   not a validation fix. Tracked as the `Deferred:` item in
+ *   `.code-captain/specs/age-range-vocabulary/spec.md` §ADR-worthy decisions
+ *   ("#113's `independent` typography bucket stays unreachable"); covered by unit
+ *   tests only, in `./__tests__/typography.test.ts`.
  * - **Ruling 4** — these defaults are a *creation-time seed value*, never a
  *   runtime fallback. Nothing may re-derive typography for a book that already
  *   exists: an author's book must not change appearance because a default moved.
@@ -57,10 +71,12 @@ const LOWER_BOUND = /^\s*(\d+)/;
  *
  * Lower bound ≤ 4 → `early`; 5–7 → `developing`; ≥ 8 → `independent`.
  *
- * Parses rather than matches, deliberately: it must survive both vocabularies in
- * the repo today and any third that shows up. Unparseable input (`''`,
- * `'all ages'`, `'-3'`) buckets to `developing` — the safe middle, never a guess
- * at an extreme. See spec §Ruling 3.
+ * Parses rather than matches, deliberately: writes are enum-gated since #172 but
+ * reads are not, so it must still survive a stored value from outside
+ * `AGE_RANGES` — a legacy row, a restored `BookVersion`, or a prod row the
+ * backfill reported rather than rewrote. Unparseable input (`''`, `'all ages'`,
+ * `'-3'`) buckets to `developing` — the safe middle, never a guess at an extreme.
+ * See spec §Ruling 3 and the file docblock above.
  */
 export function ageBucketFor(ageRange: string): AgeBucket {
   const match = LOWER_BOUND.exec(ageRange ?? '');

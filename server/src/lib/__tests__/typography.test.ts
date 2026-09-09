@@ -10,12 +10,22 @@ import {
 } from '../typography';
 
 /**
- * Both vocabularies that exist in the repo today, table-driven so a third one can
- * be added as rows rather than as new cases. `CreateBook.tsx:26` offers the first
- * set; `server/prisma/seed.ts` uses the second. They disagree — that divergence is
- * the reason `ageBucketFor` parses instead of matching (spec §Ruling 3).
+ * **Retired legacy values, not a live vocabulary.** This was `CreateBook.tsx:26`'s
+ * age list before #172; `2-4` and `6-10` are no longer offerable or writable —
+ * `AGE_RANGES` in `@storybook/shared` is the one canonical vocabulary and
+ * `validate(GenerateRequestSchema)` rejects anything outside it on `POST
+ * /api/generate`.
+ *
+ * These rows stay as **tolerance** cases: `ageBucketFor` reads stored strings, and
+ * the read path is deliberately untightened, so a legacy row, a restored
+ * `BookVersion`, or a prod row `backfillBookAgeRanges()` reported rather than
+ * rewrote can still carry one of these. They also pin the property that makes the
+ * backfill safe for published books — `2-4` buckets with its replacement `2-5`
+ * (`early`), and `6-10` with its replacement `5-9` (`developing`), so no book's
+ * typography moved when rows converged. Do not read this table as a list of values
+ * the app can produce. See `.code-captain/specs/age-range-vocabulary/spec.md`.
  */
-const CREATE_BOOK_VOCABULARY: Array<[string, AgeBucket]> = [
+const RETIRED_CREATE_BOOK_VOCABULARY: Array<[string, AgeBucket]> = [
   ['2-4', 'early'],
   ['3-6', 'early'],
   ['4-7', 'early'],
@@ -23,7 +33,12 @@ const CREATE_BOOK_VOCABULARY: Array<[string, AgeBucket]> = [
   ['6-10', 'developing'],
 ];
 
-const SEED_VOCABULARY: Array<[string, AgeBucket]> = [
+/**
+ * The canonical vocabulary (`AGE_RANGES`), which is the seed catalog's list by
+ * user ruling. Spelled out literally here so a widened enum has to come past a
+ * human; `./ageRangeVocabulary.test.ts` is the test that pins seed vs enum.
+ */
+const CANONICAL_VOCABULARY: Array<[string, AgeBucket]> = [
   ['2-5', 'early'],
   ['3-6', 'early'],
   ['4-7', 'early'],
@@ -31,7 +46,7 @@ const SEED_VOCABULARY: Array<[string, AgeBucket]> = [
   ['5-9', 'developing'],
 ];
 
-/** Values from neither vocabulary — the third vocabulary this must survive. */
+/** Off-vocabulary and never in one — the arbitrary input the parse must survive. */
 const UNSEEN_INPUTS: Array<[string, AgeBucket]> = [
   ['7', 'developing'],
   ['8-12', 'independent'],
@@ -44,19 +59,19 @@ const UNSEEN_INPUTS: Array<[string, AgeBucket]> = [
 const JUNK_INPUTS = ['', 'all ages', 'seven', '-3', 'ages 4-7', '   ', 'toddler'];
 
 describe('ageBucketFor', () => {
-  it.each(CREATE_BOOK_VOCABULARY)(
-    'buckets CreateBook.tsx value %s as %s',
+  it.each(RETIRED_CREATE_BOOK_VOCABULARY)(
+    'buckets retired-legacy value %s as %s',
     (ageRange, expected) => {
       expect(ageBucketFor(ageRange)).toBe(expected);
     },
   );
 
-  it.each(SEED_VOCABULARY)('buckets seed.ts value %s as %s', (ageRange, expected) => {
+  it.each(CANONICAL_VOCABULARY)('buckets canonical value %s as %s', (ageRange, expected) => {
     expect(ageBucketFor(ageRange)).toBe(expected);
   });
 
   it.each(UNSEEN_INPUTS)(
-    'buckets unseen-vocabulary value %s as %s by parsing its lower bound',
+    'buckets off-vocabulary value %s as %s by parsing its lower bound',
     (ageRange, expected) => {
       expect(ageBucketFor(ageRange)).toBe(expected);
     },
