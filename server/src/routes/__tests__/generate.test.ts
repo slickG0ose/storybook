@@ -35,9 +35,12 @@ vi.mock('../../services/illustrations', async () => {
   };
 });
 
+// '5-9' is canonical (#172). It was '5-7' before POST /api/generate had a
+// validate(); '5-7' is off-vocabulary now and 400s. Both bucket 'developing',
+// so no typography assertion in this file moved with the sweep.
 const VALID_BODY = {
   theme: 'space',
-  ageRange: '5-7',
+  ageRange: '5-9',
   characterName: 'Luna',
 };
 
@@ -133,7 +136,12 @@ describe('POST /api/generate — auth gate', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ theme: 'space' }); // missing ageRange + character
 
+    // The message is Zod's now (`Invalid request body: ageRange: ...`) rather
+    // than the handler's sentence — validate() rejects the missing ageRange
+    // before the handler's cross-field check runs. Status and envelope shape
+    // are what the client depends on, so those are what this pins.
     expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ error: expect.any(String) });
     expect(mockCreate).not.toHaveBeenCalled();
   });
 });
@@ -198,7 +206,7 @@ describe('POST /api/generate — image pin on a new book', () => {
       image_provider: pin.provider,
       image_model: pin.model,
       // Ships on the wire because the handler spreads the whole Book row.
-      // VALID_BODY's ageRange '5-7' buckets to 'developing'.
+      // VALID_BODY's ageRange '5-9' buckets to 'developing'.
       font_family: 'fredoka',
       text_size: 'standard',
     });
@@ -235,9 +243,11 @@ describe('POST /api/generate — image pin on a new book', () => {
 // "never re-derived" half is enforced by the columns being non-null with DB
 // defaults, so nothing downstream has a fallback branch to get wrong.
 //
-// Note the route does NOT validate ageRange — it is free text with two
-// divergent vocabularies in this repo (§Ruling 3) — so an unparseable value
-// must still create a book, at the safe middle.
+// Since #172 the route DOES validate ageRange against the canonical enum, so
+// every row below is a canonical value. ageBucketFor()'s tolerance for
+// off-vocabulary strings is still real — legacy and restored rows carry them —
+// but it is no longer reachable through this route, so it is unit-tested in
+// server/src/lib/__tests__/typography.test.ts instead of here.
 describe('POST /api/generate — creation-time typography defaults', () => {
   let app: Express;
 
@@ -278,14 +288,17 @@ describe('POST /api/generate — creation-time typography defaults', () => {
   }
 
   it.each([
-    // ageRange, font_family, text_size, why
+    // ageRange, font_family, text_size, why — canonical values only, because
+    // anything else 400s at validate() now.
+    ['2-5', 'fredoka', 'large', 'lower bound 2 is the early band'],
     ['3-6', 'fredoka', 'large', 'lower bound 3 is the early band'],
-    ['6-10', 'fredoka', 'standard', 'lower bound 6 is the 5-7 developing band'],
-    // No age_range the app can produce today reaches 'independent' — the
-    // highest lower bound in either vocabulary is 6-10 — so this path is
-    // exercised by an explicit fixture rather than a realistic value. That is
-    // downstream of the vocabulary divergence (§Ruling 3), not a defect here.
-    ['8-12', 'nunito', 'cozy', 'lower bound 8 is the independent band'],
+    ['4-8', 'fredoka', 'large', 'lower bound 4 is still the early band'],
+    ['5-9', 'fredoka', 'standard', 'lower bound 5 is the developing band'],
+    // No row for 'independent' (nunito/cozy): the canonical vocabulary tops out
+    // at 5-9 and that bucket needs a lower bound >= 8, so no book this route
+    // can produce reaches it. Deliberately deferred, not missing — see
+    // .code-captain/specs/age-range-vocabulary/spec.md §ADR-worthy decisions,
+    // the `Deferred:` item. It stays unit-tested in lib/__tests__/typography.test.ts.
   ])('persists %s as %s/%s (%s)', async (ageRange, fontFamily, textSize) => {
     const token = await createUserAndGetToken(app);
     mockStory(3);
@@ -304,24 +317,147 @@ describe('POST /api/generate — creation-time typography defaults', () => {
     });
   });
 
-  it('still creates a book at standard when ageRange is unrecognised', async () => {
-    // Creation must never fail on a typography decision. 'all ages' parses to
-    // nothing, so it takes the safe middle rather than a guess at an extreme.
+  it('400s instead of creating a book when ageRange is unrecognised', async () => {
+    // This test used to assert 'all ages' created a book at the safe middle.
+    // Since #172 the value never reaches the handler: validate() rejects it, so
+    // no typography decision is made at all. ageBucketFor('all ages') still
+    // returns 'developing' — that tolerance is asserted in
+    // server/src/lib/__tests__/typography.test.ts, where it now lives alone.
     const token = await createUserAndGetToken(app);
-    mockStory(3);
 
     const res = await request(app)
       .post('/api/generate')
       .set('Authorization', `Bearer ${token}`)
       .send({ ...VALID_BODY, ageRange: 'all ages', pageCount: 3 });
 
-    expect(res.status).toBe(200);
-    const book = await prisma.book.findUnique({ where: { id: res.body.id } });
-    expect(book).toMatchObject({
-      age_range: 'all ages',
-      font_family: 'fredoka',
-      text_size: 'standard',
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ error: expect.any(String) });
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+});
+
+// POST /api/generate gained its first validate() in #172 — the canonical
+// AgeRangeSchema on `ageRange`, mounted requireAuth -> validate -> spendGate so
+// a malformed body never touches quota accounting. These pin both halves: what
+// the schema now rejects, and — more importantly — what it must NOT strip.
+describe('POST /api/generate — request validation (#172)', () => {
+  let app: Express;
+
+  beforeEach(async () => {
+    await resetDatabase();
+    app = createTestApp();
+    mockCreate.mockReset();
+    mockGenerateCover.mockReset();
+    mockGenerateIllustration.mockReset();
+    mockIsImageGenConfigured.mockReset();
+    mockIsImageGenConfigured.mockReturnValue(false);
+    vi.stubEnv('ANTHROPIC_API_KEY', 'test-key-not-real');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  function mockStory(pageCount: number) {
+    mockCreate.mockResolvedValueOnce({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            title: 'Luna and the Full-Fat Body',
+            description: 'A story about every optional field.',
+            coverEmoji: '\u2b50',
+            coverColor: '#7c3aed',
+            coverDescription: 'Luna surrounded by populated fields.',
+            pages: Array.from({ length: pageCount }, (_, i) => ({
+              text: `Page ${i + 1} text`,
+              illustrationDescription: `Illustration ${i + 1}`,
+            })),
+          }),
+        },
+      ],
     });
+  }
+
+  it.each([
+    ['6-10', 'a retired CreateBook.tsx value'],
+    ['2-4', 'the other retired CreateBook.tsx value'],
+    ['all ages', 'free text that never was in either list'],
+  ])('rejects ageRange %s (%s) with 400 and persists nothing', async (ageRange) => {
+    const token = await createUserAndGetToken(app);
+    const booksBefore = await prisma.book.count();
+
+    const res = await request(app)
+      .post('/api/generate')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ ...VALID_BODY, ageRange });
+
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ error: expect.any(String) });
+    // validate() sits before spendGate and before the Anthropic call, so a bad
+    // body costs neither a row nor a cent.
+    expect(await prisma.book.count()).toBe(booksBefore);
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(await prisma.usageLog.count()).toBe(0);
+  });
+
+  it('does not strip any field the handler reads from a full-fat body', async () => {
+    // The strip guard. `z.object` drops unknown keys and validate() REPLACES
+    // req.body with the parsed value, so a field missing from
+    // GenerateRequestSchema disappears silently — style references would just
+    // stop working, with every existing test still green. This posts every
+    // optional field at once and asserts each one survived the round trip.
+    const token = await createUserAndGetToken(app);
+    mockStory(4);
+    mockIsImageGenConfigured.mockReturnValue(true);
+    mockGenerateCover.mockResolvedValue('/illustrations/full-fat/cover.png');
+
+    const res = await request(app)
+      .post('/api/generate')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        theme: 'deep sea',
+        ageRange: '4-8',
+        additionalDetails: 'Set aboard a very small submarine.',
+        characterName: 'Ignored When characters Is Present',
+        characters: [
+          { role: 'primary', name: 'Luna', descriptor: 'a curious fox', relationship: 'daughter' },
+          { role: 'supporting', name: 'Pip', descriptor: 'a dented robot' },
+          // Junk role: must survive PARSING (loose object) so
+          // normalizeCharacters() can drop it, rather than 400ing the request.
+          { role: 'sidekick', name: 'Dropped' },
+        ],
+        styleDescriptor: 'soft watercolour',
+        styleReferenceUrl: '/uploads/style-ref.png',
+        previewMode: 'cover',
+        pageCount: 4,
+      });
+
+    expect(res.status).toBe(200);
+
+    const book = await prisma.book.findUnique({
+      where: { id: res.body.id },
+      include: { pages: true },
+    });
+    expect(book).toMatchObject({
+      age_range: '4-8',
+      theme: 'deep sea',
+      style_descriptor: 'soft watercolour',
+      style_reference_url: '/uploads/style-ref.png',
+      // previewMode 'cover' survived: the cover path ran at all.
+      cover_url: '/illustrations/full-fat/cover.png',
+    });
+    // pageCount survived (4, not the DEFAULT_PAGES 5).
+    expect(book?.pages).toHaveLength(4);
+    // characters survived with descriptor + relationship intact, and the junk
+    // role was filtered by the handler rather than rejected by the schema.
+    expect(JSON.parse(book!.characters_json as string)).toEqual([
+      { role: 'primary', name: 'Luna', descriptor: 'a curious fox', relationship: 'daughter' },
+      { role: 'supporting', name: 'Pip', descriptor: 'a dented robot' },
+    ]);
+    // additionalDetails survived — it only ever reaches the prompt.
+    const prompt = mockCreate.mock.calls[0][0].messages[0].content as string;
+    expect(prompt).toContain('Set aboard a very small submarine.');
   });
 });
 

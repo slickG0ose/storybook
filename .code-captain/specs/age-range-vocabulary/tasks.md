@@ -114,6 +114,8 @@ and nothing imports `AGE_RANGES` yet except the new test.
 **Depends on:** 1
 **Parallel-safe with:** 5 (never with 3 or 4 — server suites share `test.db`)
 
+**Status:** Done (2026-09-09)
+
 **Files to add or change:**
 - `server/src/routes/generate.ts` — import `validate` + `GenerateRequestSchema`; mount as
   `router.post('/', requireAuth, validate({...}), spendGate('story'), handler)`; narrow
