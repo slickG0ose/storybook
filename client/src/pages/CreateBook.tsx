@@ -4,6 +4,7 @@ import { Sparkles, Wand2, Loader2, Plus, X } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/apiBase'
 import { PER_IMAGE_COST_USD, fmtUsd, portraitStepCostNote } from '../lib/cost'
+import { AGE_RANGES } from '../lib/ageRanges'
 import type { Character, CharacterRole } from '../types'
 
 interface ThemeOption {
@@ -22,8 +23,6 @@ const THEMES: ThemeOption[] = [
   { value: 'animals', label: 'Animals', emoji: '\u{1F43E}' },
   { value: 'space', label: 'Space', emoji: '\u{1F680}' },
 ]
-
-const AGE_RANGES: string[] = ['2-4', '3-6', '4-7', '5-9', '6-10']
 
 interface StylePreset {
   value: string;
