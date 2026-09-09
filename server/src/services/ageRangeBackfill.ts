@@ -90,6 +90,18 @@ export async function backfillBookAgeRanges(): Promise<AgeRangeBackfillResult> {
     result.unmapped.push({ id: row.id, age_range: row.age_range });
   }
 
+  if (result.rewritten.length === 0 && result.unmapped.length === 0) {
+    // Proof of life, deliberately on every boot even though there is nothing to
+    // report. `backfillUserEmails()` and `reconcileAdmins()` stay silent on a
+    // clean pass, but silence is indistinguishable from "the code never
+    // deployed" — the exact ambiguity that made an unset
+    // ALLOWLIST_BOOTSTRAP_EMAILS look like a deadlocked AllowedEmail table and
+    // cost six rounds of debugging. One line is cheaper than that.
+    console.log(
+      `[age-range-backfill] ${rows.length} book(s) checked, all canonical — nothing to do`,
+    );
+  }
+
   if (result.rewritten.length > 0) {
     console.log(
       `[age-range-backfill] rewrote ${result.rewritten.length}: ` +
