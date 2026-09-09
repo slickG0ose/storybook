@@ -126,6 +126,18 @@ describe('backfillBookAgeRanges', () => {
     expect(after).toEqual(before);
   });
 
+  it('logs proof of life on a clean pass, so silence never means "never deployed"', async () => {
+    const log = vi.mocked(console.log);
+    log.mockClear();
+
+    const total = await prisma.book.count();
+    expect(await backfillBookAgeRanges()).toEqual({ rewritten: [], unmapped: [] });
+
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(log.mock.calls[0][0]).toContain('[age-range-backfill]');
+    expect(log.mock.calls[0][0]).toContain(`${total} book(s) checked`);
+  });
+
   it('is idempotent after a rewrite — a second run reports nothing', async () => {
     await seedBook({ age_range: '2-4' });
 
