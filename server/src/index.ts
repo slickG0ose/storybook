@@ -35,6 +35,7 @@ import { snapshotDb } from './db/snapshot';
 import { bootstrapAllowlist } from './services/allowlist';
 import { reconcileAdmins } from './services/adminBootstrap';
 import { backfillUserEmails } from './services/emailBackfill';
+import { backfillBookAgeRanges } from './services/ageRangeBackfill';
 import Anthropic from '@anthropic-ai/sdk';
 import { checkForNewerModel } from './lib/models';
 import { buildCorsPolicy } from './lib/cors';
@@ -161,4 +162,20 @@ app.listen(PORT, () => {
         console.error('[admin-bootstrap] reconcile failed', err),
       );
     });
+
+  // Converge Book.age_range onto the canonical vocabulary. Rows written before
+  // POST /api/generate was enum-gated can still hold the retired `2-4` / `6-10`
+  // values, which put a book in a facet the Home filter no longer offers.
+  //
+  // Fired alongside the User chain above rather than sequenced with it: this
+  // touches only Book rows, so the two cannot contend, and neither reads the
+  // other's result. Idempotent — once converged it is one query and zero
+  // writes on every later boot.
+  //
+  // backfillBookAgeRanges() does its own reporting, same as the two services
+  // above, so this block only handles failure. Logged, never fatal: a server
+  // that will not boot is worse than one with a book in a stale facet.
+  void backfillBookAgeRanges().catch((err: unknown) =>
+    console.error('[age-range-backfill] failed', err),
+  );
 });

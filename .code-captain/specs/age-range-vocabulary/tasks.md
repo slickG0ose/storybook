@@ -209,6 +209,12 @@ res.json(AGE_RANGES.filter(r => present.has(r)));
 **Depends on:** 1
 **Parallel-safe with:** 5 (never with 2 or 3)
 
+**Status:** Done (2026-09-09) — user go-ahead given, `dev.db` backed up, and the local
+run confirmed a true no-op (md5 identical before and after, verified twice
+independently). Deviation from the manual-verify wording: the service logs nothing on
+a clean pass, matching `emailBackfill.ts` / `reconcileAdmins()`, which log only when
+there is something to report. The 0/0 result was proven by direct invocation instead.
+
 > **Stop and surface before executing.** This task writes to existing `Book` rows — a CLAUDE.md
 > guardrail. Get an explicit user go-ahead, and back up first:
 > `cp server/prisma/dev.db server/prisma/dev.db.bak.db`.
