@@ -169,6 +169,8 @@ two, but the "at least one primary character" half is a cross-field rule and sta
 **Depends on:** 1
 **Parallel-safe with:** 5 (never with 2 or 4)
 
+**Status:** Done (2026-09-09)
+
 **Files to add or change:**
 - `server/src/routes/books.ts` — the `/age-ranges` handler (~line 141)
 - `server/src/routes/__tests__/books.test.ts` — new describe block beside the existing
