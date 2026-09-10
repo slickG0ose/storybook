@@ -1,7 +1,7 @@
 # Age-range vocabulary — one canonical enum — task plan
 
 > Spec: [spec.md](spec.md)
-> Status: Draft
+> Status: Accepted — all 7 tasks Done (2026-09-10)
 > Last updated: 2026-09-09
 
 ## Overview
