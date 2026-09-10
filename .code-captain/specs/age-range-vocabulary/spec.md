@@ -231,18 +231,20 @@ stay true.
 
 ## ADR-worthy decisions
 
-- [ ] **The canonical age-range vocabulary is the seed list, and the enum gates writes only** —
+- [x] **The canonical age-range vocabulary is the seed list, and the enum gates writes only** —
   `2-5 3-6 4-7 4-8 5-9`; `BookSchema.age_range` stays `z.string()` on the read path so one
   legacy row cannot 500 the catalog. Hard to reverse: it fixes a user-facing vocabulary and a
-  validation posture. Write via `/create-adr` after spec approval.
-- [ ] **Existing rows converge via a boot-time backfill, not a Prisma migration** — because
+  validation posture. **Recorded as ADR-023** (`.code-captain/product/decisions.md`).
+- [x] **Existing rows converge via a boot-time backfill, not a Prisma migration** — because
   `render.yaml` deploys with `prisma db push`, no `migrations/` folder ever runs in production.
   This constraint is non-obvious, affects every future data fix in this repo, and deserves to
-  be written down once. Write via `/create-adr` after spec approval.
-- [ ] **`GET /api/books/age-ranges` serves `DISTINCT ∩ canonical`, in enum order** — not raw
+  be written down once. **Recorded as ADR-024** (`.code-captain/product/decisions.md`), stated
+  generally so the next data fix inherits it.
+- [x] **`GET /api/books/age-ranges` serves `DISTINCT ∩ canonical`, in enum order** — not raw
   DISTINCT (which is how the drift became user-visible) and not the bare enum (which would
-  advertise empty facets). Can fold into the first ADR if the reviewer prefers one entry.
-- [ ] **#113's `independent` typography bucket stays unreachable** —
+  advertise empty facets). **Folded into ADR-023** as its third part, per the option this line
+  offered — it is the read-side half of the same one-vocabulary decision.
+- [x] **#113's `independent` typography bucket stays unreachable** —
   `Deferred:` the canonical vocabulary tops out at `5-9`, and `independent` needs a lower bound
   ≥ 8, so no book the app can produce reaches `nunito`/`cozy`. It stays unit-tested-only in
   `server/src/lib/__tests__/typography.test.ts`. Deliberately not fixed here: making it

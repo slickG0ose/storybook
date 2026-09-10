@@ -353,6 +353,12 @@ empty except the spec's history section).
 
 **Zone:** docs (harness) · **Depends on:** none (run last)
 
+**Status:** Done (2026-09-10) — ADR-023 (canonical vocabulary, write-only enforcement, and
+the facet route folded in as its third part) and ADR-024 (boot-time backfill, because prod
+deploys with `db push`) written to `.code-captain/product/decisions.md`. The `Deferred:` item
+for #113's `independent` bucket was already written and stays as-is. Both `tasks.md` open
+questions closed with their resolutions in place.
+
 For each ADR-worthy item in `spec.md`, ensure exactly one tracking action exists — a matching
 ADR, a linked issue, or an explicit `Deferred:` line with reasoning. Expected shape here:
 two `/create-adr` entries (canonical vocabulary + write-only enforcement; boot-time backfill
@@ -375,10 +381,18 @@ already-written `Deferred:` (#113's `independent` bucket — do **not** convert 
 
 ## Open questions
 
-- **Prod row counts are unknown.** Nobody in this worktree can query the deployed Postgres.
-  The backfill is designed to be safe when the answer is "none" and self-reporting when it is
-  not. If the user can read prod before Task 4 lands, the boot log after the next deploy is
-  the cheapest confirmation.
-- **`z.looseObject` spelling** — confirm against the repo's Zod 4 version when writing Task 1;
-  the requirement (junk `characters` entries survive parsing so the handler can filter them)
-  matters, the exact API name does not.
+- **Prod row counts are unknown.** ~~Nobody in this worktree can query the deployed Postgres.~~
+  **Resolved by design, confirmation pending deploy (2026-09-10).** Still unqueryable from
+  here — no prod credentials in the worktree. It does not block: the backfill is a no-op when
+  nothing matches, rewrites only the two mapped values, and reports anything else rather than
+  guessing. Local `dev.db` was verified a true no-op (md5 identical before and after). The
+  proof-of-life log line added after Task 4 makes the next production boot self-reporting, so
+  the answer arrives without anyone running a query. **Tracking:** the deploy itself, and
+  [#78](https://github.com/slickG0ose/storybook/issues/78), which may replace that database
+  before the question can be asked.
+- **`z.looseObject` spelling** — ~~confirm against the repo's Zod 4 version when writing Task 1.~~
+  **Resolved in Task 1 (2026-09-09).** Zod resolves to 4.4.3 in this worktree and
+  `z.looseObject` is correct. Verified behaviourally rather than by existence: a `characters`
+  entry `{ role: 'junk', name: 'Nope', extra: 1 }` survives parsing with `extra` intact, so
+  `normalizeCharacters()` still does the dropping instead of the schema 400ing the request.
+  No in-repo precedent existed — every other shared schema is `z.object` or `.strict()`.
