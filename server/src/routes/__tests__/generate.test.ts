@@ -83,6 +83,20 @@ describe('POST /api/generate — auth gate', () => {
     expect(res.body.error).toBe('Not authenticated');
   });
 
+  it('rejects an unauthenticated request with 401 even when the body is invalid', async () => {
+    // Pins middleware ORDER, which nothing else does. The 401 test above sends
+    // VALID_BODY, so it passes under either ordering — flip the mount to
+    // `validate → requireAuth` and it stays green while an anonymous caller
+    // starts getting 400s that leak which fields the route wants.
+    // An off-vocabulary ageRange would 400 if validate ran first; it must 401.
+    const res = await request(app)
+      .post('/api/generate')
+      .send({ ...VALID_BODY, ageRange: '6-10' });
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('Not authenticated');
+  });
+
   it('does NOT call the Anthropic API when unauthenticated', async () => {
     // The regression this pins: the handler used to call Claude before
     // touching the DB, so an anonymous request cost real money even when the
@@ -406,7 +420,10 @@ describe('POST /api/generate — request validation (#172)', () => {
     // req.body with the parsed value, so a field missing from
     // GenerateRequestSchema disappears silently — style references would just
     // stop working, with every existing test still green. This posts every
-    // optional field at once and asserts each one survived the round trip.
+    // optional field at once and asserts eight of the nine survived the round
+    // trip. `characterName` is the ninth and cannot be checked here: it is
+    // deliberately shadowed when `characters` is present, so the test below
+    // covers it on the legacy path where it is the only character source.
     const token = await createUserAndGetToken(app);
     mockStory(4);
     mockIsImageGenConfigured.mockReturnValue(true);
@@ -458,6 +475,28 @@ describe('POST /api/generate — request validation (#172)', () => {
     // additionalDetails survived — it only ever reaches the prompt.
     const prompt = mockCreate.mock.calls[0][0].messages[0].content as string;
     expect(prompt).toContain('Set aboard a very small submarine.');
+  });
+
+  it('does not strip characterName on the legacy path, where nothing shadows it', async () => {
+    // The ninth field. The full-fat guard above cannot prove characterName
+    // survives parsing, because `characters` deliberately shadows it — so if
+    // GenerateRequestSchema omitted characterName entirely, that test would
+    // still pass. Here it is the ONLY character source, so a stripped field
+    // means no primary character and a 400 from the handler's cross-field check.
+    const token = await createUserAndGetToken(app);
+    mockStory(4);
+
+    const res = await request(app)
+      .post('/api/generate')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ theme: 'a lighthouse', ageRange: '3-6', characterName: 'Marguerite' });
+
+    expect(res.status).toBe(200);
+
+    const book = await prisma.book.findUnique({ where: { id: res.body.id } });
+    expect(JSON.parse(book!.characters_json as string)).toEqual([
+      expect.objectContaining({ role: 'primary', name: 'Marguerite' }),
+    ]);
   });
 });
 
