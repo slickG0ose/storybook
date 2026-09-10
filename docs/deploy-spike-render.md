@@ -39,7 +39,7 @@ Before clicking deploy:
 2. **Repo connection.** During Render onboarding, grant Render access to the `slickG0ose/storybook` repo (or just-this-repo scope).
 3. **GitHub Pages enabled.** Repo Settings → Pages → Source: **GitHub Actions** (not "Deploy from a branch").
 4. **One repo Action secret** set under Settings → Secrets and variables → Actions:
-   - `VITE_API_BASE_URL` — the Render web service URL (you'll fill this in after step 1 of deploy below; it's predictable like `https://storybook-server.onrender.com`).
+   - `VITE_API_BASE_URL` — the Render web service URL (you'll fill this in after step 1 of deploy below). **Do not predict it.** Render appends a random suffix when the bare name is already taken globally, and it was: this service is `https://storybook-server-t84f.onrender.com`, while `https://storybook-server.onrender.com` is an unrelated Express app. Copy the real URL out of the dashboard.
 5. **Two Render environment variables** set in the Render dashboard after the Blueprint creates the service:
    - `ANTHROPIC_API_KEY`
    - `OPENAI_API_KEY`
@@ -54,7 +54,7 @@ Before clicking deploy:
 4. Render detects `render.yaml` at the repo root and previews two services: `storybook-server` (web) + `storybook-postgres` (database).
 5. On the preview page, Render asks for the `sync: false` env vars — paste your Anthropic and OpenAI keys.
 6. Click **Apply**. Render provisions both services. First deploy takes 3–6 min (build + migrate + start).
-7. Once green, the web service URL is shown — typically `https://storybook-server.onrender.com`. Copy it.
+7. Once green, the web service URL is shown — for this deployment it is `https://storybook-server-t84f.onrender.com` (Render suffixed the name because `storybook-server` was taken). Copy the URL Render actually shows you rather than assuming the bare form.
 8. Open the URL — you should see whatever the root path renders (currently no static index on root; `GET /api/health` should return `{"status":"ok"}`).
 
 **If the Blueprint preview shows a build command that doesn't match `render.yaml`** (e.g., extra lines, missing flags, drifted from the file on disk), use **Sync Blueprint** in the Render dashboard to re-apply `render.yaml` over any manual dashboard edits. Manual overrides in the dashboard win over render.yaml until you sync.
