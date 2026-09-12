@@ -69,18 +69,29 @@ rollback that survives the 14th.
 
 ## Step 3 — Create the Neon project (5 minutes)
 
-[console.neon.tech](https://console.neon.tech) → new project. Region: **US West (Oregon)**
-if offered, to sit next to the Render service in `oregon`.
+[console.neon.tech](https://console.neon.tech) → New project. **Set the region in that
+dialog:** `aws-us-west-2` (US West, Oregon), to sit next to the Render service in `oregon`.
+Neon may otherwise default you into `us-east-2` (Ohio).
 
-Copy **two** connection strings from the dashboard — Neon shows both and they differ by one
-`-pooler` in the hostname:
+**A project's region cannot be changed after creation.** Neon's documented remedy is a new
+project plus a second migration, which makes this the one field in this runbook that is
+expensive to get wrong. Ohio→Oregon costs roughly 60 ms per query round trip, and a page
+making three sequential queries pays it three times. If you notice after the fact, recreate
+the project while it is still empty — three minutes.
 
-| String | Hostname contains | Used for |
+**Neon shows one connection string, not two.** Click **Connect**, pick Branch / Compute /
+Database / Role, then toggle **Connection pooling** off to reveal the direct string. The two
+shapes differ only by `-pooler` in the hostname, so deleting that substring gets you there
+just as reliably:
+
+| Shape | Hostname | Used for |
 |---|---|---|
+| Pooled (what the console shows first) | `ep-xxx-pooler.us-west-2.aws.neon.tech` | not used yet — see Step 6's note |
 | Direct / unpooled | `ep-xxx.us-west-2.aws.neon.tech` | the restore, and `DATABASE_URL` (see Step 6) |
-| Pooled | `ep-xxx-pooler.us-west-2.aws.neon.tech` | not used yet — see Step 6's note |
 
-Both carry `?sslmode=require`. Keep it; Neon rejects unencrypted connections.
+Keep `?sslmode=require`; Neon rejects unencrypted connections. **Drop
+`channel_binding=require`** if the console appended it — `psql` and `pg_dump` accept it, but
+it is not a parameter Prisma needs in `DATABASE_URL`.
 
 ## Step 4 — Restore (5 minutes)
 
@@ -163,6 +174,7 @@ from Step 2 plus a fresh Neon project is the only path back.
 | `pg_dump: server version mismatch` | Client older than the source server | Install the matching major version (Step 0) |
 | Wall of `must be owner of table` on restore | `-O` omitted | Re-run `pg_restore` with `-O`; the errors are non-fatal but noisy |
 | `prisma db push` hangs or times out in the Render build | Pooled connection string in `DATABASE_URL` | Swap to the direct string |
+| Only one connection string in the console | The Connect dialog shows the pooled shape first | Toggle `Connection pooling` off, or delete `-pooler` from the hostname |
 | App boots, every query fails | `?sslmode=require` dropped from the string | Re-add it |
 | `DATABASE_URL` reverts after a deploy | Blueprint sync re-asserted `fromDatabase` | Merge the `render.yaml` change (Step 6.2) |
 
