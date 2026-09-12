@@ -86,8 +86,12 @@ just as reliably:
 
 | Shape | Hostname | Used for |
 |---|---|---|
-| Pooled (what the console shows first) | `ep-xxx-pooler.us-west-2.aws.neon.tech` | not used yet — see Step 6's note |
-| Direct / unpooled | `ep-xxx.us-west-2.aws.neon.tech` | the restore, and `DATABASE_URL` (see Step 6) |
+| Pooled (what the console shows first) | `ep-xxx-pooler.c-3.us-west-2.aws.neon.tech` | not used yet — see Step 6's note |
+| Direct / unpooled | `ep-xxx.c-3.us-west-2.aws.neon.tech` | the restore, and `DATABASE_URL` (see Step 6) |
+
+Newer Neon hostnames carry a `.c-N.` segment before the region. **Only `-pooler` comes
+off** — deleting `.c-3.` as well gives you a host that still resolves (Neon's DNS is a
+wildcard) and still accepts TCP on 5432, then fails at authentication.
 
 Keep `?sslmode=require`; Neon rejects unencrypted connections. **Drop
 `channel_binding=require`** if the console appended it — `psql` and `pg_dump` accept it, but
@@ -107,19 +111,35 @@ Never run `pg_dump` or `pg_restore` against the **pooled** string.
 
 ## Step 5 — Verify the restore before you cut over (5 minutes)
 
-Compare row counts on both databases. Run this against Render first, then Neon, and expect
-identical numbers:
+Put both strings in shell variables first. Two reasons, and the first one bites immediately:
+a bare `psql "<connection-string>"` runs the placeholder as a *database name*, so libpq falls
+back to the local Unix socket and reports `connection to server on socket
+"/tmp/.s.PGSQL.5432" failed` — which reads like a broken server and is really an unsubstituted
+placeholder. Second, **single quotes are required**: these URLs contain `&`, which the shell
+would otherwise read as "run this in the background."
 
 ```bash
-psql "<connection-string>" -c '\dt'
-psql "<connection-string>" -c 'SELECT
-  (SELECT count(*) FROM "User")   AS users,
-  (SELECT count(*) FROM "Book")   AS books,
-  (SELECT count(*) FROM "Page")   AS pages,
-  (SELECT count(*) FROM "Order")  AS orders;'
+export RENDER_URL='<render-external-connection-string>'
+export NEON_URL='<neon-direct-connection-string>'
 ```
 
-A mismatch means stop and re-dump. Do not proceed to Step 6 on a partial restore.
+Then run the same query against each and expect identical numbers:
+
+```bash
+for url in "$RENDER_URL" "$NEON_URL"; do
+  echo "== ${url#*@}"
+  psql "$url" -tAc 'SELECT
+    (SELECT count(*) FROM "User")  AS users,
+    (SELECT count(*) FROM "Book")  AS books,
+    (SELECT count(*) FROM "Page")  AS pages,
+    (SELECT count(*) FROM "Order") AS orders;'
+done
+```
+
+`psql "$NEON_URL" -c '\dt'` should list the 10 application tables. A count mismatch means stop and re-dump;
+do not proceed on a partial restore.
+
+Clear the variables when you are done: `unset RENDER_URL NEON_URL`.
 
 ## Step 6 — Point Render at Neon (10 minutes, including the deploy)
 
