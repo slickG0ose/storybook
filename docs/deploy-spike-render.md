@@ -138,14 +138,15 @@ For a beta with sporadic traffic, this is the most user-visible papercut. Option
 - **Cron-ping the health endpoint** every 14 min from a free Cron service (cron-job.org, GitHub Actions schedule, UptimeRobot). Keeps the machine warm at the cost of always-on free-tier resources.
 - **Upgrade to Starter** ($7/mo Render) — no spin-down.
 
-### 3. Free Postgres expires after 90 days
+### 3. Free Postgres expires after 90 days — decided: moving to Neon
 
-Render's free Postgres has a hard 90-day lifetime. After that, you upgrade to a paid plan ($7/mo at time of writing) to keep your data, or the DB is deleted. Calendar this from day-one deploy.
+Render's free Postgres has a hard 90-day lifetime: the database is deleted, not downgraded. This one came due on **2026-09-14** ([#78](https://github.com/slickG0ose/storybook/issues/78)) and the answer was Neon's free tier — persistent, 0.5 GB, 100 CU-hr/month, autosuspend after 5 min idle. Measured against a 651 KB database, the storage tier is not a constraint at any beta scale.
 
-**Migration alternatives if you don't want to pay Render:**
-- **Neon** has a real persistent free tier (0.5 GB storage, 100 CU-hr/month, autosuspend after 5 min idle). Swap by changing `DATABASE_URL` in Render's env vars.
-- **Supabase** free tier — 500 MB database. Same swap.
-- **PlanetScale** free tier — MySQL, would require Prisma schema changes.
+**The step-by-step is [neon-migration-runbook.md](neon-migration-runbook.md)** — dump, restore, cut over, verify, roll back. Do not improvise from this section; the ordering constraints (dashboard before Blueprint, direct before pooled) are what make it safe.
+
+`render.yaml` no longer declares a `databases:` block and `DATABASE_URL` is `sync: false`, so the value lives in the Render dashboard and a Blueprint sync cannot overwrite it.
+
+Alternatives weighed and not taken: **Supabase** free (500 MB, same swap), **PlanetScale** free (MySQL, would need Prisma schema changes), and **paying Render** ($6/mo Basic-256mb + $0.30/GB-month).
 
 ### 4. `prisma db push --accept-data-loss` in the build command
 
@@ -223,8 +224,8 @@ After merging this PR:
 - [ ] Decide on the GitHub Pages base-path workaround (custom domain vs org root vs vite/router config)
 - [x] Add `CORS_ORIGIN` env handling to `server/src/index.ts` and document in `server/.env.example` — done; see "Known issues" §6
 - [ ] Generate Postgres-specific Prisma migrations and switch the Blueprint from `db push` to `migrate deploy`
-- [ ] Decide on illustration persistence strategy (accept-it / Render persistent disk / R2)
-- [ ] Calendar the Postgres-free expiry (90 days from deploy)
+- [x] Decide on illustration persistence strategy (accept-it / Render persistent disk / R2) — **R2**, specced in [`.code-captain/specs/blob-storage-r2/spec.md`](../.code-captain/specs/blob-storage-r2/spec.md) §Scope B; not yet implemented
+- [x] Calendar the Postgres-free expiry (90 days from deploy) — due 2026-09-14; decision is Neon free, execution tracked in [neon-migration-runbook.md](neon-migration-runbook.md) and [#78](https://github.com/slickG0ose/storybook/issues/78)
 - [ ] Schema-sync CI check — fail builds if `schema.prisma` changes but `schema.postgresql.prisma` doesn't get regenerated
 
 ## Sources
