@@ -40,7 +40,9 @@ Task 1 is independent of 2-7 and can run at any point, including first.
 
 ## Task 1 — Neon migration runbook + durable `DATABASE_URL`
 
-**Status:** Not started
+**Status:** Written 2026-09-12 — `docs/neon-migration-runbook.md`, the `render.yaml`
+change, and the `deploy-spike-render.md` pointers are all in. **The migration itself is
+not executed**; that is Nick's, by hand, by 2026-09-14. This task is not closed until it is.
 
 Write `docs/neon-migration-runbook.md`: numbered, copy-pasteable, `pg_dump` first, with the
 verify-before-delete ordering and an explicit rollback (the Render instance stays alive
