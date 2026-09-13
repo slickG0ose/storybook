@@ -10,8 +10,11 @@
 #     PNGs are LOST on next deploy or restart. Committed demo-seed PNGs
 #     in server/public/illustrations/ ship inside the deploy bundle and
 #     survive. Long-term fix: blob storage (R2/S3/Cloudinary).
-#   - Free Postgres expires after 90 days; upgrade to a paid plan ($7/mo
-#     at time of writing) before that to keep your data.
+#   - Postgres is NOT a Render service any more. The free instance was
+#     retired ahead of its 2026-09-14 deletion date and the database now
+#     lives on Neon's free tier, so DATABASE_URL is set by hand in the
+#     dashboard (sync:false below) rather than wired to a Render database.
+#     Runbook: docs/neon-migration-runbook.md.
 
 services:
   - type: web
@@ -100,13 +103,12 @@ services:
         value: '50'
       - key: QUOTA_MONTHLY_GLOBAL_CENTS
         value: '2000'
+      # Neon (free tier), NOT a Render database — see the caveat block at the
+      # top of this file and docs/neon-migration-runbook.md. sync:false means
+      # Render keeps whatever the dashboard holds and a Blueprint sync never
+      # overwrites it; that is the whole point of this key not being
+      # `fromDatabase` any more. Use Neon's DIRECT (unpooled) string: the
+      # buildCommand above runs `prisma db push`, which wants a direct
+      # connection, and one instance at beta traffic does not need PgBouncer.
       - key: DATABASE_URL
-        fromDatabase:
-          name: storybook-postgres
-          property: connectionString
-
-databases:
-  - name: storybook-postgres
-    plan: free
-    databaseName: storybook
-    user: storybook_admin
+        sync: false
