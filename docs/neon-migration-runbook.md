@@ -21,16 +21,27 @@ Total downtime if nothing goes wrong: one Render deploy, ~3 minutes.
 **This machine has no `pg_dump`, no `psql`, and no Docker** (checked 2026-09-12). Nothing
 below works until that is fixed.
 
-First read the source server's major version — Render dashboard → `storybook-postgres` →
-the version is on the instance's info panel. Then install the **matching** client; Neon's
-migration docs ask for a client at the same version as the source server:
+**The rule is client >= server.** `pg_dump` refuses outright when the server is newer
+(`aborting because of server version mismatch`), but a newer client dumps an older server
+fine. So install the **highest** major Homebrew offers rather than guessing at a match:
 
 ```bash
-brew install postgresql@17          # substitute the major version Render reports
-echo 'export PATH="/opt/homebrew/opt/postgresql@17/bin:$PATH"' >> ~/.zshrc
-exec zsh
-pg_dump --version                   # must print that same major version
+brew search /^postgresql@/          # see what majors exist
+brew install postgresql@18          # measured 2026-09-13: Render runs 18.4, Neon 18.6
+export PATH="/opt/homebrew/opt/postgresql@18/bin:$PATH"
+pg_dump --version
 ```
+
+Add that `export` line to `~/.zshrc` to make it stick. Once `psql` works, confirm both ends:
+
+```bash
+psql "$RENDER_URL" -tAc 'select version();'
+psql "$NEON_URL"   -tAc 'select version();'
+```
+
+A **major**-version gap between source and target is the one that needs a decision: Neon
+pins the Postgres version at project creation, so a PG 18 source wants a PG 18 Neon project.
+Same major on both ends is a clean `pg_dump`/`pg_restore`.
 
 **Fallback if this fights you:** Neon's console has an **Import Data Assistant** that pulls
 directly from a source connection string, no local client required. Slower and less
@@ -57,12 +68,23 @@ laptop.
 
 ```bash
 cd ~/src/storybook
-pg_dump -Fc -v -d "<render-external-connection-string>" -f ~/storybook-render-$(date +%Y%m%d).dump
-ls -lh ~/storybook-render-*.dump          # sanity: a non-trivial file exists
+pg_dump -Fc -d "$RENDER_URL" -f ~/storybook-render-$(date +%Y%m%d).dump
+ls -lh ~/storybook-render-*.dump
+pg_restore -l ~/storybook-render-*.dump | grep -c 'TABLE DATA'   # expect 10
 ```
 
 `-Fc` is the custom format `pg_restore` wants. Do **not** use `pg_dumpall` or `-C`; Neon
 supports neither.
+
+**Check the file, not the exit code.** `pg_dump -f` creates the output file *before* it
+connects, so a failed dump leaves a **0-byte file** that looks like success — and the
+restore then reports `could not read from input file: read 0, expected 5` against an empty
+database. The `grep -c 'TABLE DATA'` above is the real gate: 10 tables, 34 KB at this data
+size. Anything less, fix the connection and dump again.
+
+Two ways that string goes wrong when pasted: a **trailing newline** (the closing quote lands
+on the next line, and the dbname becomes `storybook_yuwr\n`), and **unquoted `&`**, which
+the shell reads as "background this." Single quotes, one line.
 
 Keep this file until the new database has served real traffic for a week. It is the only
 rollback that survives the 14th.
@@ -194,6 +216,10 @@ from Step 2 plus a fresh Neon project is the only path back.
 | `pg_dump: server version mismatch` | Client older than the source server | Install the matching major version (Step 0) |
 | Wall of `must be owner of table` on restore | `-O` omitted | Re-run `pg_restore` with `-O`; the errors are non-fatal but noisy |
 | `prisma db push` hangs or times out in the Render build | Pooled connection string in `DATABASE_URL` | Swap to the direct string |
+| `pg_dump: aborting because of server version mismatch` | Client older than the server — Render is on 18.4 | Install the higher major (Step 0); a newer client is always safe |
+| `pg_restore: could not read from input file: read 0, expected 5` | The dump is 0 bytes — `pg_dump -f` created the file, then failed to connect | Re-dump, then gate on `pg_restore -l \| grep -c 'TABLE DATA'` |
+| `role "storybook_admin" does not exist`, 4 errors ignored | `ALTER DEFAULT PRIVILEGES` / `GRANT` for a role that exists only on Render | Benign — `-O` already skipped ownership; the data restored |
+| `database "storybook_yuwr\n" does not exist` | Trailing newline in the pasted connection string | Re-export on one line |
 | Only one connection string in the console | The Connect dialog shows the pooled shape first | Toggle `Connection pooling` off, or delete `-pooler` from the hostname |
 | App boots, every query fails | `?sslmode=require` dropped from the string | Re-add it |
 | `DATABASE_URL` reverts after a deploy | Blueprint sync re-asserted `fromDatabase` | Merge the `render.yaml` change (Step 6.2) |
