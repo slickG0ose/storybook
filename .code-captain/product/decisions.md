@@ -4,6 +4,101 @@ Append-only log. Newest entries on top. Each entry should answer: *what was deci
 
 ---
 
+## ADR-024 — Data convergence runs as a boot-time backfill, because production deploys with `prisma db push`
+
+**Date:** 2026-09-10
+**Status:** Accepted
+**Scope:** `render.yaml`, `server/src/services/*Backfill.ts`, `server/src/index.ts`. Spec: `.code-captain/specs/age-range-vocabulary/spec.md` §"Alternatives considered". Relates to [#78](https://github.com/slickG0ose/storybook/issues/78).
+
+### The decision
+
+A one-off fix to existing rows in this repo runs as an **idempotent boot-time service**, not as a Prisma migration and not as a one-shot script. This generalises the shape [[ADR-022]] used for `User.email` and states the constraint that forces it, so the next data fix does not re-derive it.
+
+### The constraint, which is not obvious
+
+`render.yaml`'s `buildCommand` is `prisma db push --accept-data-loss` against `schema.postgresql.prisma`, followed by `seed.ts`. **There is no `migrate deploy` anywhere in the deploy path.**
+
+So a `migrations/` folder is not merely unnecessary — it is actively misleading. `npm run db:migrate` applies it to the local `dev.db`, the test harness applies it to `test.db`, both go green, and production is never touched. The fix appears to work everywhere a developer can look, and silently does not exist where it matters.
+
+This was found while specifying [[ADR-023]]'s row convergence, by reading `render.yaml` rather than by assuming the standard Prisma workflow. It would have shipped a no-op otherwise.
+
+### Alternatives considered
+
+**A Prisma data migration.** The obvious answer, and the one most engineers reach for. Rejected on the constraint above: it would converge `dev.db` and `test.db` and leave production exactly as it was.
+
+**A one-shot script under `server/scripts/`.** Matches the "user approves the migration" guardrail most literally, and leaves no permanent code behind. Rejected because Render's free plan gives no shell — reaching production would mean adding the script to `buildCommand`, which is a boot-time backfill with worse ergonomics and a deploy-config edit on top.
+
+**Switching the deploy to `migrate deploy`.** The durable fix, and it would invert this decision. It is its own piece of work: it needs a baseline migration against a database that has drifted under `db push`, and it should be done while the database is being handled anyway. Tracked in [#78](https://github.com/slickG0ose/storybook/issues/78), whose "adjacent risk" section is the same finding reached independently — `db push --accept-data-loss` on every deploy will silently drop data the moment a destructive schema change lands against real rows.
+
+### What a backfill written under this decision must do
+
+The three services now following this pattern — `emailBackfill.ts`, `adminBootstrap.ts`, `ageRangeBackfill.ts` — agree on four properties, and a new one should too:
+
+- **Idempotent**, and cheap in the steady state. Once converged it is one `findMany` and zero writes, on every boot, forever.
+- **Never fatal.** A failure is logged; the deployment still comes up.
+- **Reports rather than guesses.** A row it was not explicitly told how to map is left byte-for-byte intact and surfaced for a human. Neither merging nor deleting is ever in scope.
+- **Says something on a clean pass.** This one departs from the earlier two deliberately. `backfillUserEmails()` and `reconcileAdmins()` log only when they have something to report, which makes a silent boot indistinguishable from code that never deployed — the exact ambiguity that made an unset `ALLOWLIST_BOOTSTRAP_EMAILS` look like a deadlocked `AllowedEmail` table and cost six rounds of debugging. `backfillBookAgeRanges()` logs `N book(s) checked, all canonical — nothing to do`, and a test pins the line so it cannot be quietly dropped. The older two should follow when they are next touched.
+
+### Consequences
+
+- Convergence code is permanent rather than disposable. That is the price of the deploy topology, and it is small: a converged table costs one indexed read per boot.
+- The pattern only converges rows. A **schema** change still rides `db push`, with all the risk that carries.
+- If the deploy ever moves to `migrate deploy`, this ADR should be revisited rather than silently outlived — the boot services would still work, but new fixes would have a better home.
+
+---
+
+## ADR-023 — One canonical age-range vocabulary, enforced on write only; the facet route serves `DISTINCT ∩ canonical`
+
+**Date:** 2026-09-10
+**Status:** Accepted
+**Scope:** `shared/src/books.ts`, `shared/src/generate.ts`, `server/src/routes/{generate,books}.ts`, `client/src/lib/ageRanges.ts`. Spec: `.code-captain/specs/age-range-vocabulary/spec.md`. Closes [#172](https://github.com/slickG0ose/storybook/issues/172).
+
+### The decision
+
+Three parts of one decision:
+
+1. **The seed catalog's list is canonical** — `2-5`, `3-6`, `4-7`, `4-8`, `5-9`, expressed once as `AgeRangeSchema` in `@storybook/shared`. The client-only strays `2-4` and `6-10` are retired.
+2. **The enum gates writes only.** `POST /api/generate` validates against it; `BookSchema.age_range` stays `z.string()` on the read path.
+3. **`GET /api/books/age-ranges` serves `DISTINCT ∩ AGE_RANGES`, in enum order** — neither raw `SELECT DISTINCT` nor the bare enum.
+
+### The problem
+
+`Book.age_range` is a free-text `String`, and two places disagreed about what could go in it: `CreateBook.tsx` offered `2-4 3-6 4-7 5-9 6-10`, `seed.ts` wrote `2-5 3-6 4-7 4-8 5-9`. Three values overlapped.
+
+Both directions were user-visible. `2-5` and `4-8` were **shoppable but uncreatable** — they existed on seeded books so the Home filter offered them, but no author could produce another. `2-4` and `6-10` were **creatable but empty** — an author picking one landed their book in a facet no other book occupied.
+
+Nothing prevented it. `POST /api/generate` had no `validate()` at all and checked only that `ageRange` was truthy, so any string reached the column; and the facet route derived from `SELECT DISTINCT`, so it faithfully rendered whatever drift was in the table. Surfaced while implementing [#113](https://github.com/slickG0ose/storybook/issues/113), which routed around it — see [[ADR-020]].
+
+### Why the seed list won
+
+It is the shoppable one. Retiring a value an author could pick strands nobody, because `2-4` and `6-10` had no books behind them; retiring `2-5` or `4-8` would have orphaned rows in the live catalog and required a data rewrite to fix a cosmetic preference. User ruling, 2026-09-09.
+
+### Why the enum gates writes but not reads
+
+Narrowing `BookSchema.age_range` to the enum is the tempting version — one schema, enforced both directions, drift impossible to serve. It was rejected because of *where* response validation runs: on `GET /api/books`, `/mine`, `/:id`, and publish/unpublish. A single row holding a legacy value — one un-migrated production row, one hand-inserted row, one restored `BookVersion` — would turn the **entire catalog** into a 500 in dev and a logged warning in prod. The blast radius is the whole storefront, not one book, and the thing being protected is a presentation facet.
+
+So the posture is [[ADR-022]]'s, for the same reason: **normalise on write, converge stored rows separately, keep the read path tolerant.** `ageBucketFor()` in `server/src/lib/typography.ts` keeps its tolerant leading-integer parse on exactly this logic.
+
+Narrowing the read schema is a legitimate future upgrade, once the [[ADR-024]] backfill has been observed reporting zero off-vocabulary rows in production for a while.
+
+### Why the facet route intersects
+
+Serving the **bare enum** would advertise facets with zero books behind them; clicking `4-8` on a thin catalog yields an empty grid, which reads as a broken filter. Serving raw **`SELECT DISTINCT`** is what made the drift user-visible in the first place.
+
+The intersection keeps the useful property — only facets you can actually shop — while making it structurally impossible for a stray row to render a filter chip. The row stays reachable: `GET /api/books?age_range=6-10` still returns it. It is simply not advertised. A test pins that asymmetry, because it is the part a future reader would most plausibly "fix" by accident.
+
+Ordering now comes from the enum rather than a lexicographic `.sort()`, which was correct today only because every value happens to start with a distinct digit.
+
+### Consequences
+
+- `POST /api/generate` gains its first-ever `validate()`, mounted **before** `spendGate` so a malformed body never touches quota accounting. Its 400 body for a missing `theme`/`ageRange` changes from the handler's sentence to Zod's message.
+- `GenerateRequestSchema` must list **every** field the handler reads — `validate()` replaces `req.body` and `z.object` strips unknown keys, so an omission silently deletes a feature. Nine fields; only `theme` and `ageRange` tighten. A strip-guard test asserts a full-fat body round-trips.
+- Existing rows converge via the boot-time backfill in [[ADR-024]], mapping `2-4 → 2-5` and `6-10 → 5-9`. Both pairs bucket identically in `ageBucketFor()`, so no published book's typography moves — that property is what makes rewriting safe, and a test pins it.
+- `client/src/lib/ageRanges.ts` joins the call-graph's shared-import exception list: `AGE_RANGES` is a *value*, so it cannot ride the types-only `client/src/types.ts` barrel.
+- **Deferred:** [#113](https://github.com/slickG0ose/storybook/issues/113)'s `independent` typography bucket needs a lower bound ≥ 8, and the canonical vocabulary tops out at `5-9`, so no book the app can produce reaches `nunito`/`cozy`. It stays unit-tested-only. Making it reachable means *widening* the vocabulary — a product decision about who the store sells to, not a validation bug. One edit to `AgeRangeSchema` now that there is one list.
+
+---
+
 ## ADR-022 — `User.email` is normalised on write and converged by a boot backfill; collisions elect one row and never merge
 
 **Date:** 2026-09-02

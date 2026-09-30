@@ -47,6 +47,24 @@ export const TextSizeSchema = z.enum(['cozy', 'standard', 'large', 'xlarge']);
 export type TextSize = z.infer<typeof TextSizeSchema>;
 
 // ---------------------------------------------------------------------------
+// Age-range vocabulary (#172) — curated, closed set, and the single list both
+// the CreateBook picker and POST /api/generate answer to. The values are the
+// seed catalog's; `2-4` and `6-10` were client-only strays and are retired.
+// See .code-captain/specs/age-range-vocabulary/spec.md.
+//
+// This enum gates WRITES only. `BookSchema.age_range` below stays `z.string()`
+// deliberately: response validation runs on every storefront list/detail, so
+// narrowing it would let one legacy or hand-inserted row 500 the whole catalog.
+// Normalise on write, converge stored rows separately, keep reads tolerant —
+// the same posture as `User.email`.
+// ---------------------------------------------------------------------------
+export const AgeRangeSchema = z.enum(['2-5', '3-6', '4-7', '4-8', '5-9']);
+export type AgeRange = z.infer<typeof AgeRangeSchema>;
+
+/** Canonical display order for the CreateBook picker and the Home facet list. */
+export const AGE_RANGES: readonly AgeRange[] = AgeRangeSchema.options;
+
+// ---------------------------------------------------------------------------
 // Book — wire shape returned by storefront list/detail/publish/etc endpoints.
 //
 // Note on `characters_json` vs `characters`:

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import Anthropic from '@anthropic-ai/sdk';
 import type { Request, Response, NextFunction } from 'express';
 import {
+  AGE_RANGES,
   BookListResponseSchema,
   BookMineResponseSchema,
   BookFacetResponseSchema,
@@ -144,9 +145,18 @@ router.get(
     response: BookFacetResponseSchema,
   }),
   async (_req: Request, res: Response) => {
+    // DISTINCT ∩ canonical, in AGE_RANGES order. Response schema is unchanged
+    // (BookFacetResponseSchema = z.array(z.string())); only the contents narrow.
+    // Deriving from the table keeps the facet contract honest — every chip has
+    // at least one book behind it — while the intersection makes it
+    // structurally impossible for an off-vocabulary row to render a chip, which
+    // is how the 2-4/6-10 drift became user-visible in the first place.
+    // Order now comes from the enum, which retires the old lexicographic
+    // .sort() that was only correct because every value starts with a distinct
+    // digit. `/themes` is deliberately left alone: theme has no canonical enum.
     const books = await prisma.book.findMany({ where: { deleted_at: null }, select: { age_range: true } });
-    const ranges = [...new Set(books.map(b => b.age_range))].sort();
-    res.json(ranges);
+    const present = new Set(books.map(b => b.age_range));
+    res.json(AGE_RANGES.filter(r => present.has(r)));
   },
 );
 

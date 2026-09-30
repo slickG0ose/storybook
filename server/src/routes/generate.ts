@@ -2,6 +2,8 @@ import { Router } from 'express';
 import Anthropic from '@anthropic-ai/sdk';
 import prisma from '../db/prisma';
 import { requireAuth } from '../middleware/requireAuth';
+import { validate } from '../middleware/validate';
+import { GenerateRequestSchema, type AgeRange } from '@storybook/shared';
 import { STORY_MODEL, STORY_THINKING } from '../lib/models';
 import { spendGate } from '../middleware/spendGate';
 import { recordUsage, checkQuota } from '../services/spend';
@@ -23,7 +25,10 @@ const VALID_PREVIEW_MODES: PreviewMode[] = ['quick', 'cover', 'full'];
 
 interface GenerateRequestBody {
   theme: string;
-  ageRange: string;
+  // Narrowed to the canonical vocabulary (#172). validate() rejects anything
+  // else with a 400 before the handler runs, so by the time the body is cast
+  // here the value is provably one of AGE_RANGES.
+  ageRange: AgeRange;
   additionalDetails?: string;
   characterName?: string;
   characters?: Character[];
@@ -108,7 +113,18 @@ const router = Router();
 // anonymous request costs real money even when the DB is unreachable. It was
 // previously ungated on a public deployment; see #5/#6 for the allowlist and
 // spend-ceiling layers that sit on top of this gate.
-router.post('/', requireAuth, spendGate('story'), async (req: Request, res: Response) => {
+//
+// validate() sits between the two: a malformed body is rejected before the
+// request touches quota accounting, and 401 still wins over 400 because
+// requireAuth runs first (docs/conventions/server.md §middleware order rule).
+// spendGate reads only res.locals.user, so nothing depends on the body being
+// parsed before it.
+router.post(
+  '/',
+  requireAuth,
+  validate({ name: 'POST /api/generate', request: GenerateRequestSchema }),
+  spendGate('story'),
+  async (req: Request, res: Response) => {
   const body = req.body as GenerateRequestBody;
   const { theme, ageRange, additionalDetails, styleDescriptor, styleReferenceUrl } = body;
   const previewMode: PreviewMode = body.previewMode && VALID_PREVIEW_MODES.includes(body.previewMode)

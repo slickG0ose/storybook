@@ -7,6 +7,7 @@ import { createTestApp, resetDatabase, allowEmail } from '../../__tests__/setup'
 import prisma from '../../db/prisma';
 import { PUBLISHED_IMMUTABLE_ERROR } from '../../lib/availability';
 import { COST_CENTS, costCentsFor } from '../../services/spend';
+import { AGE_RANGES } from '@storybook/shared';
 
 // Stub the Anthropic SDK at module boundary so /revise tests can drive the
 // handler past the API key check without making real network calls.
@@ -136,6 +137,76 @@ describe('Books API routes', () => {
       expect(res.body).toHaveLength(6);
       const sorted = [...res.body].sort();
       expect(res.body).toEqual(sorted);
+    });
+  });
+
+  // GET /api/books/age-ranges serves DISTINCT ∩ AGE_RANGES in canonical enum
+  // order (spec: .code-captain/specs/age-range-vocabulary/spec.md). The route
+  // had no test at all before this block, which is part of how the 2-4 / 6-10
+  // vocabulary drift stayed invisible.
+  describe('GET /api/books/age-ranges', () => {
+    it('returns the canonical five in enum order for the seeded catalog', async () => {
+      const res = await request(app).get('/api/books/age-ranges');
+      expect(res.status).toBe(200);
+
+      // OPS.3 wire shape. BookFacetResponseSchema is z.array(z.string()), so
+      // the pinnable surface is the array itself: exact members, exact order.
+      // Enum order — not lexicographic — is the assertion that would fail if
+      // the old `.sort()` came back.
+      expect(res.body).toEqual(['2-5', '3-6', '4-7', '4-8', '5-9']);
+      expect(res.body).toEqual([...AGE_RANGES]);
+      for (const range of res.body) {
+        expect(range).toEqual(expect.any(String));
+      }
+    });
+
+    it('omits an off-vocabulary age range while that book stays shoppable by direct query', async () => {
+      await prisma.book.create({
+        data: {
+          id: 'off-vocab-six-ten',
+          title: 'The Off-Vocabulary Expedition',
+          author: 'Legacy Import',
+          description: 'A row that predates the canonical enum.',
+          theme: 'adventure',
+          age_range: '6-10',
+          cover_emoji: '\u{1F5FA}',
+          cover_color: '#334155',
+          price: 15.99,
+        },
+      });
+
+      // Not advertised as a facet: the chip list is unchanged by the stray row.
+      const facets = await request(app).get('/api/books/age-ranges');
+      expect(facets.status).toBe(200);
+      expect(facets.body).not.toContain('6-10');
+      expect(facets.body).toEqual(['2-5', '3-6', '4-7', '4-8', '5-9']);
+
+      // ...but still shoppable by direct query. That asymmetry is the design:
+      // the enum gates writes and the facet list, never the read path.
+      const filtered = await request(app).get('/api/books?age_range=6-10');
+      expect(filtered.status).toBe(200);
+      expect(filtered.body).toHaveLength(1);
+      expect(filtered.body[0]).toMatchObject({
+        id: 'off-vocab-six-ten',
+        age_range: '6-10',
+      });
+    });
+
+    it('drops an age range whose only book is soft-deleted', async () => {
+      // brave-little-seed is the sole 2-5 book in the seed, so soft-deleting it
+      // must remove that value entirely — a range still held by a sibling book
+      // would let this pass without the deleted_at filter doing any work.
+      const before = await request(app).get('/api/books/age-ranges');
+      expect(before.body).toContain('2-5');
+
+      await prisma.book.update({
+        where: { id: 'brave-little-seed' },
+        data: { deleted_at: new Date() },
+      });
+
+      const res = await request(app).get('/api/books/age-ranges');
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual(['3-6', '4-7', '4-8', '5-9']);
     });
   });
 
