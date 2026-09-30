@@ -4,6 +4,136 @@ Append-only log. Newest entries on top. Each entry should answer: *what was deci
 
 ---
 
+## ADR-028 — Production schema changes move from `db push --accept-data-loss` to `prisma migrate deploy`, on a Postgres-only migration history baselined against Neon
+
+**Date:** 2026-09-30
+**Status:** Proposed — awaiting Nick's sign-off. Blocks inviting alpha testers ([#157](https://github.com/slickG0ose/storybook/issues/157)).
+**Scope:** `render.yaml` `buildCommand`, a new Postgres migration directory under `server/prisma/`, `docs/neon-migration-runbook.md`. Revisits [[ADR-024]], as that ADR asked to be revisited. Plan: `docs/mvp-alpha-plan.md`.
+
+### Decision
+
+1. **The deploy stops running `prisma db push --accept-data-loss`.** `buildCommand` runs `prisma migrate deploy --schema=prisma/schema.postgresql.prisma` instead, then `seed.ts` as today.
+2. **Postgres gets its own migration history, separate from the SQLite one.** The existing `server/prisma/migrations/` is SQLite SQL, and its `migration_lock.toml` pins `provider = "sqlite"`; it cannot be replayed against Postgres. The Postgres history starts at a single `0_init` generated with `prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.postgresql.prisma --script`. It must live in a directory Prisma resolves for `schema.postgresql.prisma` and not for `schema.prisma` — both schema files currently sit in `server/prisma/`, so they would default to the same `migrations/` folder. Whether that is solved by moving the Postgres schema into its own subdirectory or by `prisma.config.ts` `migrations.path` is the architect's call; sharing the folder is not an option.
+3. **Baseline, once, by hand.** Neon already holds tables created by `db push`, so the first `migrate deploy` would fail with `P3005` (schema not empty). The operator runs `prisma migrate resolve --applied 0_init` against Neon exactly once, **after** diffing `0_init` against the live schema (`prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel …` must print an empty script). That diff is the proof the baseline is honest; skipping it is how a baseline papers over drift.
+4. **Local dev and the test harness are unchanged.** SQLite keeps `prisma migrate dev` and its own history. A schema change now produces two migrations — SQLite via `migrate dev`, Postgres via `migrate diff` — and a PR that touches `schema.prisma` without both is incomplete.
+
+### Why
+
+- **`--accept-data-loss` runs on every deploy, and the alpha puts real rows under it.** Today a column rename or a narrowed type deletes tester books silently, on the next push to `master`, with no review step. Against the empty spike database that was tolerable; against friends' and family's books it is the single largest data-loss risk in the deploy.
+- **The migration was deferred to "when the database is being handled anyway" ([[ADR-024]]), and that is now.** Neon holds 2 users, 7 books, 35 pages (measured 2026-09-30), none precious. The baseline is cheapest while a mistake costs nothing.
+- **[#174](https://github.com/slickG0ose/storybook/issues/174) needs it.** A `lower(email)` unique index is Postgres-only raw SQL. Under `db push` it has no home; under `migrate deploy` it is the first real migration.
+
+### Alternatives considered
+
+**Keep `db push`, drop `--accept-data-loss`.** `db push` then refuses destructive changes and fails the build instead. Cheaper, and a real improvement — but it still has no reviewable SQL, no history, and no home for raw SQL like #174's index. It also turns every destructive change into "remove the guard, deploy, put it back." Rejected as the end state; acceptable as a same-day stopgap if this ADR's work slips past the first tester invite.
+
+**Move local dev and tests to Postgres (Neon branches per worktree) and keep one history.** Removes the dual-history cost in point 4 entirely. Rejected for now: every worktree and CI run would need a Neon branch and a credential, the server suite's single-worker `test.db` model would need rework, and none of that is on the alpha's critical path. Worth revisiting after the alpha.
+
+**Squash the SQLite history into Postgres by hand-translating it.** Ten migrations of SQLite DDL rewritten for Postgres, to get a "true" history. Rejected: `0_init` from the current datamodel is exactly equivalent for a database that is already at that schema, and hand translation is where subtle type drift gets in.
+
+### Consequences
+
+- [[ADR-024]]'s constraint is lifted for **schema** changes. Its boot-backfill pattern stays valid for **row** convergence and the three existing backfill services stay; new row fixes may now use a data migration instead.
+- The baseline in point 3 is an operator step against production and is **Nick's**, run from the runbook — an agent writes the runbook section, it does not run it.
+- Every schema PR costs one extra generated file. The reviewer should treat a `schema.prisma` diff without a matching Postgres migration as a blocking finding.
+
+---
+
+## ADR-027 — Cloudflare R2, not Neon Object Storage, holds illustration bytes; the client is `@aws-sdk/client-s3`
+
+**Date:** 2026-09-30
+**Status:** Proposed — awaiting Nick's sign-off (new runtime dependency and new external service; CLAUDE.md size gate).
+**Scope:** `server/package.json`, `server/src/services/storage.ts`. Spec: `.code-captain/specs/blob-storage-r2/spec.md` design decision 5.
+
+### Decision
+
+Generated illustrations are stored in a **Cloudflare R2** bucket, reached through the S3 API with **`@aws-sdk/client-s3`** — that package only; no `lib-storage` (objects are ~2 MB, no multipart) and no `s3-request-presigner` ([[ADR-026]] chose redirects).
+
+### Why R2 over Neon Object Storage
+
+Neon Object Storage was the natural candidate once the database moved to Neon — one vendor, one credential, and storage that branches with the database. It is ruled out by a fact, not a preference:
+
+- **It is a public beta available only in `us-east-2` and `eu-central-1`.** The `storybook` Neon project (`winter-hall-49187726`) is in **`aws-us-west-2`**, chosen to sit next to the Render service in Oregon, and a Neon project's region is final ([docs/neon-migration-runbook.md](../../docs/neon-migration-runbook.md) Step 3). Using it would mean either a second Neon project in Ohio for storage only — which forfeits the branching benefit, the one reason to prefer it — or moving the database cross-country from its only client.
+- **R2's free tier is 10 GB-month with zero egress fees.** At the measured ~1.8 MB per image that is ~5,500 images, comfortably past an alpha.
+
+Revisit if Neon Object Storage reaches `us-west-2` or GA. The seam in [[ADR-025]] makes the switch an env change plus a bucket copy, not a code change — both are S3-compatible.
+
+### Why `@aws-sdk/client-s3` over `aws4fetch`
+
+`aws4fetch` (~6 KB, zero deps) would mean hand-parsing `ListObjectsV2` XML. `list()` backs `getNextVersion`, so a parser that silently returns `[]` makes a regenerate **overwrite v2 instead of creating v3** — a silent wrong answer, in the one place a loud failure matters most. The SDK's install weight and slower Render builds are the price, paid knowingly.
+
+### Consequences
+
+- A new runtime dependency on the server; Dependabot now tracks the AWS SDK's frequent minor releases.
+- Five `R2_*` vars plus `STORAGE_BACKEND` join `render.yaml`, the secrets as `sync: false`. A `sync: false` key shows up in the Render dashboard as listed even when its value is blank — verify the value, not the key. The spec's Task 6 documents them.
+
+---
+
+## ADR-026 — Illustrations are served by 302-redirecting to a public bucket, not proxied or presigned; `r2.dev` for the alpha
+
+**Date:** 2026-09-30
+**Status:** Proposed — awaiting Nick's sign-off with [[ADR-027]].
+**Scope:** `server/src/index.ts` (the `/illustrations` mount, currently `:62`). Spec: `.code-captain/specs/blob-storage-r2/spec.md` design decision 4.
+
+### Decision
+
+`/illustrations/*` keeps `express.static` **first**. Behind it, under `STORAGE_BACKEND=r2`, a fallback handler answers **302 → `${R2_PUBLIC_BASE_URL}/<key>`**. Under `local` the fallback is a 404, which is today's behaviour. The bucket is **public-read**, fronted by R2's `r2.dev` development subdomain for the alpha.
+
+Static-first is not decoration: the fixture book's 13 PNGs ship inside the deploy bundle and are never uploaded, and they must keep resolving after the switch.
+
+### Why
+
+- **Keeps image bytes off the Render free instance.** A 1.8 MB PNG streamed through a 512 MB instance that spins down after 15 minutes idle costs bandwidth, memory, and cold-start time on every page view. A redirect costs one tiny response.
+- **The art is already public.** It is storefront content rendered to anonymous visitors; a private bucket protects nothing.
+- **Stored URLs stay relative** ([[ADR-025]]), so the client, PDF exporter, and history viewer need no change — the redirect is invisible to them.
+
+### Alternatives considered
+
+**Proxy through Express.** Keeps the bucket private and the origin single. Rejected: all the load the redirect avoids, for privacy the content doesn't need.
+
+**Presigned GETs.** Private bucket, no proxy load — but URLs expire, so they can't be cached or stored, and every page render needs a signing round-trip. Worth it only if some art becomes private (e.g. unpublished drafts), which is not an alpha requirement.
+
+### Consequences
+
+- **`r2.dev` is rate-limited and Cloudflare says not to use it in production.** Acceptable for a friends-and-family alpha; a custom domain in front of the bucket is the upgrade path and is tracked with version pruning in the follow-up issue from spec Task 7.
+- Browsers follow one extra hop per image. Negligible next to the image itself.
+- Anyone with a key can fetch an image directly. Keys are `<bookId>/page-N-vM.png` with UUID book IDs, so they aren't enumerable.
+
+---
+
+## ADR-025 — Illustration bytes go through a storage seam; stored URLs don't change and local disk stays the default
+
+**Date:** 2026-09-30
+**Status:** Proposed — awaiting Nick's sign-off with [[ADR-027]]. Blocks inviting alpha testers ([#157](https://github.com/slickG0ose/storybook/issues/157)).
+**Scope:** new `server/src/services/storage.ts`; call sites in `illustrations.ts`, `providers/fal.ts`, `imagePin.ts`, `pdf.tsx`, `routes/admin.ts`. Spec: `.code-captain/specs/blob-storage-r2/spec.md` design decisions 1–3.
+
+### Decision
+
+1. **One narrow interface** — `put`, `get`, `head`, `list`, `remove` — behind a memoized `getStorage()` chosen by `STORAGE_BACKEND=local|r2`. Every filesystem touch against `public/illustrations` goes through it; nothing else imports `fs/promises` for an illustration path.
+2. **Keys are the stored path minus `/illustrations/`** — `<bookId>/page-4-v2.png`. That string is already what every read site computes, so the seam lands on an existing boundary.
+3. **`Page.illustration_url` and `Book.cover_url` values do not change.** They stay `/illustrations/<bookId>/<file>.png`. No backfill, no Prisma migration, no wire-shape change.
+4. **`local` is the default.** Under `r2`, `get`/`head`/`list` **fall back to local disk on a miss**, and `list` merges both sources, R2 winning on a duplicate key.
+5. **Key validation lives in the seam and only there:** reject `..`, a leading `/`, or a backslash. It replaces the path-traversal fence in `admin.ts`'s orphan-delete endpoint.
+
+### Why
+
+- **Render's free filesystem is ephemeral.** Every runtime-generated PNG is lost on spin-down while its row survives — books with dead pages. Moving the database to Neon fixed the rows and not the pictures; this fixes the pictures.
+- **Relative URLs keep dev and prod rows interchangeable.** A `dev.db` book is readable under R2 and a prod book under local; the bucket host never gets baked into rows.
+- **Local default keeps the test suite byte-for-byte unmodified.** Existing tests write real PNGs to the real directory (`illustrations.test.ts`, `pdf.test.ts`, `imagePin.test.ts` via `utimes`, `admin.test.ts`). A storage swap that needs 1,000 lines of test rewrites is a mis-designed swap — and no credential is needed to run the suite or work from a worktree.
+- **The fallback is load-bearing, not defensive.** The fixture book `b2fa23cf…` ships 13 committed PNGs in the deploy bundle and is re-upserted by `seed.ts` every deploy. Without the fallback its art 404s the moment the switch flips.
+
+### Alternative considered: write absolute bucket URLs into the database
+
+Simpler serving — the browser goes straight to the bucket. Rejected: needs a backfill of every existing row, ties rows to one bucket host forever, and makes local rows unusable in production and vice versa.
+
+### Consequences
+
+- `list().lastModified` replaces `stat().mtime` for version synthesis and `imagePin`'s earliest-art fallback. Under `local` they are the same value, which is what lets `imagePin.test.ts` pass unmodified — the developer must verify that, not assume it.
+- The seam has no provider-specific surface, so swapping R2 for any S3-compatible store ([[ADR-027]]'s revisit condition) is config only.
+- Superseded versions accumulate in the bucket (27 MB in one real book). Pruning is deferred to the spec's Task 7 follow-up issue.
+
+---
+
 ## ADR-024 — Data convergence runs as a boot-time backfill, because production deploys with `prisma db push`
 
 **Date:** 2026-09-10

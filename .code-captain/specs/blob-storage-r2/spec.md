@@ -189,6 +189,9 @@ Every filesystem touch against `public/illustrations`, as of 31bd6bf:
 
 ## ADR candidates
 
+Recorded 2026-09-30 as ADR-025, ADR-026, ADR-027 (Proposed) in
+`.code-captain/product/decisions.md`; the `db push` deferral below is ADR-028.
+
 - **The storage seam** — key shape, the URL-stability decision, and why local stays the
   default (decisions 1-3).
 - **Redirect-not-proxy, and `r2.dev` for the beta** (decision 4), including the rate limit.
@@ -197,7 +200,7 @@ Every filesystem touch against `public/illustrations`, as of 31bd6bf:
 
 ## Deferred, with the tracking action
 
-- `prisma db push --accept-data-loss` → `migrate deploy`. **Deferred:** new issue (Task 7).
+- `prisma db push --accept-data-loss` → `migrate deploy`. **Tracked:** ADR-028 (Proposed); needs its own spec — see `docs/mvp-alpha-plan.md` step 4.
 - Pruning superseded illustration versions (27 MB in one book is mostly dead versions).
   **Deferred:** new issue (Task 7).
 - A custom domain in front of R2, replacing `r2.dev`. **Deferred:** same issue as above.
