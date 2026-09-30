@@ -151,7 +151,10 @@ reading this spec, and `render.yaml` declares every var the server reads.
 
 ## Task 7 — ADRs and follow-ups
 
-**Status:** Not started
+**Status:** ADRs done 2026-09-30 — ADR-025 (seam), ADR-026 (redirect), ADR-027 (R2 over
+Neon Object Storage, and the SDK), all **Proposed** pending Nick's sign-off. The `db push`
+item became its own decision, ADR-028. Issue filing and the `deploy-spike-render.md`
+update are still open.
 
 Three ADRs in `.code-captain/product/decisions.md`, per spec §ADR candidates — next
 numbers after ADR-024. Then file the deferred items as issues: `db push` → `migrate deploy`,
