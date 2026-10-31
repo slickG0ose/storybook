@@ -98,7 +98,7 @@ reference-not-found error (`:202-212`); `getNextVersion`'s unreadable-listing ca
 
 ## Task 4 — Re-point `providers/fal.ts`, `imagePin.ts`, `pdf.tsx`
 
-**Status:** Not started
+**Status:** Done (2026-10-31)
 
 `fal.ts:161-170` `toDataUri` → `get()`; its duplicated dir constant (`:12`) goes.
 `imagePin.ts` `earliestArtAt` filesystem fallback → `list()` + `lastModified`; the
