@@ -210,13 +210,22 @@ database with no migration history, that command refuses to run (`Error: P3005`,
 database schema is not empty"). Baselining tells Prisma that prod already matches `0_init`,
 so the first real deploy has nothing to apply.
 
-Run every command below **from `server/`, on the PR branch**, with `DATABASE_URL`
-exported as the Neon **direct** connection string for the `production` branch (Step 3
-explains how to get it; single quotes, one line). The exported value overrides the
-`file:` URL in `server/.env`, so these commands hit Neon, not `dev.db`.
+Run every command below **from `server/` of a checkout that has the PR branch**, with
+`DATABASE_URL` exported as the Neon **direct** connection string for the `production`
+branch (Step 3 explains how to get it; single quotes, one line). The exported value
+overrides the `file:` URL in `server/.env`, so these commands hit Neon, not `dev.db`.
+
+The branch is `agent/chore/prisma-migrate-deploy`, and while its agent worktree exists it
+is checked out there, so `git switch` in the main checkout fails with "already checked
+out". Use the worktree's `server/` (below), or remove the worktree first and then
+`git fetch && git switch agent/chore/prisma-migrate-deploy` in `~/src/storybook`.
+
+Start a **sub-shell** so the prod credential dies with it instead of lingering in your
+terminal:
 
 ```bash
-cd ~/src/storybook/server
+cd ~/src/storybook/.claude/worktrees/prisma-migrate-deploy-4f3204/server
+bash
 export DATABASE_URL='<neon-production-DIRECT-connection-string>'
 ```
 
@@ -271,7 +280,7 @@ Prisma prints the literal label `prisma/migrations` even though it reads
 SQLite history has 12 folders (as of 2026-10-31). Any count other than 1 means Prisma is
 reading the wrong folder, so stop and check the `--schema` flag.
 
-Then `unset DATABASE_URL`, **merge the PR promptly**, and watch the Render build log for
+Then `exit` the sub-shell (the credential goes with it), **merge the PR promptly**, and watch the Render build log for
 the same `No pending migrations to apply.` line.
 
 A Render deploy between (b) and the merge is harmless. The old `db push

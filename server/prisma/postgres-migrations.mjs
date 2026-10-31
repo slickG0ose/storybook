@@ -87,8 +87,10 @@ export function migrationFolderName(name, now = new Date()) {
 
 /**
  * Child env for Prisma: everything from process.env except DATABASE_URL.
- * Unset is the verified case for a datamodel-to-datamodel diff; a `file:` URL
- * under the postgresql provider is not.
+ * Unset is the verified case for a datamodel-to-datamodel diff. Note the Prisma
+ * CLI still loads `server/.env` from its cwd, so locally the child sees that
+ * file's `file:` URL again; CI has no `.env` and runs the unset case. Either
+ * way the guard only passes on exit 0, so a wrong env can fail red, never green.
  * @returns {NodeJS.ProcessEnv}
  */
 export function prismaEnv() {
@@ -101,10 +103,12 @@ export function prismaEnv() {
  * @param {string[]} args
  */
 function runPrisma(args) {
-  const result = spawnSync('npx', ['prisma', ...args], {
+  // --no-install: a missing local Prisma fails instead of prompting to download.
+  const result = spawnSync('npx', ['--no-install', 'prisma', ...args], {
     cwd: SERVER_DIR,
     env: prismaEnv(),
     encoding: 'utf8',
+    timeout: 60_000,
   });
   return {
     // null status means the process was killed or never started; report it as a failure.

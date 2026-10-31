@@ -100,6 +100,8 @@ Prod runs `server/prisma/postgres/schema.prisma`, generated from `schema.prisma`
   cd server && DATABASE_URL="postgresql://u:p@localhost:5432/x" npx prisma validate --schema=prisma/postgres/schema.prisma
   ```
 
+- **Today there is one:** `User.email @db.Citext` (plus the `postgresqlExtensions` preview feature and `extensions = [citext]` it needs), which makes the unique index case-insensitive. See ADR-029 in `.code-captain/product/decisions.md`.
+
 ### Schema changes ship two migrations (ADR-028)
 
 Prod's Render build runs `prisma migrate deploy --schema=prisma/postgres/schema.prisma`, which applies the Postgres history in `server/prisma/postgres/migrations/`. It never runs `db push`, so a schema change reaches prod **only** as a committed Postgres migration. Every change to `schema.prisma` takes four steps:
@@ -112,7 +114,6 @@ Prod's Render build runs `prisma migrate deploy --schema=prisma/postgres/schema.
 **Skipping step 3 fails `server/src/__tests__/postgresMigrations.test.ts`.** It diffs the latest Postgres migration's snapshot against the current `postgres/schema.prisma` and fails with the fix command when they differ. The two histories never share a folder: the SQLite lock pins `provider = "sqlite"`, the Postgres lock pins `provider = "postgresql"`.
 
 Prod was baselined once at `0_init`; the operator steps live in `docs/neon-migration-runbook.md` §"Baseline prod for migrate deploy".
-- **Today there is one:** `User.email @db.Citext` (plus the `postgresqlExtensions` preview feature and `extensions = [citext]` it needs), which makes the unique index case-insensitive. See ADR-029 in `.code-captain/product/decisions.md`.
 
 ## Test database lifecycle (`test.db`)
 
