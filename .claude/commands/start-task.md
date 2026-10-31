@@ -28,13 +28,12 @@ Kick off a new task following the project's branching convention in `CLAUDE.md`.
    npm run setup:worktree
    ```
 
-   The first command installs workspace deps (~30–60s, ~420 packages). The second copies gitignored files the worktree needs to run — currently `server/.env` and `server/prisma/dev.db` — from the main checkout. Both are idempotent.
+   The first command installs workspace deps (~30–60s, ~420 packages). The second copies gitignored files the worktree needs to run — currently `.env`, `server/.env` and `server/prisma/dev.db` — from the main checkout, then runs `prisma generate` for the server. Both are idempotent. Order matters: `setup:worktree` needs the prisma CLI from `npm install`, and `npm install` alone does not generate the client (npm's allow-scripts blocks Prisma's postinstall).
 
-   If `@prisma/client` isn't resolvable after install (corporate-cert environments can block `npx prisma generate` from fetching binaries), copy the generated client from the main checkout as a workaround:
+   If `setup:worktree` warns that `prisma generate` failed (corporate-cert environments can block the engine download), copy the generated client from the main checkout instead. Worktrees live at `.claude/worktrees/<name>`, so the main checkout is three levels up:
 
    ```
-   cp -r ../../node_modules/.prisma server/node_modules/
-   cp -r ../../node_modules/@prisma server/node_modules/@prisma
+   cp -r ../../../server/node_modules/.prisma server/node_modules/
    ```
 
    Skip this step only if the task is docs-only and explicitly doesn't need a runnable server/client.
