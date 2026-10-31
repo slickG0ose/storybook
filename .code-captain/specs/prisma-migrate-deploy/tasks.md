@@ -193,6 +193,7 @@ Do **not** run `db:migrate` (SQLite) for the demo. `postgresSchema.test.ts` igno
 ### Task 6: Neon-branch proof of a script-made second migration
 
 **Owner:** orchestrator (Neon MCP), not the developer
+**Status:** Done (2026-10-31) — steps 3–5 behaved as stated on throwaway branch `throwaway-adr028-proof-2` (deleted). `_prisma_migrations` survives `db push --accept-data-loss`, including a real column drop; but after such a push the history still reads "up to date" for a migration whose effect was undone — Task 7 runbook must say: after any revert to `db push`, re-run the baseline diff (step a) before trusting the history.
 **Zone:** ops (no committed files)
 **Depends on:** 3, 4
 **Parallel-safe with:** 5
