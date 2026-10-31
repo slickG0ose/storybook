@@ -226,7 +226,7 @@ After merging this PR:
 - [ ] Generate Postgres-specific Prisma migrations and switch the Blueprint from `db push` to `migrate deploy`
 - [x] Decide on illustration persistence strategy (accept-it / Render persistent disk / R2) — **R2**, specced in [`.code-captain/specs/blob-storage-r2/spec.md`](../.code-captain/specs/blob-storage-r2/spec.md) §Scope B; not yet implemented
 - [x] Calendar the Postgres-free expiry (90 days from deploy) — due 2026-09-14; decision is Neon free, execution tracked in [neon-migration-runbook.md](neon-migration-runbook.md) and [#78](https://github.com/slickG0ose/storybook/issues/78)
-- [ ] Schema-sync CI check — fail builds if `schema.prisma` changes but `schema.postgresql.prisma` doesn't get regenerated
+- [x] Schema-sync CI check — fail builds if `schema.prisma` changes but `schema.postgresql.prisma` doesn't get regenerated — done; [`server/src/__tests__/postgresSchema.test.ts`](../server/src/__tests__/postgresSchema.test.ts) compares generator output to the committed file byte for byte (runs in the Server tests CI job)
 
 ## Sources
 

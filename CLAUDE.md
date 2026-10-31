@@ -136,7 +136,7 @@ Registration is **closed by default**. An address must be on the `AllowedEmail` 
 
 Normalised (trim + lowercase) on write in `/register` and on lookup in `/register` and `/login`. `backfillUserEmails()` ([server/src/services/emailBackfill.ts](server/src/services/emailBackfill.ts)) lowercases legacy rows at boot, electing one row per collision group — live beats tombstone, older `created_at` breaks a tie — and reports the rest rather than merging or deleting.
 
-`User.email` is `@unique`, but string equality is **case-sensitive** in both Postgres and SQLite, so that index alone does not stop `Nick@G.com` and `nick@g.com` from coexisting. Closing that at the database level needs a case-insensitive index (`citext` or `lower(email)`), which is Postgres-only and unrunnable while a collision exists — tracked as a follow-up, not done here.
+In Postgres (prod), `User.email` is `citext`, injected by [server/prisma/gen-postgres-schema.mjs](server/prisma/gen-postgres-schema.mjs), so the `@unique` index compares case-insensitively and a differently-cased duplicate fails with P2002. SQLite (dev/test) has no citext and stays case-sensitive, relying on `normalizeEmail` alone. That divergence fails safe: a write path that forgets to normalise breaks in tests, not in prod. `normalizeEmail` stays on every write and lookup, because citext preserves stored case. See ADR-029 in [.code-captain/product/decisions.md](.code-captain/product/decisions.md).
 
 **Tests must opt an address in explicitly** via the `allowEmail()` helper in `server/src/__tests__/setup.ts`. That is deliberately not a bypass flag — a test that forgets it fails exactly the way a real un-allowlisted signup does.
 
