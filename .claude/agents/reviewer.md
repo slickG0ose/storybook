@@ -131,8 +131,11 @@ For every changed file, scan the diff for any of:
 | New `package.json` dependency that calls a paid external API (image gen, payments, hosted PDF/print service, etc.) | New paid external API — require user confirmation |
 | Removed `*.test.ts` / `*.spec.ts` / `*.test.tsx` files | Test deletion — fix tests rather than delete (per CLAUDE.md guardrail) |
 | Changes to `cart-session`/`storybook-session`/`storybook-auth` localStorage key handling | Session/auth model changes — require user confirmation |
+| Diff touches `server/prisma/schema.prisma` but adds no folder under `server/prisma/postgres/migrations/` | Missing Postgres migration (ADR-028). Prod's `migrate deploy` will not apply the change, and `postgresMigrations.test.ts` should already be red. **Blocking regardless of approval markers.** |
 
 If any of these appear in the diff WITHOUT an explicit "User approved: …" line in the PR body or a recent commit message, flag it.
+
+The missing-Postgres-migration row is the exception: flag it as blocking even when an approval marker is present. No approval makes prod apply a schema change that has no migration; the fix is `cd server && npm run db:migrate:postgres -- <name>`, not a sign-off.
 
 **Finding:** guardrail touch — `<thing>` without recorded approval.
 **Severity:** High. The CLAUDE.md guardrails exist because past mistakes were costly.
