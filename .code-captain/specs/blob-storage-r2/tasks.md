@@ -62,7 +62,7 @@ options. No code outside `render.yaml` and `docs/`.
 
 ## Task 2 — `services/storage.ts`: the seam and both backends
 
-**Status:** Not started
+**Status:** Done (2026-10-31)
 
 Add `@aws-sdk/client-s3` to `server/package.json`. Implement the interface from spec
 decision 1: `LocalStorage` (wrapping today's exact `fs/promises` calls against
