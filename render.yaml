@@ -63,6 +63,27 @@ services:
       # manually in Render (Environment tab), same as the keys above.
       - key: FAL_KEY
         sync: false
+      # Illustration storage (ADR-025/026/027; setup in docs/conventions/data.md
+      # §Illustration storage). sync:false, NOT `value: local`: a `value:` entry
+      # is reasserted on every Blueprint sync, which would silently flip prod
+      # back to ephemeral disk after the operator set `r2` in the dashboard.
+      # Blank or unset = local, so merging this changes nothing in prod. Set
+      # `r2` only after all five R2_* values below are filled — the server
+      # refuses to boot with any of them blank, naming the missing ones.
+      - key: STORAGE_BACKEND
+        sync: false
+      # Not secret, but per-deploy: R2_ACCOUNT_ID, R2_BUCKET, R2_PUBLIC_BASE_URL
+      # (e.g. https://pub-<hash>.r2.dev). The two credentials are secrets.
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_PUBLIC_BASE_URL
+        sync: false
       # Seeds the registration allowlist (F4a / #5) on first start, so the
       # deployment isn't locked out of its own signup. Only applies while the
       # AllowedEmail table is empty; after that, manage it in the admin UI.

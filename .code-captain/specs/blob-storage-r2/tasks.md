@@ -133,7 +133,7 @@ unmodified, and `npm test` at the repo root plus `cd e2e && npm test` are green.
 
 ## Task 6 — Operator surface
 
-**Status:** Not started
+**Status:** Done (2026-10-31)
 
 Document the five new vars in `server/.env.example` (after the `IMAGE_PROVIDER` block, in
 the same commented style): `STORAGE_BACKEND`, `R2_ACCOUNT_ID`, `R2_BUCKET`,
@@ -153,8 +153,11 @@ reading this spec, and `render.yaml` declares every var the server reads.
 
 **Status:** ADRs done 2026-09-30 — ADR-025 (seam), ADR-026 (redirect), ADR-027 (R2 over
 Neon Object Storage, and the SDK), all **Proposed** pending Nick's sign-off. The `db push`
-item became its own decision, ADR-028. Issue filing and the `deploy-spike-render.md`
-update are still open.
+item became its own decision, ADR-028. **Done 2026-10-31:** ADR-025 to ADR-027 accepted by
+Nick (status flip in PR #191); version pruning + custom domain filed as
+[#192](https://github.com/slickG0ose/storybook/issues/192) and linked from the spec's Deferred
+section; `deploy-spike-render.md` updated. The `db push` → `migrate deploy` item is ADR-028,
+implemented in its own PR rather than an issue.
 
 Three ADRs in `.code-captain/product/decisions.md`, per spec §ADR candidates — next
 numbers after ADR-024. Then file the deferred items as issues: `db push` → `migrate deploy`,
