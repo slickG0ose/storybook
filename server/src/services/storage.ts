@@ -1,5 +1,5 @@
 import { mkdir, readFile, readdir, rm, stat, writeFile } from 'fs/promises';
-import { dirname, join } from 'path';
+import { dirname, join, resolve, sep } from 'path';
 import {
   DeleteObjectsCommand,
   GetObjectCommand,
@@ -81,6 +81,20 @@ function assertValidPrefix(prefix: string): void {
   assertValidKey(prefix);
 }
 
+// Containment fence for the local backend, independent of isValidKey: the
+// resolved path must be the root itself (only when allowRoot) or strictly
+// inside it. isValidKey already rejects every escape shape we know of; this is
+// the check that still holds if that list ever regresses, and the one CodeQL's
+// js/path-injection recognises as a sanitizer.
+export function resolveWithinRoot(root: string, key: string, allowRoot = false): string {
+  const base = resolve(root);
+  const abs = resolve(base, key);
+  if (abs === base ? !allowRoot : !abs.startsWith(base + sep)) {
+    throw new InvalidStorageKeyError(key);
+  }
+  return abs;
+}
+
 function isMissingFsError(err: unknown): boolean {
   const code = (err as NodeJS.ErrnoException | null)?.code;
   return code === 'ENOENT' || code === 'ENOTDIR';
@@ -91,10 +105,16 @@ function isMissingFsError(err: unknown): boolean {
 // ---------------------------------------------------------------------------
 
 export class LocalStorage implements StorageBackend {
-  constructor(private readonly root: string = ILLUSTRATIONS_DIR) {}
+  private readonly root: string;
 
-  private path(key: string): string {
-    return join(this.root, key);
+  constructor(root: string = ILLUSTRATIONS_DIR) {
+    this.root = resolve(root);
+  }
+
+  // Every fs call goes through here. The root itself is reachable only for a
+  // directory walk, never for a read, write, or delete.
+  private path(key: string, allowRoot = false): string {
+    return resolveWithinRoot(this.root, key, allowRoot);
   }
 
   async put(key: string, bytes: Buffer, _contentType: string): Promise<void> {
@@ -135,7 +155,7 @@ export class LocalStorage implements StorageBackend {
   private async walk(dirKey: string, out: StoredObject[]): Promise<void> {
     let entries;
     try {
-      entries = await readdir(join(this.root, dirKey), { withFileTypes: true });
+      entries = await readdir(this.path(dirKey, true), { withFileTypes: true });
     } catch (err) {
       if (isMissingFsError(err)) return;
       throw err;
