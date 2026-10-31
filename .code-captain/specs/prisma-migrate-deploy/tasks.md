@@ -30,6 +30,8 @@ There are eight tasks. Tasks 1–4 build the Postgres history and its DB-less gu
 **Depends on:** none
 **Parallel-safe with:** none
 
+**Status:** Done (2026-10-31)
+
 **Files to add or change:**
 - `server/prisma/schema.postgresql.prisma` → `server/prisma/postgres/schema.prisma`: use `git mv` so history follows, then regenerate
 - `server/prisma/gen-postgres-schema.mjs`: target `join(here, 'postgres', 'schema.prisma')`, and `mkdir -p` the target's parent. Line 1's comment names the new path. `HEADER` does not mention the target path, so the generated file's content is byte-identical after the move

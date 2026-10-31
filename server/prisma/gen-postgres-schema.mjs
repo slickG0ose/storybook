@@ -1,10 +1,10 @@
-// Generates prisma/schema.postgresql.prisma from prisma/schema.prisma.
+// Generates prisma/postgres/schema.prisma from prisma/schema.prisma.
 // Run via: npm run db:gen-postgres-schema
 //
 // Every Postgres-only edit lives here as an exactly-once needle replacement.
 // A needle that matches zero times, or more than once, throws: a reformat of
 // schema.prisma must fail loudly rather than silently drop an edit from prod.
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -57,11 +57,31 @@ export function toPostgresSchema(sqliteSchema) {
   return HEADER + out;
 }
 
+const here = dirname(fileURLToPath(import.meta.url));
+
+/** Absolute path of the SQLite source of truth: server/prisma/schema.prisma. */
+const SQLITE_SCHEMA_PATH = join(here, 'schema.prisma');
+
+/**
+ * Absolute path of the generated Postgres schema: server/prisma/postgres/schema.prisma.
+ * It sits in its own directory so Prisma resolves its migrations to
+ * server/prisma/postgres/migrations/, separate from the SQLite history (ADR-028).
+ */
+export const POSTGRES_SCHEMA_PATH = join(here, 'postgres', 'schema.prisma');
+
+/**
+ * Regenerate the Postgres schema from schema.prisma and write it to
+ * POSTGRES_SCHEMA_PATH, creating the parent directory if needed.
+ * @returns {Promise<string>} the path written
+ */
+export async function writePostgresSchema() {
+  const original = await readFile(SQLITE_SCHEMA_PATH, 'utf8');
+  await mkdir(dirname(POSTGRES_SCHEMA_PATH), { recursive: true });
+  await writeFile(POSTGRES_SCHEMA_PATH, toPostgresSchema(original));
+  return POSTGRES_SCHEMA_PATH;
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const here = dirname(fileURLToPath(import.meta.url));
-  const source = join(here, 'schema.prisma');
-  const target = join(here, 'schema.postgresql.prisma');
-  const original = await readFile(source, 'utf8');
-  await writeFile(target, toPostgresSchema(original));
+  const target = await writePostgresSchema();
   console.log(`Wrote ${target}`);
 }
