@@ -170,5 +170,7 @@ Rejected in ADR-028 as an end state. It remains the same-day stopgap if this sli
 
 ## ADR-worthy decisions
 
-- [ ] Postgres history layout (`prisma/postgres/` subdirectory, no `prisma.config.ts`) and the per-migration snapshot drift check. This is the "architect's call" ADR-028 §2 delegated. Recorded here, not as a new ADR.
-- [ ] ADR-028's "#174 needs it" rationale is void (superseded by ADR-029). Already recorded in ADR-029 Consequences. No edit to ADR-028.
+- [x] Postgres history layout (`prisma/postgres/` subdirectory, no `prisma.config.ts`) and the per-migration snapshot drift check. This is the "architect's call" ADR-028 §2 delegated. Recorded here, not as a new ADR.
+  Deferred: no separate ADR — ADR-028 §2 delegated this choice to the architect; this spec (Rulings + Proposed shape) is its record. Revisit as an ADR only if the layout changes (e.g. a Prisma 7 `prisma.config.ts` move).
+- [x] ADR-028's "#174 needs it" rationale is void (superseded by ADR-029). Already recorded in ADR-029 Consequences. No edit to ADR-028.
+  Tracked by: ADR-029 Consequences in `.code-captain/product/decisions.md`.

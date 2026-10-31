@@ -253,6 +253,8 @@ These are already proven, so do not repeat them: `0_init` contents, extra-file t
 
 ### Task 8: Pre-merge follow-ups
 
+**Status:** Done (2026-10-31)
+
 **Zone:** docs (harness)
 **Depends on:** none (run last)
 
