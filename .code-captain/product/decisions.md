@@ -49,7 +49,7 @@ Rejected here for the reason [[ADR-028]] already gives: it needs a Neon branch a
 ## ADR-028 — Production schema changes move from `db push --accept-data-loss` to `prisma migrate deploy`, on a Postgres-only migration history baselined against Neon
 
 **Date:** 2026-09-30
-**Status:** Proposed — awaiting Nick's sign-off. Blocks inviting alpha testers ([#157](https://github.com/slickG0ose/storybook/issues/157)).
+**Status:** Accepted — Nick, 2026-10-31. The "#174 needs it" reason below is void ([[ADR-029]] solved #174 under `db push`); the data-loss reason stands.
 **Scope:** `render.yaml` `buildCommand`, a new Postgres migration directory under `server/prisma/`, `docs/neon-migration-runbook.md`. Revisits [[ADR-024]], as that ADR asked to be revisited. Plan: `docs/mvp-alpha-plan.md`.
 
 ### Decision
@@ -84,7 +84,7 @@ Rejected here for the reason [[ADR-028]] already gives: it needs a Neon branch a
 ## ADR-027 — Cloudflare R2, not Neon Object Storage, holds illustration bytes; the client is `@aws-sdk/client-s3`
 
 **Date:** 2026-09-30
-**Status:** Proposed — awaiting Nick's sign-off (new runtime dependency and new external service; CLAUDE.md size gate).
+**Status:** Accepted — Nick, 2026-10-31 (new runtime dependency and new external service approved).
 **Scope:** `server/package.json`, `server/src/services/storage.ts`. Spec: `.code-captain/specs/blob-storage-r2/spec.md` design decision 5.
 
 ### Decision
@@ -114,7 +114,7 @@ Revisit if Neon Object Storage reaches `us-west-2` or GA. The seam in [[ADR-025]
 ## ADR-026 — Illustrations are served by 302-redirecting to a public bucket, not proxied or presigned; `r2.dev` for the alpha
 
 **Date:** 2026-09-30
-**Status:** Proposed — awaiting Nick's sign-off with [[ADR-027]].
+**Status:** Accepted — Nick, 2026-10-31, with [[ADR-027]].
 **Scope:** `server/src/index.ts` (the `/illustrations` mount, currently `:62`). Spec: `.code-captain/specs/blob-storage-r2/spec.md` design decision 4.
 
 ### Decision
@@ -146,7 +146,7 @@ Static-first is not decoration: the fixture book's 13 PNGs ship inside the deplo
 ## ADR-025 — Illustration bytes go through a storage seam; stored URLs don't change and local disk stays the default
 
 **Date:** 2026-09-30
-**Status:** Proposed — awaiting Nick's sign-off with [[ADR-027]]. Blocks inviting alpha testers ([#157](https://github.com/slickG0ose/storybook/issues/157)).
+**Status:** Accepted — Nick, 2026-10-31, with [[ADR-027]].
 **Scope:** new `server/src/services/storage.ts`; call sites in `illustrations.ts`, `providers/fal.ts`, `imagePin.ts`, `pdf.tsx`, `routes/admin.ts`. Spec: `.code-captain/specs/blob-storage-r2/spec.md` design decisions 1–3.
 
 ### Decision
