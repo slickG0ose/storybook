@@ -8,9 +8,9 @@ import { toPostgresSchema } from '../../prisma/gen-postgres-schema.mjs';
  * (Postgres) schema from the SQLite one (#174, ADR-029).
  *
  * Three guarantees:
- * 1. Drift: the committed `schema.postgresql.prisma` is exactly what the generator
+ * 1. Drift: the committed `postgres/schema.prisma` is exactly what the generator
  *    produces today. A hand-edit, or a `schema.prisma` change without regenerating,
- *    fails here instead of silently diverging from what Render's `db push` applies.
+ *    fails here instead of silently diverging from what Render's `migrate deploy` applies.
  * 2. citext: the Postgres output carries the three pieces that make `User.email`
  *    case-insensitive unique, and the SQLite source carries none of them.
  * 3. Loud failure: every needle must match exactly once, so a reformat of
@@ -21,7 +21,7 @@ import { toPostgresSchema } from '../../prisma/gen-postgres-schema.mjs';
 
 const PRISMA_DIR = join(import.meta.dirname, '..', '..', 'prisma');
 const sqliteSchema = readFileSync(join(PRISMA_DIR, 'schema.prisma'), 'utf8');
-const committedPostgres = readFileSync(join(PRISMA_DIR, 'schema.postgresql.prisma'), 'utf8');
+const committedPostgres = readFileSync(join(PRISMA_DIR, 'postgres', 'schema.prisma'), 'utf8');
 
 const NEEDLES = {
   generatorProvider: 'provider = "prisma-client-js"',
@@ -38,13 +38,13 @@ function userModel(schema: string): string {
 }
 
 describe('gen-postgres-schema', () => {
-  it('committed schema.postgresql.prisma matches generator output (run `npm run db:gen-postgres-schema` from server/ if this fails)', () => {
+  it('committed postgres/schema.prisma matches generator output (run `npm run db:gen-postgres-schema` from server/ if this fails)', () => {
     const generated = toPostgresSchema(sqliteSchema);
     // Compare as a boolean first so the failure message carries the fix, then
     // as strings so vitest prints the diff.
     expect(
       generated === committedPostgres,
-      'schema.postgresql.prisma is out of date or was hand-edited. Run `npm run db:gen-postgres-schema` from server/ and commit the result.',
+      'postgres/schema.prisma is out of date or was hand-edited. Run `npm run db:gen-postgres-schema` from server/ and commit the result.',
     ).toBe(true);
     expect(generated).toBe(committedPostgres);
   });

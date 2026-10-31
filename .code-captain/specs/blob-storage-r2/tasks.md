@@ -1,7 +1,7 @@
 # Neon + R2 durable persistence — task plan
 
 > Spec: [spec.md](spec.md)
-> Status: Draft — awaiting Nick's approval (new dependency, new external service)
+> Status: Approved — Nick, 2026-10-31 (ADR-025 to ADR-027 accepted)
 > Last updated: 2026-09-12
 
 ## Overview

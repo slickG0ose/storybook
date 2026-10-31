@@ -10,10 +10,12 @@ import prisma from '../db/prisma';
  * their book in a facet no other book occupies. The enum now gates writes, but
  * that does nothing for rows already stored — this converges those.
  *
- * A boot-time pass rather than a Prisma migration on purpose: `render.yaml`
- * deploys with `prisma db push`, never `migrate deploy`, so a `migrations/`
- * folder would converge `dev.db` and `test.db` and silently never reach
- * production. See spec §"Alternatives considered".
+ * A boot-time pass rather than a Prisma migration on purpose: when this was
+ * written, `render.yaml` deployed with `prisma db push`, never `migrate deploy`,
+ * so a `migrations/` folder would have converged `dev.db` and `test.db` and
+ * silently never reached production. See spec §"Alternatives considered".
+ * Since ADR-028 prod runs `migrate deploy`, so a new row fix may instead ship
+ * as a data migration in both histories (docs/conventions/data.md).
  *
  * Self-limiting by construction. Once writes are enum-gated no new
  * off-vocabulary row can appear, so the steady state is one `findMany` and zero

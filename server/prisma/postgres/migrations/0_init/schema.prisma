@@ -1,0 +1,190 @@
+// DO NOT EDIT MANUALLY.
+// Source of truth: server/prisma/schema.prisma (SQLite, used by local dev + CI).
+// Regenerate this file by running: npm run db:gen-postgres-schema
+// (from the server/ directory).
+
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  extensions = [citext]
+}
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique @db.Citext
+  name          String
+  password_hash String
+  token         String?
+  role          String    @default("user")
+  deleted_at    DateTime?
+  created_at    DateTime  @default(now())
+
+  books  Book[]
+  orders Order[]
+}
+
+model Book {
+  id              String   @id @default(uuid())
+  title           String
+  author          String
+  description     String
+  theme           String
+  age_range       String
+  cover_emoji     String
+  cover_color     String
+  cover_url       String?
+  price           Float
+  is_featured     Boolean  @default(false)
+  is_user_created Boolean  @default(false)
+  status          String   @default("published")
+  version         Int      @default(1)
+  characters_json String?
+  style_descriptor String?
+  style_reference_url String?
+  // Presentation-only (#113). Both non-null with defaults that reproduce the
+  // pre-#113 rendering exactly, so every existing row is visually unchanged.
+  // Age-derived values are written at creation time only, never as a runtime
+  // fallback — see spec §Ruling 4. Deliberately NOT snapshotted into
+  // BookVersion — see spec §Ruling 2.
+  font_family String @default("fredoka")   // 'fredoka' | 'nunito' | 'atkinson' | 'lexend'
+  text_size   String @default("standard")  // 'cozy' | 'standard' | 'large' | 'xlarge'
+  // Which image provider + base model produced this book's art. Written lazily
+  // on the first successful image write (see services/imagePin.ts), NOT at
+  // creation time — the pin describes art that exists, not an intention.
+  // Null means "not yet pinned"; resolveImagePin() infers and back-fills.
+  image_provider  String?  // 'openai' | 'fal'
+  image_model     String?  // 'gpt-image-1' | 'fal-ai/flux-pro/v1.1'
+  created_by      String?
+  deleted_at      DateTime?
+  created_at      DateTime @default(now())
+  // Hero rotation (spec: .code-captain/specs/hero-rotation/spec.md). Both
+  // columns are additive; every pre-existing row keeps its data and comes out
+  // not-eligible and not-consented, so the pool is empty until opted into.
+  //
+  // Editorial quality — "this is good enough for the front page." Admin-writable
+  // via PUT /api/admin/books/:id/hero-eligible. Defaults false, so every
+  // existing row is out of the hero pool until someone deliberately opts it in.
+  is_hero_eligible Boolean @default(false)
+  // Permission for promotional display outside this book's own detail page.
+  // Deliberately has NO API writer — the only thing that sets it is the
+  // demo-seed fixture, i.e. the operator consenting to the operator's own demo
+  // book. Admin authority and owner consent are different keys on purpose;
+  // see the spec's §"The consent seam".
+  hero_consent_at DateTime?
+
+  creator    User?         @relation(fields: [created_by], references: [id])
+  pages      Page[]
+  versions   BookVersion[]
+  illustration_versions IllustrationVersion[]
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+}
+
+model IllustrationVersion {
+  id           Int      @id @default(autoincrement())
+  book_id      String
+  page_number  Int
+  version      Int
+  url          String
+  feedback     String?
+  created_at   DateTime @default(now())
+
+  book Book @relation(fields: [book_id], references: [id], onDelete: Cascade)
+
+  @@unique([book_id, page_number, version])
+}
+
+model BookVersion {
+  id              Int      @id @default(autoincrement())
+  book_id         String
+  version         Int
+  pages_json      String
+  description     String?
+  characters_json String?
+  created_at      DateTime @default(now())
+
+  book Book @relation(fields: [book_id], references: [id], onDelete: Cascade)
+
+  @@unique([book_id, version])
+}
+
+model Page {
+  id                       Int     @id @default(autoincrement())
+  book_id                  String
+  illustration_url         String?
+  page_number              Int
+  text                     String
+  illustration_description String
+
+  book Book @relation(fields: [book_id], references: [id], onDelete: Cascade)
+
+  @@unique([book_id, page_number])
+}
+
+model CartItem {
+  id         Int    @id @default(autoincrement())
+  session_id String
+  book_id    String
+  quantity   Int    @default(1)
+
+  book Book @relation(fields: [book_id], references: [id], onDelete: Cascade)
+
+  @@unique([session_id, book_id])
+}
+
+model Order {
+  id             String   @id @default(uuid())
+  session_id     String
+  user_id        String?
+  customer_name  String
+  customer_email String
+  total          Float
+  status         String   @default("confirmed")
+  created_at     DateTime @default(now())
+
+  user  User?       @relation(fields: [user_id], references: [id])
+  items OrderItem[]
+}
+
+model OrderItem {
+  id       Int    @id @default(autoincrement())
+  order_id String
+  book_id  String
+  title    String
+  quantity Int
+  price    Float
+
+  order Order @relation(fields: [order_id], references: [id], onDelete: Cascade)
+  book  Book  @relation(fields: [book_id], references: [id])
+}
+
+// Registration allowlist (F4a / #5). Email is the primary key — an email is
+// either on the list or it isn't, and there's nothing else to identify a row
+// by. `added_by` is a free-text admin email rather than a User relation so a
+// bootstrap entry can be created before any user exists.
+model AllowedEmail {
+  email      String   @id
+  added_by   String?
+  note       String?
+  created_at DateTime @default(now())
+}
+
+// Spend ledger (F4b / #6). One row per paid AI call, written AFTER the call
+// succeeds so a failed request doesn't consume quota. Indexed on
+// (user_id, created_at) because every read is a windowed sum over one of those
+// two axes: per-user-per-day, or global-per-month.
+model UsageLog {
+  id         Int      @id @default(autoincrement())
+  user_id    String
+  kind       String
+  cost_cents Int
+  created_at DateTime @default(now())
+
+  @@index([user_id, created_at])
+  @@index([created_at])
+}
