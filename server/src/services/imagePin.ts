@@ -1,6 +1,5 @@
-import { readdir, stat } from 'fs/promises';
-import { join } from 'path';
 import prisma from '../db/prisma';
+import { getStorage } from './storage';
 
 // The single choke point for "which image model serves this book".
 //
@@ -8,10 +7,6 @@ import prisma from '../db/prisma';
 // provider, so a book drawn on gpt-image-1 in May came back as Flux Pro glossy
 // digital painting in August. The fix is a per-book pin (Book.image_provider /
 // Book.image_model) that wins over IMAGE_PROVIDER for any book that has art.
-//
-// This module deliberately does NOT import from ./illustrations — illustrations.ts
-// imports ImagePin from here (Task 3), and the reverse import would be a cycle.
-// The two constants it needs are duplicated below with cross-references.
 
 export type ImageProvider = 'openai' | 'fal';
 
@@ -38,10 +33,6 @@ export const DEFAULT_MODEL: Record<ImageProvider, string> = {
 // read page slots only: a portrait generated today on a legacy book must not
 // drag that book's pin forward to today's provider.
 const PAGE_SLOT_MAX = 999;
-
-// Same on-disk base illustrations are written to (mirrors ILLUSTRATIONS_DIR in
-// services/illustrations.ts; duplicated rather than imported to avoid a cycle).
-const ILLUSTRATIONS_DIR = join(import.meta.dirname, '../../public/illustrations');
 
 // page-<n>.png / page-<n>-v<m>.png — the same filename scheme
 // listIllustrationVersions synthesizes history from for pre-table books.
@@ -70,10 +61,11 @@ export function currentImagePin(): ImagePin {
 /**
  * Earliest evidence of this book's art:
  *   1. the minimum page-slot IllustrationVersion.created_at, else
- *   2. the oldest page-*.png mtime in public/illustrations/<bookId>/, else
+ *   2. the oldest page-*.png lastModified directly under storage key <bookId>/
+ *      (the file mtime on the local backend), else
  *   3. null — the book has no art at all.
  *
- * A missing directory (or an unreadable file) is swallowed as "no evidence"
+ * A missing prefix (or a failed listing) is swallowed as "no evidence"
  * rather than thrown: inference must never be the reason a re-roll fails.
  */
 export async function earliestArtAt(bookId: string): Promise<Date | null> {
@@ -84,25 +76,23 @@ export async function earliestArtAt(bookId: string): Promise<Date | null> {
   });
   if (earliestRow) return earliestRow.created_at;
 
-  // Filesystem synthesis fallback, for books generated before the
-  // IllustrationVersion table existed: they have files on disk and no rows.
-  const dir = join(ILLUSTRATIONS_DIR, bookId);
-  let files: string[];
+  // Storage synthesis fallback, for books generated before the
+  // IllustrationVersion table existed: they have files in storage and no rows.
+  // Only objects directly under <bookId>/ count — the old readdir was
+  // non-recursive, and list() recurses.
+  const prefix = `${bookId}/`;
+  let objects: { key: string; lastModified: Date }[];
   try {
-    files = await readdir(dir);
+    objects = await getStorage().list(prefix);
   } catch {
     return null;
   }
 
   let oldest: Date | null = null;
-  for (const file of files) {
-    if (!PAGE_FILE_PATTERN.test(file)) continue;
-    try {
-      const s = await stat(join(dir, file));
-      if (!oldest || s.mtime < oldest) oldest = s.mtime;
-    } catch {
-      // unreadable file — it contributes no evidence
-    }
+  for (const obj of objects) {
+    const name = obj.key.slice(prefix.length);
+    if (name.includes('/') || !PAGE_FILE_PATTERN.test(name)) continue;
+    if (!oldest || obj.lastModified < oldest) oldest = obj.lastModified;
   }
   return oldest;
 }

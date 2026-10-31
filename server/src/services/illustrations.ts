@@ -1,10 +1,9 @@
-import { writeFile, mkdir, readdir, stat, readFile } from 'fs/promises';
-import { join } from 'path';
 import prisma from '../db/prisma';
 import type { Character } from '../types';
 import { FalImageGenerator } from './providers/fal';
 import type { ImagePin, ImageProvider } from './imagePin';
 import { isUsableApiKey } from '../lib/apiKeys';
+import { getStorage } from './storage';
 
 // isUsableApiKey moved to `lib/apiKeys.ts` once story generation and the
 // style-reference upload needed the same predicate for ANTHROPIC_API_KEY —
@@ -12,7 +11,8 @@ import { isUsableApiKey } from '../lib/apiKeys';
 // exported so this module's public surface is unchanged.
 export { isUsableApiKey };
 
-const ILLUSTRATIONS_DIR = join(import.meta.dirname, '../../public/illustrations');
+// Illustration bytes go through the storage seam (ADR-025): keys are the web
+// path minus "/illustrations/", e.g. `<bookId>/page-4-v2.png`.
 
 // PORTRAIT SLOT SENTINEL (IV2 Phase 2).
 // Per-character portrait version history is stored in the SAME
@@ -93,22 +93,25 @@ export async function resolveStyleAnchor(
 ): Promise<string | null> {
   if (!illustrationUrl || illustrationUrl.trim() === '') return null;
 
-  // Same web-path -> on-disk mapping the reference resolvers use, so "exists"
-  // here means "the resolver will find it" and not merely "some file exists".
-  const rel = illustrationUrl.replace(/^\/?illustrations\//, '');
-  const absPath = join(ILLUSTRATIONS_DIR, rel);
+  // Same web-path -> storage-key mapping the reference resolvers use, so
+  // "exists" here means "the resolver will find it" and not merely "some file
+  // exists". head() returns null for a missing key AND for a key that names a
+  // directory; it throws on an invalid key or a backend error — both of which
+  // must also drop the anchor, hence the catch.
+  const key = illustrationUrl.replace(/^\/?illustrations\//, '');
 
+  let found: boolean;
   try {
-    const s = await stat(absPath);
-    if (!s.isFile()) {
-      console.warn(
-        `Style anchor is not a file, dropping it: ${illustrationUrl} (resolved to ${absPath})`,
-      );
-      return null;
-    }
-  } catch {
+    found = (await getStorage().head(key)) !== null;
+  } catch (err) {
     console.warn(
-      `Style anchor image not found on disk, dropping it: ${illustrationUrl} (resolved to ${absPath})`,
+      `Style anchor image not found on disk, dropping it: ${illustrationUrl} (key ${key}: ${(err as Error)?.message ?? err})`,
+    );
+    return null;
+  }
+  if (!found) {
+    console.warn(
+      `Style anchor image not found on disk, dropping it: ${illustrationUrl} (resolved to key ${key})`,
     );
     return null;
   }
@@ -202,12 +205,11 @@ export interface GenerationPin {
 // Throws clearly when the file is missing so an absent portrait surfaces rather
 // than producing a malformed upload.
 async function resolveReferenceBytes(referencePath: string): Promise<Buffer> {
-  const rel = referencePath.replace(/^\/?illustrations\//, '');
-  const absPath = join(ILLUSTRATIONS_DIR, rel);
+  const key = referencePath.replace(/^\/?illustrations\//, '');
   try {
-    return await readFile(absPath);
+    return await getStorage().get(key);
   } catch {
-    throw new Error(`Reference image not found on disk: ${referencePath} (resolved to ${absPath})`);
+    throw new Error(`Reference image not found on disk: ${referencePath} (resolved to key ${key})`);
   }
 }
 
@@ -433,14 +435,11 @@ export async function generateIllustration(
   // ignores empty/absent references in this task.
   const buffer = await getImageGenerator(opts?.pin).generate(prompt, { referenceImages });
 
-  const dir = join(ILLUSTRATIONS_DIR, bookId);
-  await mkdir(dir, { recursive: true });
-
-  const version = await getNextVersion(dir, pageNumber);
+  const version = await getNextVersion(bookId, pageNumber);
   const filename = version === 1
     ? `page-${pageNumber}.png`
     : `page-${pageNumber}-v${version}.png`;
-  await writeFile(join(dir, filename), buffer);
+  await getStorage().put(`${bookId}/${filename}`, buffer, 'image/png');
 
   const url = `/illustrations/${bookId}/${filename}`;
 
@@ -457,37 +456,46 @@ export async function generateIllustration(
   return url;
 }
 
-async function getNextVersion(dir: string, pageNumber: number): Promise<number> {
-  try {
-    const files = await readdir(dir);
-    const pattern = new RegExp(`^page-${pageNumber}(-v(\\d+))?\\.png$`);
-    let max = 0;
-    for (const f of files) {
-      const m = f.match(pattern);
-      if (m) max = Math.max(max, m[2] ? parseInt(m[2]) : 1);
-    }
-    return max + 1;
-  } catch {
-    return 1;
+// File names stored directly under `<bookId>/`. list() is recursive, while the
+// readdir() these scans replaced was not — so anything in a subdirectory is
+// dropped here rather than relying on each caller's regex to exclude it.
+async function listBookFiles(bookId: string): Promise<{ name: string; lastModified: Date }[]> {
+  const prefix = `${bookId}/`;
+  const objects = await getStorage().list(prefix);
+  return objects
+    .map(o => ({ name: o.key.slice(prefix.length), lastModified: o.lastModified }))
+    .filter(o => o.name !== '' && !o.name.includes('/'));
+}
+
+// A missing book prefix lists as [] and so yields 1. Any OTHER listing failure
+// propagates: under r2 list() is a network call, and mapping a transient error
+// to 1 would make the next put() silently overwrite page-N.png — the exact
+// wrong-answer failure ADR-027 chose the SDK to avoid. The `catch -> 1` this
+// replaced dates from readdir() right after mkdir(), which could not fail.
+async function getNextVersion(bookId: string, pageNumber: number): Promise<number> {
+  const files = (await listBookFiles(bookId)).map(f => f.name);
+  const pattern = new RegExp(`^page-${pageNumber}(-v(\\d+))?\\.png$`);
+  let max = 0;
+  for (const f of files) {
+    const m = f.match(pattern);
+    if (m) max = Math.max(max, m[2] ? parseInt(m[2]) : 1);
   }
+  return max + 1;
 }
 
 // Portrait analogue of getNextVersion: scans portrait-<slot>(-v<n>).png in the
 // book's illustration dir and returns the next version number. Mirrors the page
 // versioning scheme so a regenerate bumps to v2, v3, ...
-async function getNextPortraitVersion(dir: string, slot: number): Promise<number> {
-  try {
-    const files = await readdir(dir);
-    const pattern = new RegExp(`^portrait-${slot}(-v(\\d+))?\\.png$`);
-    let max = 0;
-    for (const f of files) {
-      const m = f.match(pattern);
-      if (m) max = Math.max(max, m[2] ? parseInt(m[2]) : 1);
-    }
-    return max + 1;
-  } catch {
-    return 1;
+// Same propagate-on-failure rule as getNextVersion, for the same reason.
+async function getNextPortraitVersion(bookId: string, slot: number): Promise<number> {
+  const files = (await listBookFiles(bookId)).map(f => f.name);
+  const pattern = new RegExp(`^portrait-${slot}(-v(\\d+))?\\.png$`);
+  let max = 0;
+  for (const f of files) {
+    const m = f.match(pattern);
+    if (m) max = Math.max(max, m[2] ? parseInt(m[2]) : 1);
   }
+  return max + 1;
 }
 
 export interface IllustrationVersionRecord {
@@ -518,26 +526,22 @@ export async function listIllustrationVersions(
   // Backwards-compatibility fallback: books generated before the
   // IllustrationVersion table existed only have files on disk and no DB rows.
   // We synthesize records from the filesystem so the history viewer still
-  // renders them. created_at uses the file mtime (best-effort) and feedback
-  // is null because we never stored it for legacy regens.
-  const dir = join(ILLUSTRATIONS_DIR, bookId);
+  // renders them. created_at uses the object's lastModified (the file mtime
+  // under the local backend; best-effort) and feedback is null because we
+  // never stored it for legacy regens.
   try {
-    const files = await readdir(dir);
+    const files = await listBookFiles(bookId);
     const pattern = new RegExp(`^page-${pageNumber}(?:-v(\\d+))?\\.png$`);
     const synthesized: IllustrationVersionRecord[] = [];
     for (const f of files) {
-      const m = f.match(pattern);
+      const m = f.name.match(pattern);
       if (!m) continue;
       const version = m[1] ? parseInt(m[1], 10) : 1;
-      let created_at = new Date(0).toISOString();
-      try {
-        const s = await stat(join(dir, f));
-        created_at = s.mtime.toISOString();
-      } catch {
-        // mtime read failed — keep the epoch sentinel
-      }
+      const created_at = Number.isNaN(f.lastModified.getTime())
+        ? new Date(0).toISOString() // unreadable timestamp — keep the epoch sentinel
+        : f.lastModified.toISOString();
       synthesized.push({
-        url: `/illustrations/${bookId}/${f}`,
+        url: `/illustrations/${bookId}/${f.name}`,
         version,
         created_at,
         feedback: null,
@@ -602,15 +606,12 @@ export async function generateCharacterPortrait(
   // Prompt-only on purpose — no referenceImages passed (regression-safe path).
   const buffer = await getImageGenerator(opts?.pin).generate(prompt);
 
-  const dir = join(ILLUSTRATIONS_DIR, bookId);
-  await mkdir(dir, { recursive: true });
-
   const slot = portraitSlot(characterIndex);
-  const version = await getNextPortraitVersion(dir, slot);
+  const version = await getNextPortraitVersion(bookId, slot);
   const filename = version === 1
     ? `portrait-${slot}.png`
     : `portrait-${slot}-v${version}.png`;
-  await writeFile(join(dir, filename), buffer);
+  await getStorage().put(`${bookId}/${filename}`, buffer, 'image/png');
 
   const url = `/illustrations/${bookId}/${filename}`;
 
@@ -668,9 +669,7 @@ export async function generateCover(
   // keeps the no-reference path byte-identical.
   const buffer = await getImageGenerator(opts?.pin).generate(prompt, { referenceImages });
 
-  const dir = join(ILLUSTRATIONS_DIR, bookId);
-  await mkdir(dir, { recursive: true });
-  await writeFile(join(dir, 'cover.png'), buffer);
+  await getStorage().put(`${bookId}/cover.png`, buffer, 'image/png');
 
   return `/illustrations/${bookId}/cover.png`;
 }

@@ -1,15 +1,10 @@
-import { readFile } from 'fs/promises';
-import { join } from 'path';
 import type { ImageGenerator, ImageGenOptions } from '../illustrations';
+import { getStorage } from '../storage';
 
-// Reference portraits are written by the service to
-// server/public/illustrations/<bookId>/portrait-<slot>.png and carried on the
-// wire as web paths ('/illustrations/<bookId>/portrait-<slot>.png'). To resolve
-// a web path back to bytes we strip the leading '/illustrations/' segment and
-// join against the same on-disk base the service writes to. Mirrors
-// ILLUSTRATIONS_DIR in illustrations.ts (../../public/illustrations from this
-// file's dir, which sits one level deeper under services/providers/).
-const ILLUSTRATIONS_DIR = join(import.meta.dirname, '../../../public/illustrations');
+// Reference portraits are stored at key '<bookId>/portrait-<slot>.png' and
+// carried on the wire as web paths ('/illustrations/<bookId>/portrait-<slot>.png').
+// To resolve a web path back to bytes we strip the leading '/illustrations/'
+// segment and read the key through the storage seam (ADR-025).
 
 // Cap a single Fal image-generation request at 120s — parity with the OpenAI
 // path (OPENAI_IMAGE_TIMEOUT_MS in illustrations.ts). Flux Pro 1.1's
@@ -154,21 +149,20 @@ export class FalImageGenerator implements ImageGenerator {
 }
 
 // Resolve a reference web path ('/illustrations/<bookId>/<file>.png') to a
-// base64 data URI Fal can consume inline. Reads from the same on-disk base the
-// service writes illustrations to. Throws a clear error if the file is missing
-// so the caller surfaces a misconfigured/absent portrait rather than silently
-// sending a malformed request to Fal.
+// base64 data URI Fal can consume inline. Reads through the same storage seam
+// the service writes illustrations to. Throws a clear error if the object is
+// missing so the caller surfaces a misconfigured/absent portrait rather than
+// silently sending a malformed request to Fal.
 async function toDataUri(referencePath: string): Promise<string> {
-  // Strip the '/illustrations/' web prefix to get the path relative to the
-  // illustrations base. Tolerate an absent leading slash defensively.
-  const rel = referencePath.replace(/^\/?illustrations\//, '');
-  const absPath = join(ILLUSTRATIONS_DIR, rel);
+  // Strip the '/illustrations/' web prefix to get the storage key. Tolerate an
+  // absent leading slash defensively.
+  const key = referencePath.replace(/^\/?illustrations\//, '');
 
   let bytes: Buffer;
   try {
-    bytes = await readFile(absPath);
+    bytes = await getStorage().get(key);
   } catch {
-    throw new Error(`Reference image not found on disk: ${referencePath} (resolved to ${absPath})`);
+    throw new Error(`Reference image not found on disk: ${referencePath} (resolved to key ${key})`);
   }
 
   return `data:image/png;base64,${bytes.toString('base64')}`;

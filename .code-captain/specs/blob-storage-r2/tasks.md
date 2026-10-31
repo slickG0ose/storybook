@@ -62,7 +62,7 @@ options. No code outside `render.yaml` and `docs/`.
 
 ## Task 2 — `services/storage.ts`: the seam and both backends
 
-**Status:** Not started
+**Status:** Done (2026-10-31)
 
 Add `@aws-sdk/client-s3` to `server/package.json`. Implement the interface from spec
 decision 1: `LocalStorage` (wrapping today's exact `fs/promises` calls against
@@ -81,7 +81,7 @@ no other source file imports `fs/promises` for an illustration path yet.
 
 ## Task 3 — Re-point `services/illustrations.ts`
 
-**Status:** Not started
+**Status:** Done (2026-10-31)
 
 All nine sites in the spec's call-site table for this file: three writes, `resolveStyleAnchor`,
 `resolveReferenceBytes`, both `getNext*Version` helpers, and both `list*Versions` legacy
@@ -93,12 +93,18 @@ why it exists — read them before editing: `resolveStyleAnchor` never throws an
 reference-not-found error (`:202-212`); `getNextVersion`'s unreadable-listing case returns
 `1` rather than propagating (`:460-476`).
 
+> **Amended 2026-10-31 (reviewer finding, pre-merge):** the third contract is dropped. Under `r2`
+> `list()` is a network call, and `catch → 1` turned a transient R2 error into a silent overwrite
+> of `page-N.png` — the failure ADR-027 exists to prevent. A missing prefix still yields `1`
+> (`list()` returns `[]`); any other listing error now propagates. Pinned by
+> `services/__tests__/illustrationVersioning.test.ts`.
+
 **Done when:** the server suite passes with those four test files unmodified, and
 `grep -n "fs/promises" src/services/illustrations.ts` is empty.
 
 ## Task 4 — Re-point `providers/fal.ts`, `imagePin.ts`, `pdf.tsx`
 
-**Status:** Not started
+**Status:** Done (2026-10-31)
 
 `fal.ts:161-170` `toDataUri` → `get()`; its duplicated dir constant (`:12`) goes.
 `imagePin.ts` `earliestArtAt` filesystem fallback → `list()` + `lastModified`; the
@@ -115,7 +121,7 @@ server suite passes untouched.
 
 ## Task 5 — Serving layer and the admin orphan endpoints
 
-**Status:** Not started
+**Status:** Done (2026-10-31)
 
 `index.ts:61`: keep `express.static` first, add the fallback handler that 302s to
 `${R2_PUBLIC_BASE_URL}/<key>` under the `r2` backend and 404s under `local` (which is what
@@ -133,7 +139,7 @@ unmodified, and `npm test` at the repo root plus `cd e2e && npm test` are green.
 
 ## Task 6 — Operator surface
 
-**Status:** Not started
+**Status:** Done (2026-10-31)
 
 Document the five new vars in `server/.env.example` (after the `IMAGE_PROVIDER` block, in
 the same commented style): `STORAGE_BACKEND`, `R2_ACCOUNT_ID`, `R2_BUCKET`,
@@ -153,8 +159,11 @@ reading this spec, and `render.yaml` declares every var the server reads.
 
 **Status:** ADRs done 2026-09-30 — ADR-025 (seam), ADR-026 (redirect), ADR-027 (R2 over
 Neon Object Storage, and the SDK), all **Proposed** pending Nick's sign-off. The `db push`
-item became its own decision, ADR-028. Issue filing and the `deploy-spike-render.md`
-update are still open.
+item became its own decision, ADR-028. **Done 2026-10-31:** ADR-025 to ADR-027 accepted by
+Nick (status flip in PR #191); version pruning + custom domain filed as
+[#192](https://github.com/slickG0ose/storybook/issues/192) and linked from the spec's Deferred
+section; `deploy-spike-render.md` updated. The `db push` → `migrate deploy` item is ADR-028,
+implemented in its own PR rather than an issue.
 
 Three ADRs in `.code-captain/product/decisions.md`, per spec §ADR candidates — next
 numbers after ADR-024. Then file the deferred items as issues: `db push` → `migrate deploy`,

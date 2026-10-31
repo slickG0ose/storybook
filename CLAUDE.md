@@ -20,6 +20,8 @@ AI-powered children's book store. React + Express + Claude API. Working storefro
 
 Stack details, patterns, and zone-specific conventions live in `docs/conventions/{server,client,testing,data}.md`. Agents read these on demand — they're the source of truth, not duplicated into agent prompts. For edges that cross a zone boundary — which page calls which route, which router pulls which service, what a `@storybook/shared` schema change touches — read [docs/conventions/call-graph.md](docs/conventions/call-graph.md) instead of grepping all four workspaces.
 
+Illustration bytes don't live in the database: they go through a storage seam (`STORAGE_BACKEND=local|r2`, default `local`) — where they live, how they're served, and the Cloudflare R2 setup for prod are in [docs/conventions/data.md](docs/conventions/data.md) §Illustration storage.
+
 ## Branching
 
 Trunk-based off `master`. Short-lived branches, squash-merge PRs. **Never `git commit` directly on `master`** — the local `.claude/hooks/guard-bash.sh` blocks it (exit 2), and GitHub branch protection rejects the push regardless. Prefixes follow conventional commits — the type before the slash drives changelog grouping and lets you scan `git log` at a glance.

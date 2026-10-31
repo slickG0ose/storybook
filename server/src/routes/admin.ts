@@ -1,6 +1,4 @@
 import { Router } from 'express';
-import { readdir, rm, stat } from 'fs/promises';
-import { join, resolve, sep } from 'path';
 import type { Request, Response, NextFunction } from 'express';
 import {
   AdminBookListResponseSchema,
@@ -27,6 +25,7 @@ import { countHeroFrames } from '../lib/heroPool';
 import { getAuthUser, requireAdmin } from './auth';
 import { validate } from '../middleware/validate';
 import { normalizeEmail } from '../services/allowlist';
+import { getStorage, isValidKey } from '../services/storage';
 import {
   startOfUtcDay,
   startOfUtcMonth,
@@ -37,7 +36,6 @@ import {
 
 const router = Router();
 
-const ILLUSTRATIONS_DIR = join(import.meta.dirname, '../../public/illustrations');
 
 type BookRow = { characters_json?: string | null } & Record<string, unknown>;
 
@@ -277,22 +275,19 @@ router.get(
     response: OrphanIllustrationListResponseSchema,
   }),
   async (_req: Request, res: Response) => {
-    let entries: string[];
-    try {
-      entries = await readdir(ILLUSTRATIONS_DIR);
-    } catch {
-      // Directory missing is a non-error condition: nothing on disk means
-      // nothing to reconcile.
-      return res.json([]);
-    }
+    // Scanning at book granularity: a book's illustrations all live under
+    // `<bookId>/`, so the first key segment is the book id. A top-level file
+    // (no slash) is its own entry — it matches no book and is reported as an
+    // orphan, which is a reasonable outcome. Under r2, list() merges the bucket
+    // with local disk. An empty store is a non-error condition: nothing stored
+    // means nothing to reconcile.
+    const entries = [
+      ...new Set((await getStorage().list('')).map(obj => obj.key.split('/')[0])),
+    ];
 
     const orphans: OrphanRow[] = [];
 
     for (const entry of entries) {
-      // Scanning at directory granularity — each book gets its own folder.
-      // We don't `stat` here because readdir on Windows can be slow for a lot
-      // of entries; a non-directory file would just match no book and be
-      // reported as an orphan, which is also a reasonable outcome.
       const book = await prisma.book.findUnique({ where: { id: entry } });
       if (!book) {
         orphans.push({
@@ -326,33 +321,20 @@ router.delete(
   async (req: Request<{ id: string }>, res: Response) => {
     const { id } = req.params;
 
-    // Path-traversal guard. Reject any `id` containing path separators or `..`
-    // *before* hitting the filesystem. Then resolve and verify the result is
-    // still strictly inside ILLUSTRATIONS_DIR — defense in depth in case a
-    // future refactor weakens the surface check.
-    if (id.includes('..') || id.includes('/') || id.includes('\\') || id.includes('\0')) {
+    // Key-shape guard, before touching storage. The storage seam owns key
+    // validation (`..`, leading `/`, backslash, NUL, `.` segments); on top of
+    // that an id is exactly one segment, so a `/` is refused here too. The
+    // prefix passed to remove() is `${id}/` — remove() is a PREFIX match, and a
+    // bare id would also delete every book whose id merely starts with it.
+    const prefix = `${id}/`;
+    if (id.includes('/') || !isValidKey(prefix)) {
       return res.status(400).json({ error: 'Invalid request: path traversal' });
     }
 
-    const illustrationsRoot = resolve(ILLUSTRATIONS_DIR);
-    const targetPath = resolve(illustrationsRoot, id);
-    // The resolved target MUST be a direct child of illustrationsRoot. We
-    // require the prefix + separator so `/foo/illustrations` doesn't match
-    // `/foo/illustrations-evil`.
-    if (
-      targetPath === illustrationsRoot ||
-      !targetPath.startsWith(illustrationsRoot + sep)
-    ) {
-      return res.status(400).json({ error: 'Invalid request: path traversal' });
-    }
+    const storage = getStorage();
 
-    // 404 if the directory doesn't exist on disk.
-    try {
-      const s = await stat(targetPath);
-      if (!s.isDirectory()) {
-        return res.status(404).json({ error: 'Orphan directory not found' });
-      }
-    } catch {
+    // 404 if nothing is stored under the id.
+    if ((await storage.list(prefix)).length === 0) {
       return res.status(404).json({ error: 'Orphan directory not found' });
     }
 
@@ -366,7 +348,7 @@ router.delete(
         .json({ error: 'Cannot delete: directory belongs to a live book' });
     }
 
-    await rm(targetPath, { recursive: true, force: true });
+    await storage.remove(prefix);
     res.json({ success: true, deleted: id });
   },
 );

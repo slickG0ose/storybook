@@ -40,6 +40,8 @@ import Anthropic from '@anthropic-ai/sdk';
 import { checkForNewerModel } from './lib/models';
 import { buildCorsPolicy } from './lib/cors';
 import { assertSingleInstanceAssumption } from './middleware/rateLimit';
+import { illustrationRedirect } from './middleware/illustrationRedirect';
+import { getStorage, resolveBackendName } from './services/storage';
 
 import type { Request, Response, NextFunction } from 'express';
 
@@ -51,6 +53,15 @@ const PORT: number = parseInt(process.env.PORT || '3001', 10);
 // the process runs, and a 500th-request discovery is not a discovery.
 assertSingleInstanceAssumption();
 
+// Storage backend (ADR-025). Resolved at boot so STORAGE_BACKEND=r2 with a
+// missing R2_* var is a startup error naming the variable — not a broken image
+// on the first page view. Under the default `local` this constructs the disk
+// backend and does nothing else.
+getStorage();
+if (resolveBackendName() === 'r2') {
+  console.log('[storage] backend: r2 (local disk is the read fallback)');
+}
+
 const corsPolicy = buildCorsPolicy();
 if (corsPolicy.warning) {
   console.warn(`[cors] ${corsPolicy.warning}`);
@@ -59,7 +70,13 @@ if (corsPolicy.warning) {
 }
 app.use(cors(corsPolicy.options));
 app.use(express.json({ limit: '10mb' }));
-app.use('/illustrations', express.static(join(import.meta.dirname, '../public/illustrations')));
+// Disk first; on a miss, illustrationRedirect 302s to R2_PUBLIC_BASE_URL under the
+// r2 backend and falls through to the default 404 under local (ADR-026).
+app.use(
+  '/illustrations',
+  express.static(join(import.meta.dirname, '../public/illustrations')),
+  illustrationRedirect,
+);
 app.use('/uploads', express.static(join(import.meta.dirname, '../public/uploads')));
 // Derived, committed, byte-budgeted hero-rotation frames. Unlike /illustrations these
 // are never written at runtime -- they are produced by server/scripts/derive-hero-frames.sh

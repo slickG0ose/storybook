@@ -23,8 +23,7 @@
 // URL that points back at our own Express server can deadlock the request
 // under load (spec §Data flow).
 
-import { readFile } from 'fs/promises';
-import { join, resolve, sep } from 'path';
+import { getStorage } from './storage';
 import {
   Document,
   Page,
@@ -103,7 +102,6 @@ function tint(hex: string, alpha: number): string {
 // ---------------------------------------------------------------------------
 // Image loading
 // ---------------------------------------------------------------------------
-const PUBLIC_DIR = resolve(join(import.meta.dirname, '../../public'));
 const REMOTE_TIMEOUT_MS = 10_000;
 
 type EmbeddedImage = { data: Buffer; format: 'png' | 'jpg' };
@@ -129,12 +127,12 @@ async function loadImage(url: string): Promise<EmbeddedImage | null> {
       if (!res.ok) throw new Error(`remote image ${res.status}`);
       buf = Buffer.from(await res.arrayBuffer());
     } else {
-      const abs = resolve(join(PUBLIC_DIR, url.replace(/^\/+/, '')));
-      // Refuse anything that escapes public/ — the URL comes off a DB row.
-      if (abs !== PUBLIC_DIR && !abs.startsWith(PUBLIC_DIR + sep)) {
-        throw new Error(`image path escapes public dir: ${url}`);
-      }
-      buf = await readFile(abs);
+      // Stored relative URLs are always '/illustrations/<key>'. The URL comes
+      // off a DB row, so anything else is refused; the storage seam's key
+      // validation (no '..', no leading '/') is the path-traversal fence.
+      const m = /^\/*illustrations\/(.+)$/.exec(url);
+      if (!m) throw new Error(`image path is not an illustration: ${url}`);
+      buf = await getStorage().get(m[1]);
     }
     const format = detectFormat(buf);
     if (!format) throw new Error('unsupported image format (want PNG or JPEG)');

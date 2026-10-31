@@ -12,6 +12,7 @@ Database layer: Prisma over SQLite. Migrations, seeds, snapshots, restore. The d
   - `server/prisma/demo-seed.ts` — extra demo content layered on top.
 - **Tests:** `server/test.db` (gitignored, recreated per test run via vitest globalSetup).
 - **Snapshots:** `server/.backups/dev-<timestamp>.db` — auto-created on dev-server boot, 7-day retention.
+- **Illustration bytes:** not in the database. Local disk or Cloudflare R2, chosen by `STORAGE_BACKEND` — see [Illustration storage](#illustration-storage).
 
 ## Preserving your locally-generated books
 
@@ -127,6 +128,65 @@ See `docs/conventions/testing.md` for the per-test usage pattern.
 ## Legacy: `server/src/db/init.ts`
 
 This file pre-dates the Prisma migration. It exports `getStore` / `resetStore` / `save` / `initDb` for the original JSON-file store. Routes no longer use it; new code should not call it. The legacy seed inside `init.ts` may also diverge from `prisma/seed.ts` — when in doubt, the Prisma seed is canonical.
+
+## Illustration storage
+
+The database holds illustration **URLs**, never image bytes. The bytes — page art, covers, character portraits, every version of each — live behind a storage seam, and where that is depends on one env var. Decisions: ADR-025 (seam), ADR-026 (redirect serving, `r2.dev`), ADR-027 (R2 + `@aws-sdk/client-s3`) in `.code-captain/product/decisions.md`.
+
+### The seam
+
+`server/src/services/storage.ts` is the only code that touches illustration bytes. Everything else calls `getStorage()` and gets a `StorageBackend` with `put` / `get` / `head` / `list` / `remove`. Nothing else should import `fs/promises` for an illustration path.
+
+- **Keys** are the stored web path minus `/illustrations/`: `<bookId>/page-4-v2.png`, `<bookId>/portrait-<slot>.png`. Key validation lives in `storage.ts` and nowhere else — it rejects `..`, a leading `/`, a backslash, NUL, and a `.` segment. It is the path-traversal fence for both backends and for the admin orphan endpoints.
+- **Stored URLs never change.** `Page.illustration_url` / `Book.cover_url` stay relative (`/illustrations/<bookId>/<file>.png`) under either backend, so switching backends needs no migration and a row written under one is readable under the other.
+- `public/uploads` and `public/hero` are **not** behind the seam. Hero frames are committed and bundled on purpose (ADR-014).
+
+### Backends: `STORAGE_BACKEND`
+
+| Value | Bytes live in | Use |
+|-------|---------------|-----|
+| `local` (default; blank or unset also mean `local`) | `server/public/illustrations/` on local disk | Dev, tests, e2e, offline work. Needs no `R2_*` var. |
+| `r2` | Cloudflare R2 bucket, over the S3 API | Production. Render's disk is ephemeral, so under `local` every generated PNG is lost on the next restart or deploy. |
+
+Any other value **throws at boot** — a typo must not quietly select ephemeral disk in production. The backend is resolved once at startup (`getStorage()` in `server/src/index.ts`); under `r2` the boot log says `[storage] backend: r2 (local disk is the read fallback)`. Changing the var takes a restart.
+
+Under `r2`, all five `R2_*` vars are required. If any is missing or blank the server **refuses to start** with `STORAGE_BACKEND=r2 requires <VAR, VAR> to be set (missing or blank).` — it names the variables, never a value, so the secret can't reach a log.
+
+| Var | What it is |
+|-----|-----------|
+| `R2_ACCOUNT_ID` | Cloudflare account ID. The endpoint is derived: `https://<id>.r2.cloudflarestorage.com` |
+| `R2_BUCKET` | Bucket name |
+| `R2_ACCESS_KEY_ID` | R2 API token access key (secret) |
+| `R2_SECRET_ACCESS_KEY` | R2 API token secret (secret) |
+| `R2_PUBLIC_BASE_URL` | Public read URL of the bucket, e.g. `https://pub-<hash>.r2.dev`. Trailing slashes are stripped. |
+
+### Local-disk fallback under `r2`
+
+Under `r2`, `get` and `head` **fall back to local disk on an R2 miss**, and `list` merges both sources (deduped by key, R2 wins). The reason is the fixture book `b2fa23cf-3156-4b89-83e7-82d98c32c8b7`: its 13 PNGs are committed under `server/public/illustrations/`, ship inside the deploy bundle, and are never uploaded. Without the fallback the demo book's art would 404 the moment the switch flipped. `remove` deletes from both sources, so an admin-deleted orphan doesn't reappear from disk.
+
+New writes under `r2` go **only** to R2.
+
+### Serving
+
+`/illustrations/*` is `express.static` against local disk **first**, then `server/src/middleware/illustrationRedirect.ts`:
+
+- **`local`:** a disk miss falls through to Express's default 404 — the pre-seam behaviour.
+- **`r2`:** a disk miss on a GET/HEAD answers **302 → `${R2_PUBLIC_BASE_URL}/<key>`**. Image bytes never cross the Render instance. The redirect host is always `R2_PUBLIC_BASE_URL`; an invalid key is a 404, never a redirect. The handler does not check that the key exists in R2 — a genuinely missing image 302s and the bucket answers the 404.
+
+This needs the bucket to be **public-read**. For the alpha that is R2's `r2.dev` development subdomain, which **Cloudflare rate-limits and says not to use in production**. A custom domain in front of the bucket is the upgrade path, tracked in [#192](https://github.com/slickG0ose/storybook/issues/192) with version pruning. The art is storefront content and book IDs are UUIDs, so a public bucket exposes nothing that isn't already public.
+
+### Operator setup: switching production to R2
+
+About 20 minutes. Do every step before flipping `STORAGE_BACKEND` — the server won't boot under `r2` with a blank `R2_*` var.
+
+1. **Create the bucket.** Cloudflare dashboard → R2 → Create bucket. Note the name (`R2_BUCKET`) and, from the R2 overview page, the Account ID (`R2_ACCOUNT_ID`).
+2. **Enable public access.** Bucket → Settings → Public access → R2.dev subdomain → Allow. Copy the `https://pub-<hash>.r2.dev` URL (`R2_PUBLIC_BASE_URL`).
+3. **Create an API token.** R2 → Manage R2 API Tokens → Create API token, permission **Object Read & Write**, scoped to **this bucket only**. Copy the Access Key ID and Secret Access Key (`R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`) — the secret is shown once.
+4. **Set the five `R2_*` vars in Render.** `storybook-server` → Environment. They are declared `sync: false` in `render.yaml`, so they appear listed but **blank** — a listed key is not a set key; check each value.
+5. **Flip `STORAGE_BACKEND` to `r2`** in the same Environment tab and save (this restarts the service). It is also `sync: false`, so a later Blueprint sync will not reset it; blank means `local`, which is why merging the Blueprint changed nothing.
+6. **Verify.** Check the deploy log for `[storage] backend: r2` and no `STORAGE_BACKEND=r2 requires …` error. Generate a book, confirm its pages render, then **restart the service** (Manual Deploy → Restart) and confirm they still render. `curl -sI https://<service>/illustrations/<bookId>/page-1.png` should answer `302` with a `Location` on your `r2.dev` URL. The fixture book's art should still load (served from disk).
+
+**Rollback:** set `STORAGE_BACKEND` back to `local` (or blank). Books generated while on `r2` will then 404 their art until it is switched back — the bytes stay in the bucket.
 
 ## Things to NEVER do without user confirmation (CLAUDE.md guardrails)
 

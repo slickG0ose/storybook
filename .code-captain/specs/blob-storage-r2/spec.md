@@ -202,7 +202,8 @@ Recorded 2026-09-30 as ADR-025, ADR-026, ADR-027 (Proposed) in
 
 - `prisma db push --accept-data-loss` → `migrate deploy`. **Tracked:** ADR-028 (Proposed); needs its own spec — see `docs/mvp-alpha-plan.md` step 4.
 - Pruning superseded illustration versions (27 MB in one book is mostly dead versions).
-  **Deferred:** new issue (Task 7).
-- A custom domain in front of R2, replacing `r2.dev`. **Deferred:** same issue as above.
+  **Deferred:** [#192](https://github.com/slickG0ose/storybook/issues/192) (Task 7).
+- A custom domain in front of R2, replacing `r2.dev`. **Deferred:**
+  [#192](https://github.com/slickG0ose/storybook/issues/192), same issue as above.
 - Case-insensitive `User.email` index — untouched here, already tracked as
   [#174](https://github.com/slickG0ose/storybook/issues/174).
