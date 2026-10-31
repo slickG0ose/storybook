@@ -85,6 +85,8 @@ export declare function toPostgresSchema(sqliteSchema: string): string;
 **Depends on:** 1
 **Parallel-safe with:** 3
 
+**Status:** Done (2026-10-31)
+
 **Files to add or change:**
 - `server/src/__tests__/postgresSchema.test.ts` (new): must sit under `src/**/__tests__/` to match `vitest.config.ts` `include`
 
@@ -115,6 +117,8 @@ import { toPostgresSchema } from '../../prisma/gen-postgres-schema.mjs';
 **Depends on:** none (content assumes Task 1's design)
 **Parallel-safe with:** 1, 2
 
+**Status:** Done (2026-10-31)
+
 **Files to add or change:**
 - `CLAUDE.md` §"`User.email` normalisation" (line ~139): replace the paragraph ending "tracked as a follow-up, not done here". Say that in Postgres `User.email` is `citext` (injected by `gen-postgres-schema.mjs`), so the `@unique` index is case-insensitive and a differently-cased duplicate fails with P2002. Say that SQLite (dev/test) has no citext and relies on `normalizeEmail` alone, and that this divergence fails in tests rather than in prod. Point to ADR-029. Keep it to one paragraph; it is a guardrail doc, and Nick sees the diff in the PR.
 - `docs/conventions/data.md`: add a short "Postgres-only schema edits" subsection. Cover four points: they live in `gen-postgres-schema.mjs` as exactly-once needle injections, never in `schema.prisma` or by hand; `postgresSchema.test.ts` fails on drift; never run `prisma generate` against the Postgres schema locally; and `User.email @db.Citext` is the only one today. Replace the stale line 109 ("Switch the database provider ... placeholder"). Prod is Postgres on Neon, and the script is load-bearing, not a placeholder.
@@ -127,6 +131,8 @@ import { toPostgresSchema } from '../../prisma/gen-postgres-schema.mjs';
 ---
 
 ### Task 4 — Pre-merge follow-ups
+
+**Status:** Done (2026-10-31) — ADR-029 written to `.code-captain/product/decisions.md`.
 
 **Zone:** docs (harness) · **Depends on:** none (run last)
 
