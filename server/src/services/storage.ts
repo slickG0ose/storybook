@@ -57,6 +57,9 @@ export function isValidKey(key: string): boolean {
   if (key.includes('\\')) return false;
   if (key.includes('\0')) return false;
   if (key.includes('..')) return false;
+  // A `.` segment resolves to its parent directory on disk: `./` would make
+  // LocalStorage.remove() target the illustrations root itself.
+  if (key.split('/').some(segment => segment === '.')) return false;
   return true;
 }
 

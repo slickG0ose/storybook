@@ -73,7 +73,7 @@ describe('key validation', () => {
     expect(isValidKey('b2fa23cf/')).toBe(true);
   });
 
-  it.each(['../etc/passwd', 'abc/../../x', '..', '/abs/path.png', 'a\\b.png', 'a\0b', ''])(
+  it.each(['../etc/passwd', 'abc/../../x', '..', '/abs/path.png', 'a\\b.png', 'a\0b', '', '.', './', 'a/./b.png'])(
     'rejects %j',
     key => {
       expect(isValidKey(key)).toBe(false);

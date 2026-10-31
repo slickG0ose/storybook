@@ -115,7 +115,7 @@ server suite passes untouched.
 
 ## Task 5 — Serving layer and the admin orphan endpoints
 
-**Status:** Not started
+**Status:** Done (2026-10-31)
 
 `index.ts:61`: keep `express.static` first, add the fallback handler that 302s to
 `${R2_PUBLIC_BASE_URL}/<key>` under the `r2` backend and 404s under `local` (which is what
