@@ -5,16 +5,18 @@
 
 generator client {
   provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  extensions = [citext]
 }
 
 model User {
   id            String    @id @default(uuid())
-  email         String    @unique
+  email         String    @unique @db.Citext
   name          String
   password_hash String
   token         String?

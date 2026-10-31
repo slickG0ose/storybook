@@ -4,6 +4,48 @@ Append-only log. Newest entries on top. Each entry should answer: *what was deci
 
 ---
 
+## ADR-029 — `User.email` is `citext` in Postgres via generator-injected schema edits; SQLite relies on `normalizeEmail`
+
+**Date:** 2026-10-31
+**Status:** Accepted (orchestrator ruling while Nick was away; reversible by reverting the PR)
+**Scope:** `server/prisma/gen-postgres-schema.mjs`, `server/prisma/schema.postgresql.prisma`. Closes [#174](https://github.com/slickG0ose/storybook/issues/174), the follow-up [[ADR-022]] filed. Spec: `.code-captain/specs/email-case-insensitive-unique/spec.md`.
+
+### Decision
+
+In Postgres, `User.email` is `String @unique @db.Citext`, so the existing `User_email_key` unique index compares case-insensitively and `Nick@G.com` can no longer sit beside `nick@g.com`. The three Postgres-only edits (`previewFeatures = ["postgresqlExtensions"]`, `extensions = [citext]`, `@db.Citext`) are **injected by `gen-postgres-schema.mjs`**, each needle matching exactly once or the generator throws. `schema.prisma` (SQLite) does not change, and a test fails CI if the committed Postgres schema drifts from generator output.
+
+What the next `db push` runs against prod, observed on a Neon branch off `production` with Prisma 6.19.3:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS "citext";
+ALTER TABLE "User" ALTER COLUMN "email" SET DATA TYPE CITEXT;
+```
+
+No data-loss prompt, idempotent on re-run, and the index keeps its name (the P2002 target is unchanged).
+
+### Why
+
+- **Declarative beats a manual step.** A raw `lower(email)` unique index turned out *not* to be dropped by `db push` (verified across no-op and `User`-altering pushes), but nothing in the repo would ever create it. Every fresh database, and [[ADR-028]]'s `0_init` generated from the datamodel, would silently lack it. citext lives in the schema, so `db push` applies it today and `migrate diff --from-empty` emits it later.
+- **It doesn't wait on ADR-028.** It works under the deploy as it runs now.
+- **The divergence fails safe.** SQLite has no citext and stays case-sensitive. A future write path that forgets `normalizeEmail` works by accident in prod but fails in dev and test, which is where it gets caught. The reverse, green tests and a broken prod, cannot happen through this column. `normalizeEmail` remains on every write and lookup: citext preserves stored case, so it is still what keeps the stored form canonical.
+
+### Alternative considered: functional unique index on `lower(email)`
+
+Same guarantee, and no preview feature. Rejected because it has no home in the Prisma schema (Prisma 6 has no expression indexes): it would be a hand-run SQL step against prod, invisible to every other environment. Revisit only if `citext` causes a problem with a Prisma upgrade.
+
+### Alternative considered: move dev/test to Postgres so behaviour matches
+
+Rejected here for the reason [[ADR-028]] already gives: it needs a Neon branch and a credential per worktree and CI run, and reworks the single-`test.db` server suite.
+
+### Consequences
+
+- **Voids one of [[ADR-028]]'s reasons.** Its "#174 needs it" bullet no longer holds. Its other reasons (`--accept-data-loss` on real rows, reviewable SQL) stand unchanged. When ADR-028 lands, `0_init` will contain the citext column with no extra work.
+- **Postgres-only schema edits now have one sanctioned home:** the generator. Hand-editing `schema.postgresql.prisma` fails the drift test.
+- **Rollback is lossless.** Reverting makes the next `db push` run `ALTER ... SET DATA TYPE TEXT`; the extension stays installed and is harmless.
+- **A prod collision would fail the build, not the boot.** If two rows ever normalise to the same address before deploy, the `ALTER` fails on the unique index and Render keeps serving the previous build. Resolve via `/api/admin/users`, then redeploy.
+
+---
+
 ## ADR-028 — Production schema changes move from `db push --accept-data-loss` to `prisma migrate deploy`, on a Postgres-only migration history baselined against Neon
 
 **Date:** 2026-09-30
