@@ -180,6 +180,14 @@ describe('R2 config', () => {
     expect(message).not.toContain(R2_ENV.R2_ACCOUNT_ID);
   });
 
+  it('rejects a public base URL without https://, naming the variable only', () => {
+    for (const bad of ['pub-abc.r2.dev', 'http://pub-abc.r2.dev', '//pub-abc.r2.dev']) {
+      expect(() => readR2Config({ ...R2_ENV, R2_PUBLIC_BASE_URL: bad })).toThrow(
+        /^R2_PUBLIC_BASE_URL must be an absolute https:\/\/ URL/,
+      );
+    }
+  });
+
   it('strips a trailing slash from the public base URL', () => {
     expect(readR2Config(R2_ENV).publicBaseUrl).toBe('https://pub-abc.r2.dev');
   });

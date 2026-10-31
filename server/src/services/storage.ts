@@ -200,6 +200,11 @@ export function readR2Config(env: NodeJS.ProcessEnv = process.env): R2Config {
       `STORAGE_BACKEND=r2 requires ${missing.join(', ')} to be set (missing or blank).`,
     );
   }
+  // Without a scheme every redirect Location becomes a relative path on our own
+  // host and all R2 art 404s silently. Naming the var only, as above.
+  if (!/^https:\/\//i.test(env.R2_PUBLIC_BASE_URL!.trim())) {
+    throw new Error('R2_PUBLIC_BASE_URL must be an absolute https:// URL (e.g. https://pub-<hash>.r2.dev).');
+  }
   return {
     accountId: env.R2_ACCOUNT_ID!.trim(),
     bucket: env.R2_BUCKET!.trim(),

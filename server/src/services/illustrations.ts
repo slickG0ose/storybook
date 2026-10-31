@@ -467,39 +467,35 @@ async function listBookFiles(bookId: string): Promise<{ name: string; lastModifi
     .filter(o => o.name !== '' && !o.name.includes('/'));
 }
 
+// A missing book prefix lists as [] and so yields 1. Any OTHER listing failure
+// propagates: under r2 list() is a network call, and mapping a transient error
+// to 1 would make the next put() silently overwrite page-N.png — the exact
+// wrong-answer failure ADR-027 chose the SDK to avoid. The `catch -> 1` this
+// replaced dates from readdir() right after mkdir(), which could not fail.
 async function getNextVersion(bookId: string, pageNumber: number): Promise<number> {
-  // Unreadable listing (missing dir, invalid key, backend error) -> 1, never
-  // a propagated error.
-  try {
-    const files = (await listBookFiles(bookId)).map(f => f.name);
-    const pattern = new RegExp(`^page-${pageNumber}(-v(\\d+))?\\.png$`);
-    let max = 0;
-    for (const f of files) {
-      const m = f.match(pattern);
-      if (m) max = Math.max(max, m[2] ? parseInt(m[2]) : 1);
-    }
-    return max + 1;
-  } catch {
-    return 1;
+  const files = (await listBookFiles(bookId)).map(f => f.name);
+  const pattern = new RegExp(`^page-${pageNumber}(-v(\\d+))?\\.png$`);
+  let max = 0;
+  for (const f of files) {
+    const m = f.match(pattern);
+    if (m) max = Math.max(max, m[2] ? parseInt(m[2]) : 1);
   }
+  return max + 1;
 }
 
 // Portrait analogue of getNextVersion: scans portrait-<slot>(-v<n>).png in the
 // book's illustration dir and returns the next version number. Mirrors the page
 // versioning scheme so a regenerate bumps to v2, v3, ...
+// Same propagate-on-failure rule as getNextVersion, for the same reason.
 async function getNextPortraitVersion(bookId: string, slot: number): Promise<number> {
-  try {
-    const files = (await listBookFiles(bookId)).map(f => f.name);
-    const pattern = new RegExp(`^portrait-${slot}(-v(\\d+))?\\.png$`);
-    let max = 0;
-    for (const f of files) {
-      const m = f.match(pattern);
-      if (m) max = Math.max(max, m[2] ? parseInt(m[2]) : 1);
-    }
-    return max + 1;
-  } catch {
-    return 1;
+  const files = (await listBookFiles(bookId)).map(f => f.name);
+  const pattern = new RegExp(`^portrait-${slot}(-v(\\d+))?\\.png$`);
+  let max = 0;
+  for (const f of files) {
+    const m = f.match(pattern);
+    if (m) max = Math.max(max, m[2] ? parseInt(m[2]) : 1);
   }
+  return max + 1;
 }
 
 export interface IllustrationVersionRecord {

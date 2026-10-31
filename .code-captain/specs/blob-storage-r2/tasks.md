@@ -93,6 +93,12 @@ why it exists — read them before editing: `resolveStyleAnchor` never throws an
 reference-not-found error (`:202-212`); `getNextVersion`'s unreadable-listing case returns
 `1` rather than propagating (`:460-476`).
 
+> **Amended 2026-10-31 (reviewer finding, pre-merge):** the third contract is dropped. Under `r2`
+> `list()` is a network call, and `catch → 1` turned a transient R2 error into a silent overwrite
+> of `page-N.png` — the failure ADR-027 exists to prevent. A missing prefix still yields `1`
+> (`list()` returns `[]`); any other listing error now propagates. Pinned by
+> `services/__tests__/illustrationVersioning.test.ts`.
+
 **Done when:** the server suite passes with those four test files unmodified, and
 `grep -n "fs/promises" src/services/illustrations.ts` is empty.
 
