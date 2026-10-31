@@ -183,6 +183,21 @@ the worked example.
 - `fullyParallel: true` locally; 1 worker in CI.
 - HTML report; trace on first retry; screenshot only on failure.
 
+### Retries and the flake gate
+
+CI sets `retries: 1` **and** `failOnFlakyTests: true`, so the two settings decide one thing together:
+
+- **The retry** lets a transient failure finish the run, so the rest of the suite still reports real results instead of one red test hiding them.
+- **The gate** fails the job on any test that needed that retry. A flake is a red check, not a green `1 flaky` line.
+
+Why both: a retry with no gate is how #166 shipped hidden. That was a real bug: a `tsx watch` restart dropped in-flight connections at teardown, and it passed as `1 flaky` until someone read the log ([#167](https://github.com/slickG0ose/storybook/issues/167)). Running `retries: 0` would turn every transient into a red check on an unrelated PR, and people stop reading checks that are often red.
+
+When the gate trips, the job log ends with `N flaky` and the full title of each flaky test (`[project] › file:line › title`), so you can read the cause without downloading the report. The `trace: 'on-first-retry'` trace for that test is in the `playwright-report` artifact. **Fix the flake. Do not re-run until green.** A re-run that passes only proves the flake is intermittent.
+
+Locally, both settings are off (`retries: 0`), so a flaky test simply fails.
+
+Revisit `retries: 0` once CI has a long run of zero-flake results. #167 suggests 10 in a row. Until then the retry is load-bearing.
+
 ### Selector strategy — role-based, not CSS
 
 ```ts

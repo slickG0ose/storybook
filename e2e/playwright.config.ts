@@ -13,7 +13,13 @@ export default defineConfig({
   },
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
+  // The retry and the flake gate are one decision; neither is safe alone. The retry lets
+  // one transient finish the run so the other results are still reported. The gate stops
+  // that rescued test passing green as `1 flaky`, which is how #166 (a real teardown bug)
+  // shipped hidden. CI therefore goes red on any flake and the summary names the test.
+  // See docs/conventions/testing.md §Retries and the flake gate, and #167.
   retries: process.env.CI ? 1 : 0,
+  failOnFlakyTests: !!process.env.CI,
   // 3, not 1, and not `undefined`. The suite is `fullyParallel`, so this parallelises
   // per test, not per file: 147 tests went 6.3m -> 1.1m locally at 3 workers, twice,
   // with no flake. Capped at 3 rather than left to Playwright's CPU heuristic because
