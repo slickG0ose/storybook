@@ -168,6 +168,10 @@ Rejected in ADR-028 as an end state. It remains the same-day stopgap if this sli
 - `server/src/services/ageRangeBackfill.ts:14` says that `render.yaml` "deploys with `prisma db push`, never `migrate deploy`". That stops being true. Amend it to past tense; new row fixes may now use a data migration (ADR-028 Consequences).
 - `docs/mvp-alpha-plan.md` lines 14 and 32: mark item 4 done once Nick has baselined and the PR has merged.
 
+Deferred: `render.yaml` `DATABASE_URL` comment — the parallel R2 session owns `envVars`; fix it after that PR merges, to avoid a conflict.
+Deferred: `docs/mvp-alpha-plan.md` item 4 — can only be ticked after Nick's baseline + merge, which this PR cannot observe.
+Resolved in this PR: the `ageRangeBackfill.ts` comment (reviewer finding) is now past tense.
+
 ## ADR-worthy decisions
 
 - [x] Postgres history layout (`prisma/postgres/` subdirectory, no `prisma.config.ts`) and the per-migration snapshot drift check. This is the "architect's call" ADR-028 §2 delegated. Recorded here, not as a new ADR.
