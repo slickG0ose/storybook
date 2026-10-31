@@ -13,6 +13,13 @@
 // Both .env files are needed because server/src/loadEnv.ts reads them both:
 // the root file holds API keys, the server file holds DATABASE_URL.
 //
+// Then runs `prisma generate` for the server workspace. `npm install` does not
+// regenerate the client in a fresh worktree, and without it `tsc --noEmit`
+// reports ~40 phantom errors (implicit-any Prisma callbacks, `{}` row types).
+// A failure here is reported, not fatal — corporate-cert environments can
+// block the engine download; see .claude/commands/start-task.md for the
+// copy-from-main-checkout fallback.
+//
 // No-op when invoked from the main checkout.
 
 import { execSync } from 'node:child_process';
@@ -61,3 +68,18 @@ for (const { rel } of files) {
 }
 
 console.log(`[worktree-setup] done — ${copied} copied, ${skipped} skipped, ${missingSource} missing in source`);
+
+// npm may install prisma under server/node_modules rather than hoisting it.
+const prismaBin = [join(worktreeRoot, 'server'), worktreeRoot]
+  .map((dir) => join(dir, 'node_modules', '.bin', 'prisma'))
+  .find((bin) => existsSync(bin));
+if (!prismaBin) {
+  console.warn('[worktree-setup] warn: prisma CLI not installed — run `npm install` first, then re-run this script');
+} else {
+  try {
+    execSync(`"${prismaBin}" generate`, { cwd: join(worktreeRoot, 'server'), stdio: 'inherit' });
+    console.log('[worktree-setup] prisma generate: ok');
+  } catch {
+    console.warn('[worktree-setup] warn: prisma generate failed — server typecheck will show phantom Prisma errors until it succeeds (fallback: .claude/commands/start-task.md step 5)');
+  }
+}
