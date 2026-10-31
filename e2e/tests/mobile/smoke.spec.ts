@@ -194,6 +194,89 @@ test.describe('Mobile smoke: /book/:id', () => {
 });
 
 /**
+ * #182: the `/create` entry in ROUTES only ever measures step 1, so every control past
+ * the first screen — including the age-range picker #172 rewrote — escaped both
+ * assertions. These walk the wizard forward instead.
+ *
+ * Wizard state is plain React state, and `forEachTheme` reloads, which resets the
+ * wizard to step 1. So the walk happens *inside* each theme's body, not in beforeEach.
+ *
+ * Step 3's "Generate My Story" is disabled while logged out, but still rendered and
+ * still a tap target, so it is measured all the same.
+ */
+const WIZARD_STEP_2 = 'Build Your Cast';
+const WIZARD_STEP_3 = 'Any Special Requests?';
+
+/** Age-range chips (`Ages 3-5`, ...) — one per canonical AGE_RANGES entry. */
+const AGE_CHIPS = 'main button:has-text("Ages ")';
+
+/** Back / Next / Generate — the wizard's own navigation row. */
+const WIZARD_NAV = 'main button:text-is("Back"), main button:text-is("Next"), main button:has-text("Generate My Story")';
+
+/** Step 2's add-a-character buttons. */
+const ADD_CHARACTER = 'main button:has-text("Add antagonist"), main button:has-text("Add supporting character")';
+
+async function advanceToStep2(page: Page): Promise<void> {
+  await page.getByRole('button', { name: /Adventure/ }).click();
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(page.getByRole('heading', { name: WIZARD_STEP_2 })).toBeVisible();
+  await expect(page.locator(AGE_CHIPS).first()).toBeVisible();
+}
+
+async function advanceToStep3(page: Page): Promise<void> {
+  await advanceToStep2(page);
+  await page.getByPlaceholder('Name (e.g., Luna)').first().fill('Luna');
+  await page.locator(AGE_CHIPS).first().click();
+  await page.getByRole('button', { name: 'Next', exact: true }).click();
+  await expect(page.getByRole('heading', { name: WIZARD_STEP_3 })).toBeVisible();
+}
+
+test.describe('Mobile smoke: /create wizard past step 1', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate(() => localStorage.clear());
+    await page.goto('/create');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  });
+
+  test('step 2 (cast + age picker) does not scroll horizontally in either theme', async ({ page }) => {
+    await forEachTheme(page, async (theme) => {
+      await advanceToStep2(page);
+      await test.step(`${theme} mode`, () => expectNoHorizontalOverflow(page));
+    });
+  });
+
+  test('step 2 age-range chips meet the tap-target floor in either theme', async ({ page }) => {
+    await forEachTheme(page, async (theme) => {
+      await advanceToStep2(page);
+      await test.step(`${theme} mode`, () => expectTapTargets(page, AGE_CHIPS, PRIMARY_TAP_MIN));
+    });
+  });
+
+  test('step 2 cast and wizard-nav controls meet the tap-target floor in either theme', async ({ page }) => {
+    await forEachTheme(page, async (theme) => {
+      await advanceToStep2(page);
+      await test.step(`${theme} mode: add-character`, () => expectTapTargets(page, ADD_CHARACTER, PRIMARY_TAP_MIN));
+      await test.step(`${theme} mode: Back / Next`, () => expectTapTargets(page, WIZARD_NAV, PRIMARY_TAP_MIN));
+    });
+  });
+
+  test('step 3 does not scroll horizontally in either theme', async ({ page }) => {
+    await forEachTheme(page, async (theme) => {
+      await advanceToStep3(page);
+      await test.step(`${theme} mode`, () => expectNoHorizontalOverflow(page));
+    });
+  });
+
+  test('step 3 wizard-nav controls meet the tap-target floor in either theme', async ({ page }) => {
+    await forEachTheme(page, async (theme) => {
+      await advanceToStep3(page);
+      await test.step(`${theme} mode`, () => expectTapTargets(page, WIZARD_NAV, PRIMARY_TAP_MIN));
+    });
+  });
+});
+
+/**
  * #145: below `sm` every Navbar label is `hidden sm:inline`, so the icon links carried no
  * accessible name at a mobile viewport at all — a screen reader announced them as
  * unlabelled links. `getByRole('link', { name })` succeeding at this viewport IS the
