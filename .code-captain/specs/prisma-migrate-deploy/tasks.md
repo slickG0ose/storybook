@@ -93,6 +93,8 @@ The CLI entry point calls `writePostgresSchema()`. Task 3's script reuses it.
 **Depends on:** 2
 **Parallel-safe with:** none
 
+**Status:** Done (2026-10-31)
+
 **Files to add or change:**
 - `server/prisma/postgres-migrations.mjs`: helpers plus the CLI (guarded the same way as the generator's `import.meta.url === pathToFileURL(argv[1])`)
 - `server/prisma/postgres-migrations.d.mts`: declarations for the exports below
@@ -170,6 +172,8 @@ Do **not** run `db:migrate` (SQLite) for the demo. `postgresSchema.test.ts` igno
 **Zone:** multi-zone (deploy config)
 **Depends on:** 2
 **Parallel-safe with:** 3, 4, 6
+
+**Status:** Done (2026-10-31)
 
 **Files to add or change:**
 - `render.yaml`: replace line 48 with
