@@ -141,6 +141,8 @@ If step 6 fails, remove the half-made folder. Use no new dependencies, only `nod
 **Depends on:** 3
 **Parallel-safe with:** none
 
+**Status:** Done (2026-10-31)
+
 **Files to add or change:**
 - `server/src/__tests__/postgresMigrations.test.ts`: new
 
