@@ -81,7 +81,7 @@ no other source file imports `fs/promises` for an illustration path yet.
 
 ## Task 3 — Re-point `services/illustrations.ts`
 
-**Status:** Not started
+**Status:** Done (2026-10-31)
 
 All nine sites in the spec's call-site table for this file: three writes, `resolveStyleAnchor`,
 `resolveReferenceBytes`, both `getNext*Version` helpers, and both `list*Versions` legacy
