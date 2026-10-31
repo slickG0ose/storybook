@@ -4,7 +4,7 @@
 > date — deleted, not downgraded. Tracked as
 > [#78](https://github.com/slickG0ose/storybook/issues/78).
 > Spec: [`.code-captain/specs/blob-storage-r2/spec.md`](../.code-captain/specs/blob-storage-r2/spec.md) §Scope A.
-> Last updated: 2026-09-12.
+> Last updated: 2026-10-31 (added the ADR-028 `migrate deploy` baseline section).
 
 Execute this by hand. It needs the Render dashboard, the Neon console, and credentials
 that live in neither the repo nor any agent environment — an agent cannot run it.
@@ -177,10 +177,12 @@ means production is never without one.
    makes the dashboard value permanent — until it lands, the next Blueprint sync re-points
    production at a database that no longer exists.
 
-**Why direct rather than pooled:** the build command runs `prisma db push`
-(`render.yaml:45`), and Prisma's schema operations want a direct connection. One Render
-instance at beta traffic does not need PgBouncer. When it does, the shape is pooled in
-`DATABASE_URL` plus direct in `DIRECT_URL`, declared in `schema.postgresql.prisma`.
+**Why direct rather than pooled:** the build command runs `prisma migrate deploy`
+(`render.yaml`, `buildCommand`), and Prisma's schema operations want a direct connection.
+One Render instance at beta traffic does not need PgBouncer. When it does, the shape is
+pooled in `DATABASE_URL` plus direct in `DIRECT_URL`. `DIRECT_URL` would be injected into
+`server/prisma/postgres/schema.prisma` by `server/prisma/gen-postgres-schema.mjs`, not
+hand-declared: that file is generated, and a hand edit fails the drift test.
 
 ## Step 7 — Verify the app (5 minutes)
 
@@ -199,6 +201,99 @@ free-tier cold start, not a failure. Then open
 has proven itself, and while `render.yaml` still declares it, a Blueprint sync would simply
 recreate it. Render deletes it on the 14th at no cost to you.
 
+## Baseline prod for migrate deploy (once, BEFORE merging the ADR-028 PR)
+
+**Budget 10 minutes. Do this immediately before you merge the PR that switches
+`render.yaml` to `prisma migrate deploy` (ADR-028).** Once that PR is on `master`, every
+Render build runs `migrate deploy` over `server/prisma/postgres/migrations/`. Against a
+database with no migration history, that command refuses to run (`Error: P3005`, "The
+database schema is not empty"). Baselining tells Prisma that prod already matches `0_init`,
+so the first real deploy has nothing to apply.
+
+Run every command below **from `server/`, on the PR branch**, with `DATABASE_URL`
+exported as the Neon **direct** connection string for the `production` branch (Step 3
+explains how to get it; single quotes, one line). The exported value overrides the
+`file:` URL in `server/.env`, so these commands hit Neon, not `dev.db`.
+
+```bash
+cd ~/src/storybook/server
+export DATABASE_URL='<neon-production-DIRECT-connection-string>'
+```
+
+**(a) Prove prod matches `0_init`.**
+
+```bash
+npx prisma migrate diff --from-url "$DATABASE_URL" \
+  --to-schema-datamodel prisma/postgres/schema.prisma --script
+```
+
+What you should see, and nothing else:
+
+```
+-- This is an empty migration.
+```
+
+**If (a) prints any SQL: stop. Do not run (b).** A non-empty diff means prod has drifted
+from the schema. Running (b) anyway would record `0_init` as applied when part of its SQL
+never ran, and every later migration would build on a false history. Save the output to a
+file, open an issue with it, and decide whether prod or the schema is right before
+baselining.
+
+**(b) Mark `0_init` as already applied.** This writes one row to `_prisma_migrations`
+and runs no DDL.
+
+```bash
+npx prisma migrate resolve --applied 0_init --schema=prisma/postgres/schema.prisma
+```
+
+What you should see:
+
+```
+Migration 0_init marked as applied.
+```
+
+**(c) Confirm `migrate deploy` now has nothing to do.**
+
+```bash
+npx prisma migrate deploy --schema=prisma/postgres/schema.prisma
+```
+
+What you should see:
+
+```
+1 migration found in prisma/migrations
+
+No pending migrations to apply.
+```
+
+Prisma prints the literal label `prisma/migrations` even though it reads
+`prisma/postgres/migrations`. The count is the tell: **1** migration (`0_init`). The
+SQLite history has 12 folders (as of 2026-10-31). Any count other than 1 means Prisma is
+reading the wrong folder, so stop and check the `--schema` flag.
+
+Then `unset DATABASE_URL`, **merge the PR promptly**, and watch the Render build log for
+the same `No pending migrations to apply.` line.
+
+A Render deploy between (b) and the merge is harmless. The old `db push
+--accept-data-loss` build leaves `_prisma_migrations` and its rows in place (verified on a
+throwaway Neon branch, including a push that dropped a real column).
+
+### Merge-order trap
+
+If the PR merges **before** (a)–(c), the first build's `migrate deploy` fails with
+`Error: P3005` and Render keeps serving the previous deploy. Nothing breaks and no data is
+touched, but every deploy is blocked until the baseline exists. Fix: run (a)–(c) as above,
+then Render → `storybook-server` → **Manual Deploy** → Deploy latest commit.
+
+### After any revert to `db push`
+
+If `render.yaml` is ever reverted to `db push`, the migration history stops being trustworthy.
+`db push` can undo a migration's effect while `_prisma_migrations` still records it as
+applied, and `migrate status` keeps saying "Database schema is up to date". Verified on a
+throwaway Neon branch. **Before the next `migrate deploy`, and before trusting the history
+at all, re-run (a) against the latest schema.** An empty diff means the history is still
+honest. Anything else gets the same stop rule as (a).
+
 ---
 
 ## Rollback
@@ -215,7 +310,8 @@ from Step 2 plus a fresh Neon project is the only path back.
 |---|---|---|
 | `pg_dump: server version mismatch` | Client older than the source server | Install the matching major version (Step 0) |
 | Wall of `must be owner of table` on restore | `-O` omitted | Re-run `pg_restore` with `-O`; the errors are non-fatal but noisy |
-| `prisma db push` hangs or times out in the Render build | Pooled connection string in `DATABASE_URL` | Swap to the direct string |
+| `prisma migrate deploy` hangs or times out in the Render build | Pooled connection string in `DATABASE_URL` | Swap to the direct string |
+| `Error: P3005` "The database schema is not empty" in the Render build | The baseline was never run against this database | Run [Baseline prod for migrate deploy](#baseline-prod-for-migrate-deploy-once-before-merging-the-adr-028-pr) (a)–(c), then Manual Deploy |
 | `pg_dump: aborting because of server version mismatch` | Client older than the server — Render is on 18.4 | Install the higher major (Step 0); a newer client is always safe |
 | `pg_restore: could not read from input file: read 0, expected 5` | The dump is 0 bytes — `pg_dump -f` created the file, then failed to connect | Re-dump, then gate on `pg_restore -l \| grep -c 'TABLE DATA'` |
 | `role "storybook_admin" does not exist`, 4 errors ignored | `ALTER DEFAULT PRIVILEGES` / `GRANT` for a role that exists only on Render | Benign — `-O` already skipped ownership; the data restored |
@@ -226,11 +322,9 @@ from Step 2 plus a fresh Neon project is the only path back.
 
 ## What this leaves open
 
-- `render.yaml:45` still runs `prisma db push --accept-data-loss` on every deploy. Against
-  an identical schema it is a no-op, which is why this runbook does not touch it — but
-  against a future destructive schema change it silently drops tester data. Switching to
-  `prisma migrate deploy` needs a generated Postgres migration set
-  (`deploy-spike-render.md`) and is deliberately deferred out of a two-day window.
+- The switch from `prisma db push --accept-data-loss` to `prisma migrate deploy`
+  (ADR-028) needs a one-time baseline of prod before it merges. See
+  [Baseline prod for migrate deploy](#baseline-prod-for-migrate-deploy-once-before-merging-the-adr-028-pr).
 - Neon's free tier autosuspends after 5 minutes idle (~1-2s wake), stacking with Render's
   own 15-minute spin-down. A cold first request gets both.
 - Illustration PNGs are **not** covered here. They are on Render's ephemeral filesystem and

@@ -20,7 +20,7 @@ server/src/services/|Business logic|{illustrations.ts,parseAiJson.ts,spend.ts,al
 server/src/db/|Database layer|{prisma.ts,init.ts,snapshot.ts}
 server/src/middleware/|Middleware|{validate.ts,requireAuth.ts,spendGate.ts}
 server/src/lib/|Cross-cutting helpers|{models.ts,password.ts,cors.ts}
-server/prisma/|Schema + migrations|{schema.prisma,schema.postgresql.prisma,seed.ts,demo-seed.ts}
+server/prisma/|Schema + migrations|{schema.prisma,postgres/{schema.prisma,migrations/},seed.ts,demo-seed.ts}
 shared/src/|Zod schemas + types|{index.ts,books.ts,cart.ts,orders.ts,admin.ts,test.ts,pdf.ts}
 e2e/tests/|Playwright specs|{home.spec.ts,book-detail.spec.ts,cart-checkout.spec.ts,create-book.spec.ts,dark-mode.spec.ts,admin.spec.ts,...}
 

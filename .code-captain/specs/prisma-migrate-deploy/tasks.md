@@ -217,6 +217,8 @@ These are already proven, so do not repeat them: `0_init` contents, extra-file t
 **Depends on:** 4, 5, 6
 **Parallel-safe with:** none
 
+**Status:** Done (2026-10-31)
+
 **Files to add or change:**
 - `docs/neon-migration-runbook.md`:
   - **Add a new section before "Rollback":** "Baseline prod for migrate deploy (once, BEFORE merging the ADR-028 PR)". Run it from `server/` on the PR branch, with `DATABASE_URL` set to the Neon **direct** `production` string:

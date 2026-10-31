@@ -16,7 +16,7 @@ This document is the click-by-click for taking the artifacts in this branch and 
 | `client/src/lib/apiBase.ts` | Tiny helper exporting `api(path)` that prepends `VITE_API_BASE_URL` (empty in dev) |
 | `client/**` (33 fetch sites + 8 img src sites) | All `/api/*` calls and image references now go through `api()` |
 | `client/.env.example` | Documents `VITE_API_BASE_URL` |
-| `server/prisma/schema.postgresql.prisma` | Postgres variant of the SQLite schema, identical models |
+| `server/prisma/postgres/schema.prisma` | Postgres variant of the SQLite schema, identical models (moved into `postgres/` by ADR-028) |
 | `server/prisma/gen-postgres-schema.mjs` | Idempotent generator that produces the Postgres variant from the SQLite source |
 | `server/package.json` | New `db:gen-postgres-schema` script |
 | `server/.env.example` | Documents the Postgres `DATABASE_URL` for deploy contexts |
@@ -150,12 +150,10 @@ Alternatives weighed and not taken: **Supabase** free (500 MB, same swap), **Pla
 
 ### 4. `prisma db push --accept-data-loss` in the build command
 
-The Blueprint runs `prisma db push --accept-data-loss` on every deploy. First deploy against an empty DB: harmless. Subsequent deploys: any schema change that destructively alters columns/tables will silently lose data.
+**Resolved by ADR-028.** The Blueprint used to run `prisma db push --accept-data-loss` on every deploy, so a destructive schema change would silently lose data. It now runs `prisma migrate deploy --schema=prisma/postgres/schema.prisma` over a Postgres-only history in `server/prisma/postgres/migrations/`, baselined at `0_init`. Destructive SQL only reaches prod as a committed, reviewed migration.
 
-This is acceptable for a demo where nobody's paying for their content. Before a real beta, switch to a Prisma migrations workflow:
-- Generate Postgres-specific migrations once locally: `cd server && DATABASE_URL=postgres://... npx prisma migrate dev --schema=prisma/schema.postgresql.prisma --name init`
-- Commit `prisma/migrations-postgresql/` (or wherever)
-- Change Blueprint build command to `prisma migrate deploy --schema=prisma/schema.postgresql.prisma`
+- One-time prod baseline (operator step, before the ADR-028 PR merges): [neon-migration-runbook.md §Baseline prod for migrate deploy](neon-migration-runbook.md#baseline-prod-for-migrate-deploy-once-before-merging-the-adr-028-pr).
+- Day-to-day workflow for a schema change: `docs/conventions/data.md` §"Schema changes ship two migrations".
 
 ### 5. GitHub Pages serves at `username.github.io/repo`, not `/`
 
@@ -223,10 +221,10 @@ After merging this PR:
 - [ ] **Implement F5** (demo deploy) — execute the steps above on an actual Render account
 - [ ] Decide on the GitHub Pages base-path workaround (custom domain vs org root vs vite/router config)
 - [x] Add `CORS_ORIGIN` env handling to `server/src/index.ts` and document in `server/.env.example` — done; see "Known issues" §6
-- [ ] Generate Postgres-specific Prisma migrations and switch the Blueprint from `db push` to `migrate deploy`
+- [x] Generate Postgres-specific Prisma migrations and switch the Blueprint from `db push` to `migrate deploy` — done (ADR-028); see "Known issues" §4
 - [x] Decide on illustration persistence strategy (accept-it / Render persistent disk / R2) — **R2**, specced in [`.code-captain/specs/blob-storage-r2/spec.md`](../.code-captain/specs/blob-storage-r2/spec.md) §Scope B; not yet implemented
 - [x] Calendar the Postgres-free expiry (90 days from deploy) — due 2026-09-14; decision is Neon free, execution tracked in [neon-migration-runbook.md](neon-migration-runbook.md) and [#78](https://github.com/slickG0ose/storybook/issues/78)
-- [x] Schema-sync CI check — fail builds if `schema.prisma` changes but `schema.postgresql.prisma` doesn't get regenerated — done; [`server/src/__tests__/postgresSchema.test.ts`](../server/src/__tests__/postgresSchema.test.ts) compares generator output to the committed file byte for byte (runs in the Server tests CI job)
+- [x] Schema-sync CI check — fail builds if `schema.prisma` changes but `postgres/schema.prisma` doesn't get regenerated — done; [`server/src/__tests__/postgresSchema.test.ts`](../server/src/__tests__/postgresSchema.test.ts) compares generator output to the committed file byte for byte (runs in the Server tests CI job)
 
 ## Sources
 
