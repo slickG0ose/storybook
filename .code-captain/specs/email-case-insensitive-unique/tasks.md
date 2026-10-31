@@ -31,6 +31,8 @@ Four tasks, all small and sequential: teach the generator to inject citext and r
 **Depends on:** none
 **Parallel-safe with:** 3
 
+**Status:** Done (2026-10-31)
+
 **Files to add or change:**
 - `server/prisma/gen-postgres-schema.mjs`: export a pure transform; add three exactly-once injections; write the file only when run as a script
 - `server/prisma/gen-postgres-schema.d.mts`: declarations for the two exports, so Task 2's TS test compiles under `strict`

@@ -119,4 +119,4 @@ Unchanged at the app layer: request → `normalizeEmail` → `findFirst` / `crea
 
 ## ADR-worthy decisions
 
-- [ ] **ADR-029 — `User.email` is `citext` in Postgres via generator-injected schema edits; SQLite relies on `normalizeEmail`** — citext over `lower(email)` (declarative, survives `db push`, lands in ADR-028's `0_init`), plus the accepted dev/prod divergence and why it fails safe. Also note that it voids ADR-028's "#174 needs it" rationale bullet. Write via /create-adr after spec approval.
+- [x] **ADR-029 — `User.email` is `citext` in Postgres via generator-injected schema edits; SQLite relies on `normalizeEmail`** — citext over `lower(email)` (declarative, survives `db push`, lands in ADR-028's `0_init`), plus the accepted dev/prod divergence and why it fails safe. Also note that it voids ADR-028's "#174 needs it" rationale bullet. Write via /create-adr after spec approval.
