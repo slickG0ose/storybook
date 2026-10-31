@@ -64,6 +64,8 @@ The CLI entry point calls `writePostgresSchema()`. Task 3's script reuses it.
 **Depends on:** 1
 **Parallel-safe with:** none
 
+**Status:** Done (2026-10-31)
+
 **Files to add or change:**
 - `server/prisma/postgres/migrations/migration_lock.toml`: same three-line format as the SQLite lock, with `provider = "postgresql"`
 - `server/prisma/postgres/migrations/0_init/migration.sql`: generated, never hand-edited:
