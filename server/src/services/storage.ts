@@ -81,20 +81,6 @@ function assertValidPrefix(prefix: string): void {
   assertValidKey(prefix);
 }
 
-// Containment fence for the local backend, independent of isValidKey: the
-// resolved path must be the root itself (only when allowRoot) or strictly
-// inside it. isValidKey already rejects every escape shape we know of; this is
-// the check that still holds if that list ever regresses, and the one CodeQL's
-// js/path-injection recognises as a sanitizer.
-export function resolveWithinRoot(root: string, key: string, allowRoot = false): string {
-  const base = resolve(root);
-  const abs = resolve(base, key);
-  if (abs === base ? !allowRoot : !abs.startsWith(base + sep)) {
-    throw new InvalidStorageKeyError(key);
-  }
-  return abs;
-}
-
 function isMissingFsError(err: unknown): boolean {
   const code = (err as NodeJS.ErrnoException | null)?.code;
   return code === 'ENOENT' || code === 'ENOTDIR';
@@ -104,6 +90,13 @@ function isMissingFsError(err: unknown): boolean {
 // Local disk
 // ---------------------------------------------------------------------------
 
+// Containment fence, independent of isValidKey: every fs path below is
+// resolve()d against the (resolve()d) root and must land strictly inside it.
+// isValidKey already rejects every escape shape we know of; this still holds
+// if that list ever regresses. The check is written out at each fs call rather
+// than in a helper on purpose: CodeQL's js/path-injection only credits a
+// startsWith guard in the same function as the sink, and a helper got the PR's
+// CodeQL gate flagged (alerts 24-26, 28).
 export class LocalStorage implements StorageBackend {
   private readonly root: string;
 
@@ -111,28 +104,27 @@ export class LocalStorage implements StorageBackend {
     this.root = resolve(root);
   }
 
-  // Every fs call goes through here. The root itself is reachable only for a
-  // directory walk, never for a read, write, or delete.
-  private path(key: string, allowRoot = false): string {
-    return resolveWithinRoot(this.root, key, allowRoot);
-  }
-
   async put(key: string, bytes: Buffer, _contentType: string): Promise<void> {
     assertValidKey(key);
-    const abs = this.path(key);
+    const abs = resolve(this.root, key);
+    if (!abs.startsWith(this.root + sep)) throw new InvalidStorageKeyError(key);
     await mkdir(dirname(abs), { recursive: true });
     await writeFile(abs, bytes);
   }
 
   async get(key: string): Promise<Buffer> {
     assertValidKey(key);
-    return readFile(this.path(key));
+    const abs = resolve(this.root, key);
+    if (!abs.startsWith(this.root + sep)) throw new InvalidStorageKeyError(key);
+    return readFile(abs);
   }
 
   async head(key: string): Promise<{ size: number; lastModified: Date } | null> {
     assertValidKey(key);
+    const abs = resolve(this.root, key);
+    if (!abs.startsWith(this.root + sep)) throw new InvalidStorageKeyError(key);
     try {
-      const s = await stat(this.path(key));
+      const s = await stat(abs);
       if (!s.isFile()) return null;
       return { size: s.size, lastModified: s.mtime };
     } catch (err) {
@@ -152,10 +144,18 @@ export class LocalStorage implements StorageBackend {
     return out.filter(o => o.key.startsWith(prefix));
   }
 
+  // dirKey is '' (the root itself — the only place the root is reachable) or a
+  // `<dir>/` key.
   private async walk(dirKey: string, out: StoredObject[]): Promise<void> {
+    let dir = this.root;
+    if (dirKey !== '') {
+      const abs = resolve(this.root, dirKey);
+      if (!abs.startsWith(this.root + sep)) throw new InvalidStorageKeyError(dirKey);
+      dir = abs;
+    }
     let entries;
     try {
-      entries = await readdir(this.path(dirKey, true), { withFileTypes: true });
+      entries = await readdir(dir, { withFileTypes: true });
     } catch (err) {
       if (isMissingFsError(err)) return;
       throw err;
@@ -165,8 +165,10 @@ export class LocalStorage implements StorageBackend {
       if (entry.isDirectory()) {
         await this.walk(`${key}/`, out);
       } else if (entry.isFile()) {
+        const abs = resolve(this.root, key);
+        if (!abs.startsWith(this.root + sep)) throw new InvalidStorageKeyError(key);
         try {
-          const s = await stat(this.path(key));
+          const s = await stat(abs);
           out.push({ key, lastModified: s.mtime });
         } catch (err) {
           // Deleted between readdir and stat — it is simply not there.
@@ -180,12 +182,17 @@ export class LocalStorage implements StorageBackend {
     assertValidKey(prefix);
     if (prefix.endsWith('/')) {
       // Directory-shaped prefix (`<bookId>/`): drop the whole tree, including
-      // the now-empty directory itself.
-      await rm(this.path(prefix.slice(0, -1)), { recursive: true, force: true });
+      // the now-empty directory itself. Never the root: `startsWith(root + sep)`
+      // is false for the root.
+      const abs = resolve(this.root, prefix.slice(0, -1));
+      if (!abs.startsWith(this.root + sep)) throw new InvalidStorageKeyError(prefix);
+      await rm(abs, { recursive: true, force: true });
       return;
     }
     for (const obj of await this.list(prefix)) {
-      await rm(this.path(obj.key), { force: true });
+      const abs = resolve(this.root, obj.key);
+      if (!abs.startsWith(this.root + sep)) throw new InvalidStorageKeyError(obj.key);
+      await rm(abs, { force: true });
     }
   }
 }

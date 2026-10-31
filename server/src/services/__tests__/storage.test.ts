@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, readFile, rm, stat, utimes } from 'fs/promises';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { basename, join } from 'path';
 
 // Mock the S3 client: no network, no credentials. Each Command records its
 // input; S3Client.send dispatches to a per-test handler.
@@ -34,7 +34,6 @@ const {
   __resetStorageForTests,
   assertValidKey,
   isValidKey,
-  resolveWithinRoot,
   readR2Config,
   resolveBackendName,
   ILLUSTRATIONS_DIR,
@@ -97,28 +96,25 @@ describe('key validation', () => {
   });
 });
 
-describe('resolveWithinRoot (local containment fence, independent of isValidKey)', () => {
-  it('resolves an ordinary key strictly inside the root', () => {
-    expect(resolveWithinRoot('/srv/art', 'book1/page-1.png')).toBe('/srv/art/book1/page-1.png');
+describe('LocalStorage containment fence (independent of isValidKey)', () => {
+  // walk() is the one internal path that takes a key isValidKey has not
+  // screened, so it is where the fence can be exercised on its own — these are
+  // exactly the shapes that would reach the filesystem if isValidKey regressed.
+  type Walkable = { walk(dirKey: string, out: unknown[]): Promise<void> };
+
+  it.each(['../', 'book1/../../', '/etc/', '../x/'])('refuses to walk %j outside the root', async dirKey => {
+    const local = new LocalStorage(root) as unknown as Walkable;
+    await expect(local.walk(dirKey, [])).rejects.toThrow(/Invalid storage key/);
   });
 
-  // These are exactly the shapes isValidKey rejects; the fence must refuse them
-  // on its own, so a regression in isValidKey cannot reach the filesystem.
-  it.each(['../etc/passwd', 'book1/../../etc/passwd', '/etc/passwd', '..'])(
-    'refuses %j, which escapes the root',
-    key => {
-      expect(() => resolveWithinRoot('/srv/art', key)).toThrow(/Invalid storage key/);
-    },
-  );
-
-  it('refuses a sibling directory that merely shares the root as a string prefix', () => {
-    expect(() => resolveWithinRoot('/srv/art', '../art-evil/x.png')).toThrow(/Invalid storage key/);
+  it('refuses a sibling directory that merely shares the root as a string prefix', async () => {
+    const local = new LocalStorage(root) as unknown as Walkable;
+    await expect(local.walk(`../${basename(root)}-evil/`, [])).rejects.toThrow(/Invalid storage key/);
   });
 
-  it('allows the root itself only when asked (directory walks), never for a file op', () => {
-    expect(() => resolveWithinRoot('/srv/art', '')).toThrow(/Invalid storage key/);
-    expect(() => resolveWithinRoot('/srv/art', 'book1/..')).toThrow(/Invalid storage key/);
-    expect(resolveWithinRoot('/srv/art', '', true)).toBe('/srv/art');
+  it('refuses to walk the root via a key that resolves back to it', async () => {
+    const local = new LocalStorage(root) as unknown as Walkable;
+    await expect(local.walk('book1/../', [])).rejects.toThrow(/Invalid storage key/);
   });
 });
 
