@@ -12,7 +12,8 @@
     "db:seed-demo": "tsx prisma/demo-seed.ts",
     "db:hydrate": "npm run db:seed && npm run db:seed-demo",
     "db:reset": "prisma migrate reset",
-    "db:gen-postgres-schema": "node prisma/gen-postgres-schema.mjs"
+    "db:gen-postgres-schema": "node prisma/gen-postgres-schema.mjs",
+    "db:migrate:postgres": "node prisma/postgres-migrations.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
