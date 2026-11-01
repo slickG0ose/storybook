@@ -22,9 +22,8 @@ import { assertSingleInstanceAssumption } from '../middleware/rateLimit';
  *      RATE_LIMIT_INSTANCE_COUNT. An operator who scales without setting it still gets
  *      no signal. That gap is real and named rather than papered over.
  *
- * This does NOT assert anything about brute-force protection on `POST /api/auth/login`
- * (CodeQL alert #7). That route is unauthenticated, so this middleware cannot be mounted
- * on it at all — see the rateLimit.ts header and ADR-018. Tracked in #148.
+ * The same assumption covers `middleware/authRateLimit.ts`, which also keeps its counters
+ * in-process. Its behaviour is pinned in `routes/__tests__/authRateLimit.test.ts` (ADR-030).
  */
 
 const RENDER_YAML = join(import.meta.dirname, '..', '..', '..', 'render.yaml');

@@ -4,6 +4,50 @@ Append-only log. Newest entries on top. Each entry should answer: *what was deci
 
 ---
 
+## ADR-030 — Login and registration get their own IP-keyed, failure-counting limiter; alert #7 stays open until the owner chooses how to close it
+
+**Date:** 2026-11-01
+**Status:** Proposed in the PR that adds it; the owner accepts it by merging
+**Scope:** `server/src/middleware/authRateLimit.ts`, `routes/auth.ts`, `trust proxy` in `index.ts`. Answers the three questions ADR-018 decision 2 left open. Bypassed the architect chain on an explicit brief, although auth is a guardrail: the owner reviews the PR before merge. The session model, password hashing and the allowlist are untouched.
+
+### The problem
+
+`POST /api/auth/login` and `/register` had no rate limit, so nothing bounded password guessing. `rateLimit.ts` cannot be mounted there because it 401s anonymous callers (ADR-018). `trust proxy` was also unset, so behind Render `req.ip` was the proxy's address and any per-IP key would have been one budget shared by every user.
+
+### Decision
+
+1. **A separate middleware, 10 failed attempts per 15 minutes per IP, per route.** IPv6 is keyed on its /64.
+2. **Only failures spend budget.** An attempt is taken on entry and refunded on a status below 400, so a parallel burst cannot pass the check before the first failure lands. A success does not clear earlier failures.
+3. **Sliding window**, because ADR-018 rejected the fixed window's 2x boundary burst for password guessing.
+4. **Bounded memory:** least-recently-attempted eviction, capped at 50,000 keys.
+5. **`trust proxy` is a hop count, `TRUST_PROXY_HOPS`, default 1 in production and 0 elsewhere.** No Render documentation of the hop count turned up; forum reports disagree (1 and 3), and one says Render appends to `X-Forwarded-For` rather than replacing it. Too high lets a client forge its address and defeats the limit; too low only makes clients share a budget. So the default errs low.
+6. **In-process, per instance**, under the single-instance guards from ADR-018.
+
+### Verifying the hop count against the live service
+
+Not yet done, because it needs this code deployed. From one network, send 11 failed logins to a throwaway address; the 11th must be a 429. Then:
+
+- **Forgery check:** send one more with a made-up `X-Forwarded-For: 198.51.100.7` header. It must still be a 429. A 401 means the hop count is too high.
+- **Sharing check:** send a failed login from a different network, such as a phone on cellular. It must be a 401. A 429 means clients share a budget and the hop count is too low; raise `TRUST_PROXY_HOPS` by one and repeat both checks.
+
+### Alert #7
+
+The CodeQL query matches limiters by library name, so this limiter does not close the alert. That needs the owner's decision: add `express-rate-limit` (a new dependency) or dismiss the alert as a false positive, the way alert #23 was. This entry should be updated with the choice.
+
+### Alternatives considered
+
+- **Keying on the submitted email as well.** It bounds guessing against one account regardless of the proxy, but lets anyone lock a known address out of its own account. Not added for the alpha.
+- **Counting every attempt.** Simpler, but it spends budget on legitimate logins, so one household or the e2e suite could hit the limit without failing once.
+- **A shared store.** Buys nothing on one instance (ADR-018).
+
+### Consequences
+
+- Counters reset on every restart and free-tier cold start, so the limit bounds a sustained attack, not one spread across restarts.
+- Under a too-low hop count, one caller can block logins for others sharing that proxy address. The sharing check above is what rules this out.
+- Scaling past one instance multiplies this limit too. The ADR-018 guards already fail on that.
+
+---
+
 ## ADR-029 — `User.email` is `citext` in Postgres via generator-injected schema edits; SQLite relies on `normalizeEmail`
 
 **Date:** 2026-10-31
