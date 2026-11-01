@@ -62,7 +62,7 @@ Fan-out per router. `db/prisma` is elided where a route only reads through a ser
 
 | Router (`/api/…`) | services | lib | middleware |
 |---|---|---|---|
-| `auth` | `allowlist` | `password` | — |
+| `auth` | `allowlist` | `password` | `authRateLimit` |
 | `books` | `illustrations`, `imagePin`, `parseAiJson`, `pdf`, `spend` | `apiKeys`, `availability`, `models` | `requireAuth`, `spendGate`, `validate` |
 | `generate` | `illustrations`, `imagePin`, `parseAiJson`, `spend` | `apiKeys`, `models` | `requireAuth`, `spendGate` |
 | `cart` | — | `availability` | `validate` |

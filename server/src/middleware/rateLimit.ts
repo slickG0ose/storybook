@@ -30,12 +30,10 @@ import type { Request, Response, NextFunction } from 'express';
  * create a second, weaker policy.
  *
  * The consequence is easy to miss and expensive to discover: **mounting this on
- * `POST /api/auth/login` would 401 every login attempt.** CodeQL alert #7 flags that
- * route for `js/missing-rate-limiting` and it is the highest-severity of the three
- * open alerts, so the temptation to reach for this file is real. It cannot be reused
- * there. Brute-force limiting on an unauthenticated route needs a different key (IP or
- * submitted email) and an eviction policy this Map does not have — tracked in
- * [#148](https://github.com/slickG0ose/storybook/issues/148), reasoned in ADR-018.
+ * `POST /api/auth/login` would 401 every login attempt.** It cannot be reused there.
+ * Brute-force limiting on the unauthenticated routes needs a different key and an
+ * eviction policy this Map does not have, so it lives in `authRateLimit.ts`. Reasoned
+ * in ADR-018 and ADR-030.
  *
  * Admin routes (alerts #5 and #6) sit behind `adminGate`, so they ARE authenticated and
  * this middleware does apply to them unchanged.
