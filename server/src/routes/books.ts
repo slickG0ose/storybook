@@ -552,6 +552,63 @@ Respond with ONLY valid JSON in this exact format (no markdown, no code fences):
   },
 );
 
+// Which image a restored page should point at, or null if none matches its
+// content. BookVersion.pages_json is text-only (no illustration_url), so the
+// link between a snapshot and its art has to be derived:
+//
+//   1. A page whose content isn't changing keeps its current image. That is the
+//      only exact answer, and it honours a per-page revert to older art.
+//   2. Otherwise, use the newest IllustrationVersion drawn for this content. A
+//      snapshot is taken at the moment its content gets replaced, so the first
+//      snapshot at or after a row's created_at holds what the page said when the
+//      row was generated; with no such snapshot, that content is still live.
+//
+// Matching on content rather than "newest row older than the snapshot" is what
+// keeps restore from showing art drawn for a different story: a page whose text
+// changed and was never redrawn has older rows, and none of them match it.
+//
+// Known limit of (2): it can't see a revert the author made before leaving that
+// content, so it picks the newest matching image. The older ones stay reachable
+// through the page's history panel.
+function illustrationForRestoredPage(
+  restored: { page_number: number; text: string; illustrationDescription: string },
+  currentPages: { page_number: number; text: string; illustration_description: string; illustration_url: string | null }[],
+  history: { page_number: number; version: number; url: string; created_at: Date }[],
+  snapshots: { pages_json: string; created_at: Date }[],
+): string | null {
+  const current = currentPages.find(p => p.page_number === restored.page_number);
+  const isRestoredContent = (page?: { text: string; illustrationDescription: string }) =>
+    page?.text === restored.text && page.illustrationDescription === restored.illustrationDescription;
+  const currentContent = current && {
+    text: current.text,
+    illustrationDescription: current.illustration_description,
+  };
+
+  if (current?.illustration_url && isRestoredContent(currentContent)) {
+    return current.illustration_url;
+  }
+
+  const newestFirst = history
+    .filter(row => row.page_number === restored.page_number)
+    .sort((a, b) => b.version - a.version);
+
+  for (const row of newestFirst) {
+    const nextSnapshot = snapshots.find(s => s.created_at >= row.created_at);
+    // Same legacy normalization as the restore handler: positions are implicit
+    // in snapshots written before page_number was persisted.
+    const contentAtGeneration = nextSnapshot
+      ? (JSON.parse(nextSnapshot.pages_json) as {
+          page_number?: number;
+          text: string;
+          illustrationDescription: string;
+        }[]).find((p, i) => (p.page_number ?? i + 1) === row.page_number)
+      : currentContent;
+    if (isRestoredContent(contentAtGeneration)) return row.url;
+  }
+
+  return null;
+}
+
 router.put(
   '/:id/versions/:version/restore',
   requireAuth,
@@ -627,10 +684,22 @@ router.put(
           },
         });
 
-        // Replace pages with the snapshot. illustration_url is intentionally
-        // reset to null on every restored page: the old image URLs no longer
-        // correspond to the restored text/description, so showing them would
-        // be misleading. The user can re-illustrate as needed.
+        // Read before the pages are replaced. Portrait rows share this table
+        // (page_number >= 1000) and are excluded by the page_number filter.
+        const history = await tx.illustrationVersion.findMany({
+          where: { book_id: book.id, page_number: { in: restoredPages.map(p => p.page_number) } },
+          select: { page_number: true, version: true, url: true, created_at: true },
+        });
+        const snapshots = await tx.bookVersion.findMany({
+          where: { book_id: book.id },
+          select: { pages_json: true, created_at: true },
+          orderBy: { version: 'asc' },
+        });
+
+        // Replace pages with the snapshot, re-pointing each at the art that
+        // belongs to its restored content (#95). Pointers only: no blob is
+        // copied or deleted, so this behaves the same under every storage
+        // backend, and no image is generated, so nothing is charged.
         await tx.page.deleteMany({ where: { book_id: book.id } });
         for (const p of restoredPages) {
           await tx.page.create({
@@ -639,7 +708,7 @@ router.put(
               page_number: p.page_number,
               text: p.text,
               illustration_description: p.illustrationDescription,
-              illustration_url: null,
+              illustration_url: illustrationForRestoredPage(p, book.pages, history, snapshots),
             },
           });
         }

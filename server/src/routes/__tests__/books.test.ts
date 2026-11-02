@@ -7,6 +7,7 @@ import { createTestApp, resetDatabase, allowEmail } from '../../__tests__/setup'
 import prisma from '../../db/prisma';
 import { PUBLISHED_IMMUTABLE_ERROR } from '../../lib/availability';
 import { COST_CENTS, costCentsFor } from '../../services/spend';
+import { getStorage } from '../../services/storage';
 import { AGE_RANGES } from '@storybook/shared';
 
 // Stub the Anthropic SDK at module boundary so /revise tests can drive the
@@ -607,7 +608,7 @@ describe('Books API routes', () => {
       expect(preRestorePages[0].text).toBe('Page 1 text');
     });
 
-    it('clears illustration_url on every restored page', async () => {
+    it('clears illustration_url when the content changed and no art matches it', async () => {
       const token = await createUserAndGetToken(app);
       await setupDraftWithSnapshot(token);
 
@@ -619,6 +620,205 @@ describe('Books API routes', () => {
       for (const page of res.body.pages) {
         expect(page.illustration_url).toBeNull();
       }
+    });
+
+    // #95: restore re-points pages at existing art instead of orphaning it.
+    describe('illustration pointers', () => {
+      const BOOK = 'luna-star-garden';
+      const T0 = new Date('2026-01-01T00:00:00.000Z');
+      const minutes = (n: number) => new Date(T0.getTime() + n * 60_000);
+      const v1Page = (n: number) => ({
+        page_number: n,
+        text: `Old page ${n}`,
+        illustrationDescription: `Old illust ${n}`,
+      });
+      const livePage = (n: number) => ({
+        page_number: n,
+        text: `Page ${n} text`,
+        illustrationDescription: `Illustration ${n}`,
+      });
+
+      async function ownDraft() {
+        const token = await createUserAndGetToken(app);
+        const user = await prisma.user.findFirst({ where: { email: 'author@example.com' } });
+        await prisma.book.update({
+          where: { id: BOOK },
+          data: { status: 'draft', created_by: user!.id, version: 2 },
+        });
+        return token;
+      }
+
+      function snapshot(version: number, pages: object[], created_at: Date) {
+        return prisma.bookVersion.create({
+          data: { book_id: BOOK, version, pages_json: JSON.stringify(pages), created_at },
+        });
+      }
+
+      function art(page_number: number, version: number, url: string, created_at: Date) {
+        return prisma.illustrationVersion.create({
+          data: { book_id: BOOK, page_number, version, url, created_at },
+        });
+      }
+
+      const restore = (token: string, version = 1) =>
+        request(app)
+          .put(`/api/books/${BOOK}/versions/${version}/restore`)
+          .set('Authorization', `Bearer ${token}`);
+
+      it('keeps the current art on a page the restore leaves unchanged', async () => {
+        const token = await ownDraft();
+        // The URL is older art the author reverted to, and a newer row exists:
+        // an unchanged page must keep the reverted choice, not the newest row.
+        await prisma.page.update({
+          where: { book_id_page_number: { book_id: BOOK, page_number: 1 } },
+          data: { illustration_url: '/illustrations/luna-star-garden/page-1.png' },
+        });
+        await art(1, 1, '/illustrations/luna-star-garden/page-1.png', minutes(1));
+        await art(1, 2, '/illustrations/luna-star-garden/page-1-v2.png', minutes(2));
+        await snapshot(1, [livePage(1), v1Page(2)], minutes(3));
+
+        const res = await restore(token);
+        expect(res.status).toBe(200);
+        expect(res.body.pages[0].illustration_url).toBe('/illustrations/luna-star-garden/page-1.png');
+      });
+
+      it('pins the restored page wire shape', async () => {
+        const token = await ownDraft();
+        await art(1, 1, '/illustrations/luna-star-garden/page-1.png', minutes(1));
+        await snapshot(1, [v1Page(1)], minutes(2));
+
+        const res = await restore(token);
+        expect(res.status).toBe(200);
+        expect(res.body).toMatchObject({
+          id: BOOK,
+          title: expect.any(String),
+          author: expect.any(String),
+          description: expect.any(String),
+          theme: expect.any(String),
+          age_range: expect.any(String),
+          cover_emoji: expect.any(String),
+          cover_color: expect.any(String),
+          price: expect.any(Number),
+          is_featured: expect.any(Boolean),
+          is_user_created: expect.any(Boolean),
+          status: 'draft',
+          version: 3,
+          characters: expect.any(Array),
+          font_family: expect.any(String),
+          text_size: expect.any(String),
+          created_at: expect.any(String),
+          pages: [
+            {
+              id: expect.any(Number),
+              book_id: BOOK,
+              page_number: 1,
+              text: 'Old page 1',
+              illustration_description: 'Old illust 1',
+              illustration_url: '/illustrations/luna-star-garden/page-1.png',
+            },
+          ],
+        });
+      });
+
+      it('re-attaches the newest art drawn for the restored content', async () => {
+        const token = await ownDraft();
+        await art(1, 1, '/illustrations/luna-star-garden/page-1.png', minutes(1));
+        await art(1, 2, '/illustrations/luna-star-garden/page-1-v2.png', minutes(2));
+        await snapshot(1, [v1Page(1)], minutes(3));
+        // Drawn for the live content, after v1 was replaced. Must not win.
+        await art(1, 3, '/illustrations/luna-star-garden/page-1-v3.png', minutes(4));
+
+        const res = await restore(token);
+        expect(res.status).toBe(200);
+        expect(res.body.pages[0].illustration_url).toBe('/illustrations/luna-star-garden/page-1-v2.png');
+      });
+
+      it('re-attaches art to an unchanged page that a past restore orphaned', async () => {
+        // The state #95 observed: content matches, Page.illustration_url is NULL.
+        const token = await ownDraft();
+        await art(1, 1, '/illustrations/luna-star-garden/page-1.png', minutes(1));
+        await snapshot(1, [livePage(1)], minutes(2));
+
+        const res = await restore(token);
+        expect(res.status).toBe(200);
+        expect(res.body.pages[0].illustration_url).toBe('/illustrations/luna-star-garden/page-1.png');
+      });
+
+      it('does not attach art drawn for different content', async () => {
+        const token = await ownDraft();
+        // v1 = the first story, with art. v2 = a revised story never redrawn.
+        await art(1, 1, '/illustrations/luna-star-garden/page-1.png', minutes(1));
+        await snapshot(1, [v1Page(1)], minutes(2));
+        await snapshot(2, [{ ...v1Page(1), text: 'Revised, never redrawn' }], minutes(3));
+
+        const res = await restore(token, 2);
+        expect(res.status).toBe(200);
+        expect(res.body.pages[0].text).toBe('Revised, never redrawn');
+        expect(res.body.pages[0].illustration_url).toBeNull();
+      });
+
+      it("does not attach another page's art or a portrait row", async () => {
+        const token = await ownDraft();
+        await art(2, 1, '/illustrations/luna-star-garden/page-2.png', minutes(1));
+        await art(1000, 1, '/illustrations/luna-star-garden/portrait-1000.png', minutes(1));
+        await snapshot(1, [v1Page(1)], minutes(2));
+
+        const res = await restore(token);
+        expect(res.status).toBe(200);
+        expect(res.body.pages[0].illustration_url).toBeNull();
+      });
+
+      it('matches art across a legacy snapshot with no page_number keys', async () => {
+        const token = await ownDraft();
+        await art(2, 1, '/illustrations/luna-star-garden/page-2.png', minutes(1));
+        const legacy = [v1Page(1), v1Page(2)].map(({ text, illustrationDescription }) => ({
+          text,
+          illustrationDescription,
+        }));
+        await snapshot(1, legacy, minutes(2));
+
+        const res = await restore(token);
+        expect(res.status).toBe(200);
+        expect(res.body.pages[1].illustration_url).toBe('/illustrations/luna-star-garden/page-2.png');
+      });
+
+      it('survives a round trip: restoring away and back keeps both sets of art', async () => {
+        const token = await ownDraft();
+        await art(1, 1, '/illustrations/luna-star-garden/page-1.png', minutes(1));
+        await snapshot(1, [v1Page(1)], minutes(2));
+        await art(1, 2, '/illustrations/luna-star-garden/page-1-v2.png', minutes(3));
+        await prisma.page.update({
+          where: { book_id_page_number: { book_id: BOOK, page_number: 1 } },
+          data: { illustration_url: '/illustrations/luna-star-garden/page-1-v2.png' },
+        });
+
+        const away = await restore(token, 1);
+        expect(away.status).toBe(200);
+        expect(away.body.pages[0].illustration_url).toBe('/illustrations/luna-star-garden/page-1.png');
+
+        // The first restore snapshotted the live content as v2.
+        const back = await restore(token, 2);
+        expect(back.status).toBe(200);
+        expect(back.body.pages[0].text).toBe(livePage(1).text);
+        expect(back.body.pages[0].illustration_url).toBe('/illustrations/luna-star-garden/page-1-v2.png');
+      });
+
+      it('rewrites pointers only: no blob is written or removed', async () => {
+        const storage = getStorage();
+        const put = vi.spyOn(storage, 'put');
+        const remove = vi.spyOn(storage, 'remove');
+        const token = await ownDraft();
+        await art(1, 1, '/illustrations/luna-star-garden/page-1.png', minutes(1));
+        await snapshot(1, [v1Page(1)], minutes(2));
+
+        const res = await restore(token);
+        expect(res.status).toBe(200);
+        expect(put).not.toHaveBeenCalled();
+        expect(remove).not.toHaveBeenCalled();
+        expect(mockGenerateIllustration).not.toHaveBeenCalled();
+        put.mockRestore();
+        remove.mockRestore();
+      });
     });
 
     it('restores a legacy snapshot whose pages_json has no page_number keys', async () => {
