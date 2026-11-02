@@ -54,12 +54,13 @@ export function trackedKeyCount(): number {
  *
  *   - Too high reads a client-supplied entry, so an attacker gets a fresh budget per
  *     request. The limiter silently stops working.
- *   - Too low reads a proxy's address, so clients on that proxy share one budget. Logins
- *     can be blocked, but guessing stays bounded.
+ *   - Too low reads a proxy's address, so clients on that proxy share one budget. If
+ *     those addresses rotate, every new one is a fresh budget and the limiter silently
+ *     stops working too, which is what 1 and 2 did on Render.
  *
  * So the production default is 1, the low end, and a malformed value falls back to the
- * default rather than to trusting anything. Render's real hop count is unconfirmed; the
- * check that settles it against the live service is in ADR-030.
+ * default rather than to trusting anything. Render needs 3, measured against the live
+ * service and set in `render.yaml`; the check that re-measures it is in ADR-030.
  */
 export function resolveTrustProxyHops(env: NodeJS.ProcessEnv = process.env): number {
   const fallback = env.NODE_ENV === 'production' ? 1 : 0;

@@ -59,6 +59,13 @@ services:
         value: production
       - key: NODE_VERSION
         value: '22'
+      # Proxies to trust when reading X-Forwarded-For, which decides the address
+      # the auth rate limit keys on. Measured against the live service (ADR-030):
+      # 1 and 2 read rotating proxy addresses and silently defeat the limit.
+      # A `value:` entry on purpose, so a Blueprint sync reasserts it. Re-run the
+      # ADR-030 check after changing it, or if Render's routing changes.
+      - key: TRUST_PROXY_HOPS
+        value: '3'
       - key: ANTHROPIC_API_KEY
         sync: false
       - key: OPENAI_API_KEY

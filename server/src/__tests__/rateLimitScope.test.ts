@@ -44,6 +44,13 @@ describe('rate limiting: single-instance assumption', () => {
       ).toBe(1);
     });
 
+    it('declares the proxy hop count the auth rate limit was measured to need', () => {
+      // The code default is 1, which on Render silently defeats the limit (ADR-030),
+      // and nothing fails at runtime if this entry goes missing.
+      const yaml = readFileSync(RENDER_YAML, 'utf-8');
+      expect(yaml).toMatch(/- key: TRUST_PROXY_HOPS\n\s+value: '3'\n/);
+    });
+
     it('still pins the assumption to a service this test can actually see', () => {
       // Guards the guard: if the web service is renamed or removed, the regex above
       // starts passing vacuously against a file that no longer describes the deploy.
