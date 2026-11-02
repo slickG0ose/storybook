@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import prisma from '../db/prisma';
 import { hashPassword, verifyPassword, isLegacyHash } from '../lib/password';
 import { isEmailAllowed, normalizeEmail } from '../services/allowlist';
+import { authRateLimit } from '../middleware/authRateLimit';
 import type { Request, Response } from 'express';
 
 const router = Router();
@@ -33,7 +34,10 @@ export async function requireAdmin(req: Request) {
   return user;
 }
 
-router.post('/register', async (req: Request, res: Response) => {
+// CodeQL's js/missing-rate-limiting (alert #7) will keep pointing at these two handlers
+// unless it is dismissed or express-rate-limit replaces the limiter: the query matches
+// limiters by library name and cannot see authRateLimit. See ADR-030.
+router.post('/register', authRateLimit('register'), async (req: Request, res: Response) => {
   const { email, name, password } = req.body as { email?: string; name?: string; password?: string };
 
   if (!email || !name || !password) {
@@ -86,7 +90,7 @@ router.post('/register', async (req: Request, res: Response) => {
   res.status(201).json({ id: user.id, email: user.email, name: user.name, role: user.role, token });
 });
 
-router.post('/login', async (req: Request, res: Response) => {
+router.post('/login', authRateLimit('login'), async (req: Request, res: Response) => {
   const { email, password } = req.body as { email?: string; password?: string };
 
   if (!email || !password) {

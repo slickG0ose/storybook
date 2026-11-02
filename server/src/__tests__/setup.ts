@@ -8,6 +8,7 @@ import adminRouter from '../routes/admin';
 import generateRouter from '../routes/generate';
 import uploadsRouter from '../routes/uploads';
 import heroRouter from '../routes/hero';
+import { resetAuthRateLimits } from '../middleware/authRateLimit';
 
 const seedBooks = [
   { id: 'luna-star-garden', title: 'Luna and the Star Garden', author: 'AI Storybook', description: 'A story about stars.', theme: 'fantasy', age_range: '4-7', cover_emoji: '\u{1F31F}', cover_color: '#7c3aed', price: 19.99, is_featured: true, is_user_created: false },
@@ -50,6 +51,9 @@ export async function allowEmail(email: string): Promise<void> {
 }
 
 export async function resetDatabase() {
+  // Every supertest request comes from loopback, so one test's failed logins would
+  // otherwise spend the next test's budget.
+  resetAuthRateLimits();
   await prisma.usageLog.deleteMany();
   await prisma.orderItem.deleteMany();
   await prisma.order.deleteMany();

@@ -40,6 +40,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { checkForNewerModel } from './lib/models';
 import { buildCorsPolicy } from './lib/cors';
 import { assertSingleInstanceAssumption } from './middleware/rateLimit';
+import { resolveTrustProxyHops } from './middleware/authRateLimit';
 import { illustrationRedirect } from './middleware/illustrationRedirect';
 import { getStorage, resolveBackendName } from './services/storage';
 
@@ -61,6 +62,11 @@ getStorage();
 if (resolveBackendName() === 'r2') {
   console.log('[storage] backend: r2 (local disk is the read fallback)');
 }
+
+// What req.ip means behind Render's proxy, which is what the auth rate limit keys on.
+// A hop count, never `true`: `true` reads the left-most X-Forwarded-For entry, which
+// the client controls. See resolveTrustProxyHops() and ADR-030.
+app.set('trust proxy', resolveTrustProxyHops());
 
 const corsPolicy = buildCorsPolicy();
 if (corsPolicy.warning) {
