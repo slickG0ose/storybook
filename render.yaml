@@ -134,7 +134,7 @@ services:
       # Spend ceilings (F4b / #6), in whole cents. Daily is per-user and
       # admin-bypassable; monthly is global and bypassable by nobody.
       - key: QUOTA_DAILY_PER_USER_CENTS
-        value: '50'
+        value: '200'
       - key: QUOTA_MONTHLY_GLOBAL_CENTS
         value: '2000'
       # Neon (free tier), NOT a Render database — see the caveat block at the
