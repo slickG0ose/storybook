@@ -3,7 +3,15 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import Admin from '../Admin'
 import { ToastProvider } from '../../context/ToastContext'
-import type { AdminUser, AdminBook, OrphanIllustration, AllowedEmail, AdminSpendResponse, User } from '../../types'
+import type {
+  AdminUser,
+  AdminBook,
+  OrphanIllustration,
+  AllowedEmail,
+  AdminSpendResponse,
+  AdminFeedbackItem,
+  User,
+} from '../../types'
 
 const adminUser: User = {
   id: 'admin-1',
@@ -141,6 +149,31 @@ const sampleSpend: AdminSpendResponse = {
   adminBypassEnabled: true,
 }
 
+const sampleFeedback: AdminFeedbackItem[] = [
+  {
+    id: 'fb-1',
+    user_id: 'u-1',
+    user_email: 'tester@example.com',
+    user_name: 'Tess',
+    session_id: 'abcdef12-0000-0000-0000-000000000000',
+    category: 'bug',
+    message: 'The button did nothing',
+    route: '/books',
+    book_id: null,
+    book_title: null,
+    user_agent: 'Mozilla/5.0',
+    viewport_width: 393,
+    viewport_height: 852,
+    theme: 'light',
+    client_build: null,
+    server_build: null,
+    recent_errors: [],
+    status: 'new',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+]
+
 function setupFetchMock(opts: {
   users?: AdminUser[]
   books?: AdminBook[]
@@ -158,6 +191,8 @@ function setupFetchMock(opts: {
   featuredStatus?: number
   /** Reject the featured PUT outright, to exercise that handler's catch branch. */
   featuredRejects?: boolean
+  feedback?: AdminFeedbackItem[]
+  feedbackPatchStatus?: number
 } = {}) {
   const calls: FetchCall[] = []
   vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
@@ -184,6 +219,34 @@ function setupFetchMock(opts: {
     if (url === '/api/admin/spend' && method === 'GET') {
       return Promise.resolve(
         new Response(JSON.stringify(opts.spend ?? sampleSpend), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+    }
+    if (url.startsWith('/api/admin/feedback') && !/^\/api\/admin\/feedback\/[^/?]+$/.test(url) && method === 'GET') {
+      return Promise.resolve(
+        new Response(JSON.stringify(opts.feedback ?? sampleFeedback), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+    }
+    if (/^\/api\/admin\/feedback\/[^/?]+$/.test(url) && method === 'PATCH') {
+      const status = opts.feedbackPatchStatus ?? 200
+      if (status >= 400) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: 'patch failed' }), {
+            status,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        )
+      }
+      const id = decodeURIComponent(url.split('/').pop()!)
+      const body = JSON.parse(init!.body as string) as { status: AdminFeedbackItem['status'] }
+      const found = (opts.feedback ?? sampleFeedback).find(f => f.id === id) ?? sampleFeedback[0]!
+      return Promise.resolve(
+        new Response(JSON.stringify({ ...found, status: body.status }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         }),
@@ -806,6 +869,88 @@ describe('Admin page', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/no ai spend recorded today/i)).toBeInTheDocument()
+    })
+  })
+
+  // ---------------------------------------------------------------------
+  // Feedback tab (tester feedback widget, #157)
+  // ---------------------------------------------------------------------
+
+  describe('Feedback tab', () => {
+    async function openFeedbackTab() {
+      await act(async () => {
+        fireEvent.click(await screen.findByRole('button', { name: /^Feedback/ }))
+      })
+    }
+
+    it('fetches with ?status=new by default and renders the cards', async () => {
+      const { calls } = setupFetchMock()
+      renderAdmin()
+      await openFeedbackTab()
+
+      await waitFor(() => {
+        expect(screen.getByText('The button did nothing')).toBeInTheDocument()
+      })
+      const call = calls.find(c => c.url.startsWith('/api/admin/feedback'))
+      expect(call?.url).toBe('/api/admin/feedback?status=new')
+      const headers = call?.init?.headers as Record<string, string> | undefined
+      expect(headers?.Authorization).toBe('Bearer admin-token')
+    })
+
+    it('refetches with the user filter and without status when All is chosen', async () => {
+      const { calls } = setupFetchMock()
+      renderAdmin()
+      await openFeedbackTab()
+
+      await act(async () => {
+        fireEvent.click(await screen.findByRole('button', { name: 'Show only feedback from tester@example.com' }))
+      })
+      await waitFor(() => {
+        expect(calls.some(c => c.url === '/api/admin/feedback?status=new&user_id=u-1')).toBe(true)
+      })
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'All' }))
+      })
+      await waitFor(() => {
+        expect(calls.some(c => c.url === '/api/admin/feedback?user_id=u-1')).toBe(true)
+      })
+    })
+
+    it('PATCHes the new status and updates the card', async () => {
+      const { calls } = setupFetchMock()
+      renderAdmin()
+      await openFeedbackTab()
+
+      const select = await screen.findByRole('combobox', { name: 'Status for feedback from tester@example.com' })
+      await act(async () => {
+        fireEvent.change(select, { target: { value: 'triaged' } })
+      })
+
+      await waitFor(() => {
+        const call = calls.find(c => c.url === '/api/admin/feedback/fb-1' && c.init?.method === 'PATCH')
+        expect(call).toBeDefined()
+        expect(JSON.parse(call!.init!.body as string)).toEqual({ status: 'triaged' })
+      })
+      await waitFor(() => {
+        expect(screen.getByRole('combobox', { name: /Status for feedback/ })).toHaveValue('triaged')
+      })
+    })
+
+    it('raises a toast when the status PATCH fails, and the card keeps its status', async () => {
+      setupFetchMock({ feedbackPatchStatus: 500 })
+      renderAdmin()
+      await openFeedbackTab()
+
+      const select = await screen.findByRole('combobox', { name: 'Status for feedback from tester@example.com' })
+      await act(async () => {
+        fireEvent.change(select, { target: { value: 'done' } })
+      })
+
+      await waitFor(() => {
+        expect(toastHost().getByText("Couldn't update that feedback's status.")).toBeInTheDocument()
+      })
+      expect(screen.getByRole('combobox', { name: /Status for feedback/ })).toHaveValue('new')
     })
   })
 })

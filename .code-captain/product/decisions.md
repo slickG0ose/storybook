@@ -4,6 +4,52 @@ Append-only log. Newest entries on top. Each entry should answer: *what was deci
 
 ---
 
+## ADR-032 — Tester feedback is a `Feedback` table with discrete context columns, triaged through `/api/admin/feedback`
+
+**Date:** 2026-11-08
+**Status:** Proposed — lands with the `tester-feedback-widget` PR; accepted when Nick merges it.
+**Scope:** `tester-feedback-widget` Tasks 1–8. Spec at [.code-captain/specs/tester-feedback-widget/spec.md](../specs/tester-feedback-widget/spec.md), plan at [tasks.md](../specs/tester-feedback-widget/tasks.md). Serves [#157](https://github.com/slickG0ose/storybook/issues/157) (friends-and-family alpha).
+
+### Decision
+
+**1. One `Feedback` row per report, context in discrete columns, not one JSON blob.** Route, book, viewport, theme, client and server build, user agent each get a column. **Why:** the admin list filters and renders by these fields, and typed columns keep the wire shape pinnable by `toMatchObject` (ADR-003). **Exception:** `recent_errors_json String?` is JSON, because it is a short variable-length list that is only ever displayed, never queried.
+
+**2. `user_id` comes from the auth token only; `session_id` is an unverified hint.** The create schema has no `user_id`, and `z.object()` strips one if sent. `session_id` reuses the cart UUID (`localStorage['storybook-session']`) for correlating a report with cart and order rows; nothing trusts it, so a missing or odd value never rejects a report.
+
+**3. Lifetimes follow the subject.** User delete cascades (a tester leaving takes their words with them); book delete sets `book_id` to null and keeps the report. An unknown `book_id` is stored as null rather than rejected — a tester never loses a report because of what page they were on.
+
+**4. Console errors are captured, narrowly.** Nick ruled yes (open question 3, 2026-11-08). The client keeps the last 5 `window` `error` and `unhandledrejection` messages, 300 chars each — not a `console.error` patch, which would sweep in React dev warnings and third-party noise. The server normalises rather than rejects. The dialog tells the tester these are attached.
+
+**5. Triage routes live in `admin.ts` under `/api/admin/feedback`,** not `GET/PATCH /api/feedback`. **Why:** reuses `adminGate`, which exists only inside that router, and keeps `/api/admin/*` one owner (`Admin.tsx`). The tester's `POST /api/feedback` is its own router behind `requireAuth` and a 10-per-10-minutes per-user `rateLimit`. No AI call, so no spend gate.
+
+### Deferred
+
+- **Screenshot capture.** Deferred: needs a new client dependency (guardrail), `html2canvas`-type libraries reportedly fail on Tailwind 4 `oklch()` colours, `r2.dev` images need bucket CORS, and the R2 bucket is public-read, so a screenshot of a tester's draft would be reachable by URL. Revisit if triage shows reports that can't be reproduced. Detail in spec §Screenshot capture.
+- **Notification on new feedback** (open question 2). Deferred: unanswered, so the spec default (a) applies — Nick checks `/admin` → Feedback, which opens on New. The cheapest upgrade is a client-only "N new" count on the tab (~30 min). Email means a new paid external API (guardrail, own spec); auto-filing GitHub issues would put testers' words in a public repo.
+
+---
+
+## ADR-031 — The feedback trigger lives in the sticky Navbar, not a floating button
+
+**Date:** 2026-11-08
+**Status:** Accepted — Nick confirmed open question 1 ("Yes, Navbar"), 2026-11-08.
+**Scope:** `tester-feedback-widget` spec ([spec.md](../specs/tester-feedback-widget/spec.md)) — `client/src/components/Navbar.tsx`, `FeedbackDialog.tsx`. Upholds **ADR-011 decision 5** and **ADR-017 decision 2**.
+
+### Decision
+
+The "Send feedback" trigger is an icon button in the sticky Navbar, shown only to signed-in users, styled like its neighbours. It is not `position: fixed`.
+
+**Why:** ADR-017 decision 2 leaves exactly two fixed surfaces — the error toast host owns the top, `UpdateToast` owns the bottom. A bottom-right floating button would sit exactly where `UpdateToast` renders on desktop and inside its full-width strip on mobile, and the existing per-element computed-style assertions would not catch the collision. The sticky Navbar is already on every page, reader and theater mode included. `e2e/tests/mobile/feedback.spec.ts` pins the trigger's `position` as not `fixed`, with a message naming ADR-017.
+
+**Consequence worth knowing:** the dialog renders as a **sibling** of `<nav>`, not inside it. The nav's `backdrop-blur-sm` makes it the containing block for `fixed` descendants, so an overlay inside it would be clipped to the 64px bar. Moving the dialog back inside the nav is a regression that RTL tests cannot see; `e2e/tests/feedback.spec.ts`'s theater test (overlay box equals viewport) catches it.
+
+### Alternatives considered
+
+- **Floating action button** (rejected): breaks the two-fixed-surface invariant; would need an ADR-017 amendment plus a z-order and offset negotiated against `UpdateToast`. About half a day more for a less discoverable control.
+- **Footer link** (rejected): the footer is below the fold on every long page, which is every page a tester is likely to have a finding on.
+
+---
+
 ## ADR-030 — Login and registration get their own IP-keyed, failure-counting limiter; alert #7 stays open until the owner chooses how to close it
 
 **Date:** 2026-11-01
