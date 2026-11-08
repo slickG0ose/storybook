@@ -8,6 +8,7 @@ import adminRouter from '../routes/admin';
 import generateRouter from '../routes/generate';
 import uploadsRouter from '../routes/uploads';
 import heroRouter from '../routes/hero';
+import { narrationRouter, bookNarrationRouter } from '../routes/narration';
 import { resetAuthRateLimits } from '../middleware/authRateLimit';
 
 const seedBooks = [
@@ -89,6 +90,8 @@ export function createTestApp(): express.Express {
 
   app.use('/api/auth', authRouter);
   app.use('/api/books', booksRouter);
+  app.use('/api/books', bookNarrationRouter);
+  app.use('/api/narration', narrationRouter);
   app.use('/api/cart', cartRouter);
   app.use('/api/orders', ordersRouter);
   app.use('/api/admin', adminRouter);

@@ -30,6 +30,7 @@ import ordersRouter from './routes/orders';
 import uploadsRouter from './routes/uploads';
 import adminRouter from './routes/admin';
 import heroRouter from './routes/hero';
+import { narrationRouter, bookNarrationRouter } from './routes/narration';
 import testRouter from './routes/test';
 import { snapshotDb } from './db/snapshot';
 import { bootstrapAllowlist } from './services/allowlist';
@@ -91,6 +92,9 @@ app.use('/hero', express.static(join(import.meta.dirname, '../public/hero')));
 
 app.use('/api/auth', authRouter);
 app.use('/api/books', booksRouter);
+// Only declares /:id/narration, so it cannot shadow GET /api/books/:id.
+app.use('/api/books', bookNarrationRouter);
+app.use('/api/narration', narrationRouter);
 app.use('/api/generate', generateRouter);
 app.use('/api/cart', cartRouter);
 app.use('/api/orders', ordersRouter);

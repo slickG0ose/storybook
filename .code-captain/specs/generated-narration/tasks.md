@@ -230,6 +230,8 @@ export async function generateNarration(
 
 ### Task 6 — Narration routes
 
+**Status:** Done
+
 **Zone:** multi-zone (server + docs)
 **Depends on:** Task 5
 **Parallel-safe with:** Task 8
