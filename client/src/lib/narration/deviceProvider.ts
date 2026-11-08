@@ -89,6 +89,7 @@ export const deviceProvider: NarrationProvider = {
         lang: voice.lang,
         localService: voice.localService,
         isDefault: voice.default,
+        kind: 'device' as const,
       }))
       .sort(compareVoices)
   },

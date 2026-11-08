@@ -168,6 +168,7 @@ export function createGeneratedProvider(deps: GeneratedProviderDeps): NarrationP
         lang: 'en-US',
         localService: false,
         isDefault: voice.id === DEFAULT_GENERATED_VOICE,
+        kind: 'generated' as const,
       }))
     },
 

@@ -25,6 +25,11 @@ export interface NarrationVoice {
    * provider seam to `speechSynthesis.getVoices()` to find the flag.
    */
   isDefault: boolean;
+  /**
+   * Which provider speaks this voice. `'generated'` voices carry a `generated:<id>` URI and
+   * are played from server-synthesised clips; `'device'` voices are the Web Speech engine's.
+   */
+  kind: 'device' | 'generated';
 }
 
 export type NarrationState = 'idle' | 'playing' | 'paused' | 'unavailable'

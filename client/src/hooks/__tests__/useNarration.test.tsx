@@ -3,11 +3,19 @@ import { act, renderHook } from '@testing-library/react'
 import {
   useNarration,
   AUTO_ADVANCE_DELAY_MS,
+  FALLBACK_NOTICES,
   START_WATCHDOG_MS,
   type UseNarrationArgs,
 } from '../useNarration'
+import { resetGeneratedVoicesCache } from '../useVoices'
 import { deviceProvider } from '../../lib/narration/deviceProvider'
-import type { NarrationEvents } from '../../lib/narration/provider'
+import type {
+  NarrationEvents,
+  NarrationHandle,
+  NarrationProvider,
+  NarrationSpeakOptions,
+  NarrationTarget,
+} from '../../lib/narration/provider'
 import {
   installFakeSpeech,
   uninstallFakeSpeech,
@@ -613,6 +621,357 @@ describe('useNarration', () => {
       expect(result.current.state).toBe('unavailable')
       expect(result.current.position).toBeNull()
       expect(result.current.needsGesture).toBe(false)
+      expect(onRequestNext).not.toHaveBeenCalled()
+    })
+  })
+})
+
+/**
+ * Generated voices (generated-narration spec, Task 8). The provider here is a hand-driven
+ * fake: `speak()` records its arguments and does nothing, and the test fires the events.
+ *
+ * Its `cancel()` deliberately does **not** silence the handle — unlike the real
+ * `generatedProvider`, whose own `dead` flag would. That is what keeps the stale-callback
+ * test below about the hook's `runId` guard rather than the provider's (ADR-011 documents
+ * both guards; each has to hold on its own).
+ */
+describe('useNarration — generated voices', () => {
+  let control: FakeSpeechControl
+
+  const TARGET: NarrationTarget = { bookId: 'book-1', slot: 1 }
+  const NEXT_TARGET: NarrationTarget = { bookId: 'book-1', slot: 2 }
+
+  interface SpeakCall {
+    chunks: unknown[]
+    opts: NarrationSpeakOptions
+    events: NarrationEvents
+    handle: { [K in keyof Required<NarrationHandle>]: ReturnType<typeof vi.fn> }
+  }
+
+  function makeGeneratedProvider() {
+    const calls: SpeakCall[] = []
+    const prefetch = vi.fn()
+    const provider: NarrationProvider = {
+      id: 'generated',
+      needsStartWatchdog: false,
+      isAvailable: () => true,
+      listVoices: () => [],
+      speak(chunks, opts, events) {
+        const handle = { cancel: vi.fn(), pause: vi.fn(), resume: vi.fn(), setRate: vi.fn() }
+        calls.push({ chunks, opts, events, handle })
+        return handle
+      },
+      prefetch,
+    }
+    const last = (): SpeakCall => {
+      const call = calls[calls.length - 1]
+      expect(call).toBeDefined()
+      return call as SpeakCall
+    }
+    return { provider, calls, prefetch, last }
+  }
+
+  function stubVoicesRoute(available: boolean): ReturnType<typeof vi.fn> {
+    const body = {
+      available,
+      voices: [
+        { id: 'af_heart', label: 'Heart', description: 'Warm storyteller', gender: 'female' },
+        { id: 'am_michael', label: 'Michael', description: 'Calm and steady', gender: 'male' },
+      ],
+    }
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => body }))
+    vi.stubGlobal('fetch', fetchMock)
+    return fetchMock
+  }
+
+  /** Lets the voices-route promise chain settle and React commit the result. */
+  async function flushVoices(): Promise<void> {
+    for (let i = 0; i < 3; i += 1) {
+      await act(async () => {
+        await Promise.resolve()
+      })
+    }
+  }
+
+  async function renderGenerated(overrides: Partial<UseNarrationArgs> = {}) {
+    const generated = makeGeneratedProvider()
+    const view = renderNarration({
+      target: TARGET,
+      nextTarget: NEXT_TARGET,
+      generatedProvider: generated.provider,
+      ...overrides,
+    })
+    await flushVoices()
+    return { ...view, generated }
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    localStorage.removeItem('storybook-narration')
+    setDocumentHidden(false)
+    resetGeneratedVoicesCache()
+    stubVoicesRoute(true)
+    control = installFakeSpeech()
+  })
+
+  afterEach(() => {
+    uninstallFakeSpeech()
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+    resetGeneratedVoicesCache()
+    Reflect.deleteProperty(document, 'hidden')
+    localStorage.removeItem('storybook-narration')
+  })
+
+  describe('provider selection', () => {
+    it('speaks a generated: voice through the generated provider, with the target', async () => {
+      const { result, generated } = await renderGenerated()
+
+      // Rung 0: nothing persisted, generation available.
+      expect(result.current.activeVoiceURI).toBe('generated:af_heart')
+
+      act(() => result.current.play())
+
+      expect(generated.calls).toHaveLength(1)
+      expect(generated.last().opts).toMatchObject({
+        voiceURI: 'generated:af_heart',
+        fromChunk: 0,
+        target: TARGET,
+      })
+      expect(control.spoken()).toEqual([])
+    })
+
+    it('speaks a device voice through the device provider', async () => {
+      const { result, generated } = await renderGenerated()
+
+      act(() => result.current.setPrefs({ voiceURI: 'urn:voice:daniel' }))
+      act(() => result.current.play())
+
+      expect(generated.calls).toHaveLength(0)
+      expect(control.spoken()).toEqual(PAGE_ONE_CHUNKS)
+      expect(control.utterances()[0]?.voice?.voiceURI).toBe('urn:voice:daniel')
+    })
+
+    it('uses the device default voice when there is no target to key clips on', async () => {
+      const { result, generated } = await renderGenerated({ target: null })
+
+      act(() => result.current.play())
+
+      expect(generated.calls).toHaveLength(0)
+      expect(control.spoken()).toEqual(PAGE_ONE_CHUNKS)
+      // The device ladder's pick, not the engine's arbitrary default for an unknown URI.
+      expect(control.utterances()[0]?.voice?.voiceURI).toBe('urn:voice:samantha')
+    })
+
+    it('stays on the device when the voices route says generation is unavailable', async () => {
+      stubVoicesRoute(false)
+      const { result, generated } = await renderGenerated()
+
+      expect(result.current.activeVoiceURI).not.toMatch(/^generated:/)
+      act(() => result.current.play())
+
+      expect(generated.calls).toHaveLength(0)
+      expect(control.spoken()).toEqual(PAGE_ONE_CHUNKS)
+    })
+  })
+
+  describe('preparing', () => {
+    it('is true from onPreparing until the first chunk starts', async () => {
+      const { result, generated } = await renderGenerated()
+
+      act(() => result.current.play())
+      expect(result.current.preparing).toBe(false)
+
+      act(() => generated.last().events.onPreparing?.())
+      expect(result.current.preparing).toBe(true)
+      expect(result.current.state).toBe('playing')
+
+      act(() => generated.last().events.onChunkStart(0))
+      expect(result.current.preparing).toBe(false)
+      expect(result.current.position).toEqual({ chunkIndex: 0, wordRange: null })
+    })
+  })
+
+  describe('fallback to the device voice', () => {
+    it.each(['generation-unavailable', 'quota', 'synthesis-failed'] as const)(
+      "on '%s', re-speaks from the failed chunk on the device and sets the notice",
+      async (reason) => {
+        const { result, generated } = await renderGenerated()
+
+        act(() => result.current.play())
+        act(() => {
+          generated.last().events.onChunkStart(0)
+          generated.last().events.onChunkStart(1)
+        })
+        act(() => generated.last().events.onError(reason))
+
+        // From chunk 1 — the one that failed — not from the top of the page.
+        expect(control.spoken()).toEqual(PAGE_ONE_CHUNKS.slice(1))
+        expect(control.utterances()[0]?.voice?.voiceURI).toBe('urn:voice:samantha')
+        expect(result.current.state).toBe('playing')
+        expect(result.current.position?.chunkIndex).toBe(1)
+        expect(result.current.notice).toBe(FALLBACK_NOTICES[reason])
+        expect(result.current.preparing).toBe(false)
+      },
+    )
+
+    it('stops with the notice when there is no device voice to fall back to', async () => {
+      uninstallFakeSpeech()
+      const { result, generated } = await renderGenerated()
+
+      // Generated alone is enough to make the player usable.
+      expect(result.current.state).toBe('idle')
+      act(() => result.current.play())
+      act(() => generated.last().events.onError('synthesis-failed'))
+
+      expect(result.current.state).toBe('idle')
+      expect(result.current.notice).toBe(FALLBACK_NOTICES['synthesis-failed'])
+    })
+
+    it('a Play tap after a fallback stays on the device for that page', async () => {
+      const { result, generated } = await renderGenerated()
+
+      act(() => result.current.play())
+      act(() => generated.last().events.onError('synthesis-failed'))
+      act(() => result.current.stop())
+      act(() => result.current.play())
+
+      expect(generated.calls).toHaveLength(1)
+    })
+
+    it('keeps the device voice across a page turn after a quota denial', async () => {
+      const { result, generated, turnPage } = await renderGenerated()
+
+      act(() => result.current.play())
+      act(() => generated.last().events.onError('quota'))
+      const spokenBefore = control.spoken().length
+
+      turnPage({ pageKey: 1, text: PAGE_TWO, target: NEXT_TARGET })
+
+      // No second generated attempt — no POST storm page after page.
+      expect(generated.calls).toHaveLength(1)
+      expect(control.spoken().slice(spokenBefore)).toEqual(PAGE_TWO_CHUNKS)
+      expect(result.current.notice).toBe(FALLBACK_NOTICES.quota)
+    })
+
+    it('retries generated on the next page after a one-off failure', async () => {
+      const { result, generated, turnPage } = await renderGenerated()
+
+      act(() => result.current.play())
+      act(() => generated.last().events.onError('synthesis-failed'))
+
+      turnPage({ pageKey: 1, text: PAGE_TWO, target: NEXT_TARGET })
+
+      expect(generated.calls).toHaveLength(2)
+      expect(generated.last().opts.target).toEqual(NEXT_TARGET)
+      expect(result.current.notice).toBeNull()
+    })
+
+    it("still asks for a gesture on 'not-allowed' rather than falling back", async () => {
+      const { result, generated } = await renderGenerated()
+
+      act(() => result.current.play())
+      act(() => generated.last().events.onError('not-allowed'))
+
+      expect(result.current.state).toBe('paused')
+      expect(result.current.needsGesture).toBe(true)
+      expect(control.spoken()).toEqual([])
+      expect(result.current.notice).toBeNull()
+    })
+  })
+
+  describe('start watchdog', () => {
+    it('is not armed on the generated path, even for a non-gesture re-arm', async () => {
+      const { result, generated, turnPage } = await renderGenerated()
+
+      act(() => result.current.play())
+      act(() => generated.last().events.onChunkStart(0))
+
+      // The page-turn re-arm is the non-gesture start the watchdog exists for on device.
+      turnPage({ pageKey: 1, text: PAGE_TWO, target: NEXT_TARGET })
+      expect(generated.calls).toHaveLength(2)
+
+      // A slow cold generation: nothing starts for well past the watchdog.
+      tick(START_WATCHDOG_MS + 500)
+
+      expect(result.current.state).toBe('playing')
+      expect(result.current.needsGesture).toBe(false)
+    })
+  })
+
+  describe('prefetch', () => {
+    it('prefetches the next slot once, on the first chunk start of the page', async () => {
+      const { result, generated } = await renderGenerated()
+
+      act(() => result.current.play())
+      expect(generated.prefetch).not.toHaveBeenCalled()
+
+      act(() => {
+        generated.last().events.onChunkStart(0)
+        generated.last().events.onChunkStart(1)
+      })
+
+      expect(generated.prefetch).toHaveBeenCalledTimes(1)
+      expect(generated.prefetch).toHaveBeenCalledWith(NEXT_TARGET, 'generated:af_heart')
+    })
+
+    it('does not prefetch when auto-advance is off', async () => {
+      const { result, generated } = await renderGenerated()
+
+      act(() => result.current.setPrefs({ autoAdvance: false }))
+      act(() => result.current.play())
+      act(() => generated.last().events.onChunkStart(0))
+
+      expect(generated.prefetch).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('rate', () => {
+    it('retunes a live generated handle instead of restarting', async () => {
+      const { result, generated } = await renderGenerated()
+
+      act(() => result.current.play())
+      act(() => generated.last().events.onChunkStart(1))
+      const handle = generated.last().handle
+
+      act(() => result.current.setPrefs({ rate: 1.25 }))
+
+      expect(handle.setRate).toHaveBeenCalledWith(1.25)
+      expect(handle.cancel).not.toHaveBeenCalled()
+      expect(generated.calls).toHaveLength(1)
+      expect(result.current.position?.chunkIndex).toBe(1)
+    })
+  })
+
+  describe('stale callbacks', () => {
+    // The generated-path copy of 'ignores the abandoned page callbacks after a page turn'.
+    // The fake handle stays loud after cancel(), so only the hook's runId guard stands
+    // between these late events and a phantom auto-advance.
+    it('ignores the abandoned page callbacks after a page turn', async () => {
+      const { result, generated, turnPage, onRequestNext } = await renderGenerated()
+
+      act(() => result.current.play())
+      act(() => generated.last().events.onChunkStart(1))
+      const abandoned = generated.last()
+
+      turnPage({ pageKey: 1, text: PAGE_TWO, target: NEXT_TARGET })
+      expect(abandoned.handle.cancel).toHaveBeenCalled()
+
+      act(() => {
+        abandoned.events.onChunkStart(2)
+        abandoned.events.onChunkEnd(2)
+        abandoned.events.onDone()
+        // A late failure must not fall back, either: it would speak the old page's chunks.
+        abandoned.events.onError('synthesis-failed')
+      })
+
+      expect(result.current.chunks.map((chunk) => chunk.text)).toEqual(PAGE_TWO_CHUNKS)
+      expect(result.current.position?.chunkIndex).toBe(0)
+      expect(result.current.notice).toBeNull()
+      expect(control.spoken()).toEqual([])
+
+      tick(AUTO_ADVANCE_DELAY_MS + 50)
       expect(onRequestNext).not.toHaveBeenCalled()
     })
   })

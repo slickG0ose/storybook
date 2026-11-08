@@ -329,6 +329,8 @@ quota-denied prefetch makes the provider remember `quotaBlocked` for the session
 
 ### Task 8 — Hook integration: voices, selection, fallback, prefetch
 
+**Status:** Done
+
 **Zone:** client
 **Depends on:** Task 7 (and Task 6 for a live manual check only)
 **Parallel-safe with:** Tasks 5–6

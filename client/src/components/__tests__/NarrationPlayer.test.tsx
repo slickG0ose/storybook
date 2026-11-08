@@ -32,13 +32,16 @@ function makeNarration(overrides: Partial<UseNarrationResult> = {}): UseNarratio
     setPrefs: vi.fn(),
     voices: [],
     voiceStatus: 'ready',
+    activeVoiceURI: null,
+    preparing: false,
+    notice: null,
     ...overrides,
   }
 }
 
 const VOICES: NarrationVoice[] = [
-  { uri: 'voice-a', name: 'Alice', lang: 'en-US', localService: true, isDefault: true },
-  { uri: 'voice-b', name: 'Bruno', lang: 'en-GB', localService: false, isDefault: false },
+  { uri: 'voice-a', name: 'Alice', lang: 'en-US', localService: true, isDefault: true, kind: 'device' },
+  { uri: 'voice-b', name: 'Bruno', lang: 'en-GB', localService: false, isDefault: false, kind: 'device' },
 ]
 
 describe('NarrationPlayer', () => {
