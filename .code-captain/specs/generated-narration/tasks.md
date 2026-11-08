@@ -108,6 +108,8 @@ export const GENERATED_VOICE_PREFIX = 'generated:'
 
 ### Task 3 — Char-priced `narration` spend kind
 
+**Status:** Done
+
 **Zone:** server
 **Depends on:** Task 2
 **Parallel-safe with:** Task 7

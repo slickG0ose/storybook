@@ -21,7 +21,7 @@ import type { ImageProvider } from './imagePin';
  * on error is preferable to charging users for work they didn't get.
  */
 
-export type UsageKind = 'story' | 'illustration' | 'cover' | 'style_reference';
+export type UsageKind = 'story' | 'illustration' | 'cover' | 'style_reference' | 'narration';
 
 /**
  * Cost per call in whole cents.
@@ -46,7 +46,42 @@ export const COST_CENTS: Record<UsageKind, number> = {
   // about 1.3c. Rounded UP to 2, like every other entry here: a spend guard
   // that under-estimates is not a guard.
   style_reference: 2,
+  // Generated narration (Kokoro on fal, #156). NOT the price of a call: narration
+  // is char-priced through `narrationCostCents`. This is only the floor, which
+  // is also what `spendGate('narration')` reserves before the book (and so the
+  // text length) is known. No page costs less than this, so the reservation
+  // never over-promises.
+  narration: 1,
 };
+
+/**
+ * Narration price per 1,000 characters of synthesized text, in cents.
+ *
+ * Kokoro on fal is billed per 1K characters (~$0.02/1K, checked 2026-11-08).
+ * Multiplied by the char count and rounded UP to whole cents per page with a
+ * 1c floor, because `UsageLog.cost_cents` is an integer and a spend guard that
+ * under-estimates is not a guard. A 220-char page (0.44c actual) records 1c.
+ */
+export const NARRATION_CENTS_PER_1K_CHARS = 2;
+
+/**
+ * Price one narration generation (one page/slot, every sentence clip in it).
+ *
+ * UNVERIFIED ASSUMPTION — fal per-request rounding (spec Risks row, #156): this
+ * assumes fal bills characters with no per-request rounding or minimum. If the
+ * fal dashboard shows each request rounded up to a full 1K-char unit, then
+ * per-sentence clips cost ~6-8x more than this returns and the caps under-count
+ * real spend. The fix is confined to THIS function: price per request instead,
+ * i.e. `segments * NARRATION_CENTS_PER_1K_CHARS`, with the caller passing the
+ * segment count where it now passes `chars`. Every gate and record already
+ * routes through `costCentsFor`, so nothing else changes.
+ */
+function narrationCostCents(chars: number | undefined): number {
+  return Math.max(
+    COST_CENTS.narration,
+    Math.ceil(((chars ?? 0) * NARRATION_CENTS_PER_1K_CHARS) / 1000),
+  );
+}
 
 /**
  * Cost of one image generated on OpenAI, in whole cents.
@@ -67,8 +102,15 @@ export const OPENAI_IMAGE_COST_CENTS = 25;
  * Every caller that meters a call MUST price it through here, so `checkQuota`
  * and `recordUsage` can never disagree about what a call cost: a check at 25c
  * followed by a record at 4c would leak 21c per image past the monthly ceiling.
+ *
+ * `chars` only matters for `'narration'`, which is char-priced (see
+ * `narrationCostCents`). Omitted, narration prices at its 1c floor — which is
+ * exactly the reservation `spendGate('narration')` makes.
  */
-export function costCentsFor(kind: UsageKind, provider?: ImageProvider): number {
+export function costCentsFor(kind: UsageKind, provider?: ImageProvider, chars?: number): number {
+  if (kind === 'narration') {
+    return narrationCostCents(chars);
+  }
   if (provider === 'openai' && (kind === 'illustration' || kind === 'cover')) {
     return OPENAI_IMAGE_COST_CENTS;
   }
@@ -155,6 +197,10 @@ export interface QuotaDecision {
  * pin — is known, so it can only reserve at the default rate). The handler's
  * per-iteration `checkQuota` with the resolved provider is the real gate, and
  * it runs before any provider call. Pass the same provider to `recordUsage`.
+ *
+ * `chars` is the same idea for narration: the gate reserves the 1c floor, and
+ * the handler re-checks with the page's real character count. Pass the same
+ * `chars` to `recordUsage`.
  */
 export async function checkQuota(
   userId: string,
@@ -162,8 +208,9 @@ export async function checkQuota(
   isAdmin: boolean,
   now: Date = new Date(),
   provider?: ImageProvider,
+  chars?: number,
 ): Promise<QuotaDecision> {
-  const costCents = costCentsFor(kind, provider);
+  const costCents = costCentsFor(kind, provider, chars);
   const dailyLimitCents = dailyPerUserLimitCents();
   const monthlyLimitCents = monthlyGlobalLimitCents();
 
@@ -197,14 +244,15 @@ export async function checkQuota(
  *
  * Pass the SAME `provider` that was passed to the `checkQuota` which authorised
  * the call. Checking at one price and recording at another lets the difference
- * escape both ceilings, one call at a time.
+ * escape both ceilings, one call at a time. The same goes for `chars`.
  */
 export async function recordUsage(
   userId: string,
   kind: UsageKind,
   provider?: ImageProvider,
+  chars?: number,
 ): Promise<void> {
   await prisma.usageLog.create({
-    data: { user_id: userId, kind, cost_cents: costCentsFor(kind, provider) },
+    data: { user_id: userId, kind, cost_cents: costCentsFor(kind, provider, chars) },
   });
 }
