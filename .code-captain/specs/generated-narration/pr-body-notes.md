@@ -38,7 +38,7 @@ No test calls fal. Green tests prove the wiring, not that Kokoro is called corre
 
 ## Reviewer findings and how each was handled
 
-- **Medium — fal per-request rounding unverified:** Nick checking the fal dashboard before merge. If fal rounds per request, `narrationCostCents` switches to `segments × 2¢` in this PR.
+- **Medium — fal per-request rounding unverified:** shipped for review with this still open (Nick, 2026-11-08). It is a merge-gate item in the test plan. If fal rounds per request, `narrationCostCents` switches to `segments × 2¢` before merge. Until then the spend caps may undercount narration by up to 6–8×, bounded by the 200¢ daily and global monthly caps.
 - **Medium — two surprises without tracking:**
   - Deferred: post-alpha — route tests for the 503 monthly ceiling on POST and for a char-priced denial after the 1¢ `spendGate` reservation. Both paths reuse the existing, tested `sendQuotaDenied`, and the service test pins the char price; seed pages are too short to land between the floor and the cap.
   - Deferred: post-alpha — client clip cache keyed without the text hash. Only an in-session edit that keeps every sentence offset identical replays stale audio, and a reload clears it; any other edit fails the offset check and falls back to the device voice.
