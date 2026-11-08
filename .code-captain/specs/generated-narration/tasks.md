@@ -138,6 +138,8 @@ Existing call sites stay byte-identical (all new params are trailing and optiona
 
 ### Task 4 — Synthesizer seam and the fal Kokoro adapter
 
+**Status:** Done
+
 **Zone:** server
 **Depends on:** Task 3 (sequencing only; server suites can't run concurrently)
 **Parallel-safe with:** Task 7
