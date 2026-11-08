@@ -85,4 +85,25 @@ describe('FeedbackCreateRequestSchema', () => {
       session_id: valid.session_id,
     });
   });
+
+  describe('recent_errors (open question 3)', () => {
+    it('defaults to an empty list when omitted', () => {
+      const result = parse({});
+      expect(result.success).toBe(true);
+      expect(result.data?.recent_errors).toEqual([]);
+    });
+
+    it('keeps only the last 5, each cut to 300 characters', () => {
+      const errs = Array.from({ length: 8 }, (_, i) => `${i}`.repeat(400));
+      const result = parse({ recent_errors: errs });
+      expect(result.success).toBe(true);
+      expect(result.data?.recent_errors).toHaveLength(5);
+      expect(result.data?.recent_errors[0]).toBe('3'.repeat(300));
+      expect(result.data?.recent_errors[4]).toBe('7'.repeat(300));
+    });
+
+    it('rejects a non-string entry', () => {
+      expect(parse({ recent_errors: [42] }).success).toBe(false);
+    });
+  });
 });

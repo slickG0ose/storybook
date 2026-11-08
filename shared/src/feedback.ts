@@ -16,6 +16,11 @@ export const FeedbackCategorySchema = z.enum(FEEDBACK_CATEGORIES);
 export const FEEDBACK_STATUSES = ['new', 'triaged', 'done'] as const;
 export const FeedbackStatusSchema = z.enum(FEEDBACK_STATUSES);
 export const FEEDBACK_MESSAGE_MAX = 2000;
+// Open question 3 (Nick, 2026-11-08: yes). The client keeps the last 5 window
+// `error` / `unhandledrejection` messages. The server normalises rather than
+// rejects: a noisy page must never cost the tester their report.
+export const FEEDBACK_RECENT_ERRORS_MAX = 5;
+export const FEEDBACK_RECENT_ERROR_CHARS = 300;
 
 // In-app path only: must start with a single '/'. Rejects '//evil.example' and
 // 'javascript:' so the admin <Link to={route}> cannot become an off-site jump.
@@ -31,6 +36,13 @@ export const FeedbackCreateRequestSchema = z.object({
   viewport_height: z.number().int().min(0).max(10000),
   theme: z.enum(['light', 'dark']),
   client_build: z.string().max(64).nullable(),
+  recent_errors: z
+    .array(z.string().max(5000))
+    .max(50)
+    .default([])
+    .transform((errs) =>
+      errs.slice(-FEEDBACK_RECENT_ERRORS_MAX).map((e) => e.slice(0, FEEDBACK_RECENT_ERROR_CHARS)),
+    ),
 });
 export const FeedbackCreateResponseSchema = z.object({
   id: z.string(),
@@ -55,6 +67,7 @@ export const AdminFeedbackItemSchema = z.object({
   theme: z.enum(['light', 'dark']),
   client_build: z.string().nullable(),
   server_build: z.string().nullable(),
+  recent_errors: z.array(z.string()),
   status: FeedbackStatusSchema,
   created_at: z.string(),
   updated_at: z.string(),
