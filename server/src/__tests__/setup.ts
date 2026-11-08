@@ -54,6 +54,7 @@ export async function resetDatabase() {
   // Every supertest request comes from loopback, so one test's failed logins would
   // otherwise spend the next test's budget.
   resetAuthRateLimits();
+  await prisma.feedback.deleteMany();
   await prisma.usageLog.deleteMany();
   await prisma.orderItem.deleteMany();
   await prisma.order.deleteMany();

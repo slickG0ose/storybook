@@ -24,8 +24,9 @@ model User {
   deleted_at    DateTime?
   created_at    DateTime  @default(now())
 
-  books  Book[]
-  orders Order[]
+  books    Book[]
+  orders   Order[]
+  feedback Feedback[]
 }
 
 model Book {
@@ -83,6 +84,7 @@ model Book {
   illustration_versions IllustrationVersion[]
   cartItems  CartItem[]
   orderItems OrderItem[]
+  feedback   Feedback[]
 }
 
 model IllustrationVersion {
@@ -187,4 +189,35 @@ model UsageLog {
 
   @@index([user_id, created_at])
   @@index([created_at])
+}
+
+// Tester feedback (#157). One row per submission. user_id is the authenticated
+// submitter (never taken from the body); session_id is the cart-session UUID the
+// client already holds — an unverified correlation hint, not an identity.
+model Feedback {
+  id                 String   @id @default(uuid())
+  user_id            String
+  session_id         String
+  category           String // 'bug' | 'idea' | 'praise' | 'other' — enforced in Zod
+  message            String
+  route              String // router pathname + search, basename-stripped, starts with '/'
+  book_id            String?
+  user_agent         String? // from the request header, server-side, truncated to 512
+  viewport_width     Int
+  viewport_height    Int
+  theme              String // 'light' | 'dark'
+  client_build       String? // VITE_APP_COMMIT at build time; null in local dev
+  server_build       String? // RENDER_GIT_COMMIT at request time; null off Render
+  // JSON.stringify of the request's recent_errors string[] (open question 3).
+  // Null on rows written without errors; readers parse null back to [].
+  recent_errors_json String?
+  status             String   @default("new") // 'new' | 'triaged' | 'done'
+  created_at         DateTime @default(now())
+  updated_at         DateTime @updatedAt
+
+  user User  @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  book Book? @relation(fields: [book_id], references: [id], onDelete: SetNull)
+
+  @@index([status, created_at])
+  @@index([user_id, created_at])
 }
