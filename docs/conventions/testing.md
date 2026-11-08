@@ -221,6 +221,10 @@ await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
 await page.waitForResponse(/api\/books/);
 ```
 
+### Shapes: copy locally, except shared logic
+
+E2E helpers re-declare wire shapes as local structural copies rather than importing `@storybook/shared` (see `e2e/tests/_editPublished.ts`). The one exception is shared *logic* whose output a stub must match exactly: `e2e/tests/mobile/narration-generated.spec.ts` imports `splitIntoUtterances` and `narrationTextFor` from `shared/src/narration`, because stubbed clip offsets have to equal the client's sentence splits byte for byte, and a copied splitter would be a second implementation that can drift. That import pulls in `zod`, which `e2e/` does not declare and only resolves through the root workspace hoist (the root `npm ci` CI already runs).
+
 ### Test isolation
 
 - **Cart tests:** clear `localStorage` in `beforeEach` to drop the cart session UUID. Otherwise tests pollute each other.

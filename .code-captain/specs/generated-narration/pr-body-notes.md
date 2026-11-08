@@ -34,7 +34,18 @@ No test calls fal. Green tests prove the wiring, not that Kokoro is called corre
 - **Task 8:** the hook gained a `nextTarget` argument and an `activeVoiceURI` result.
 - **Task 8:** fallback is a fresh device-voice run (new `runId`, watchdog armed). The rest of that page stays on the device voice.
 - **Task 8:** the voices-route answer is cached at module level once per session, including a failure.
-- **Task 8, pre-existing and needs its own issue:** `client/eslint.config.js` lints only `**/*.{js,jsx}`, so `npm run lint` checks no TypeScript.
+- **Task 8, pre-existing:** `client/eslint.config.js` lints only `**/*.{js,jsx}`, so `npm run lint` checks no TypeScript. Follow-up: [#129 — client `npm run lint` checks one file](https://github.com/slickG0ose/storybook/issues/129).
+
+## Reviewer findings and how each was handled
+
+- **Medium — fal per-request rounding unverified:** Nick checking the fal dashboard before merge. If fal rounds per request, `narrationCostCents` switches to `segments × 2¢` in this PR.
+- **Medium — two surprises without tracking:**
+  - Deferred: post-alpha — route tests for the 503 monthly ceiling on POST and for a char-priced denial after the 1¢ `spendGate` reservation. Both paths reuse the existing, tested `sendQuotaDenied`, and the service test pins the char price; seed pages are too short to land between the floor and the cap.
+  - Deferred: post-alpha — client clip cache keyed without the text hash. Only an in-session edit that keeps every sentence offset identical replays stale audio, and a reload clears it; any other edit fails the offset check and falls back to the device voice.
+- **Low — `CLAUDE.md` spend line omitted `style_reference: 2`:** fixed in this PR; "per page" corrected to "per slot".
+- **Low — POST checks the daily cap before the cache lookup:** accepted. The client always GETs first, so only a GET-miss/POST race reaches it, and nobody is ever overcharged — a capped user is at worst refused a free cached clip.
+- **Low — e2e imports shared logic:** exception now documented in `docs/conventions/testing.md` ("Shapes: copy locally, except shared logic").
+- **Low — eslint gap not linked:** linked to #129 above.
 
 ## Ops before the alpha hears it
 
