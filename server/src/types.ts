@@ -39,6 +39,15 @@ export type {
   Page,
 } from '@storybook/shared';
 
+// Tester feedback widget wire shapes (shared/src/feedback.ts).
+export type {
+  AdminFeedbackItem,
+  FeedbackCategory,
+  FeedbackCreateRequest,
+  FeedbackCreateResponse,
+  FeedbackStatus,
+} from '@storybook/shared';
+
 // Value re-exports for the portrait-endpoint Zod schemas so the routes (Task 5)
 // can `import { ... } from '../types'` rather than reaching into @storybook/shared
 // directly. Wire shapes live in shared; this is a thin re-export only.

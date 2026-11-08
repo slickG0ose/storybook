@@ -27,6 +27,8 @@ There are 9 tasks. Shared schemas come first (1). Then the server runs serially:
 **Depends on:** none
 **Parallel-safe with:** none (everything depends on it)
 
+**Status:** Done (2026-11-08)
+
 **Files to add or change:**
 - `shared/src/feedback.ts` (new) — every schema in spec §"Schema / contract changes", verbatim, plus inferred `type` exports
 - `shared/src/index.ts` — `export * from './feedback';`
