@@ -391,6 +391,8 @@ quota-denied prefetch makes the provider remember `quotaBlocked` for the session
 
 ### Task 10 — Mobile e2e for the generated path, both themes
 
+**Status:** Done
+
 **Zone:** e2e
 **Depends on:** Task 9
 **Parallel-safe with:** none

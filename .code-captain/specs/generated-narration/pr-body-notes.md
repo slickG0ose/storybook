@@ -49,3 +49,8 @@ fal's terms (2026-09-08) require a Customer Solution's End Users to be 18+. Acco
 - "Device default" label reads "Default voice" when AI voices are listed.
 - The "Sign in for the AI voice" notice also covers a 501 (no `FAL_KEY`); the voices route normally hides AI voices in that case.
 - While preparing, the play button's accessible name stays "Pause".
+
+### Task 10 surprises
+- New spec imports `splitIntoUtterances` / `narrationTextFor` from `shared/src/narration` so stubbed clip offsets match the client exactly — a deliberate break from the e2e "copy shapes locally" precedent (`e2e/tests/_editPublished.ts`).
+- Signed-in state is a seeded `storybook-auth` + stubbed `/api/auth/me`; no DB users written.
+- `tests/narration.spec.ts` "no speech engine" test now stubs `/api/narration/voices` as unavailable: with a real `FAL_KEY` in a developer `.env`, generated voices made the player usable and the test failed locally (CI has no key, so it passed there).
