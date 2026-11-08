@@ -238,6 +238,8 @@ Dialog behaviour:
 **Depends on:** 5
 **Parallel-safe with:** 2, 3, 4, 7
 
+**Status:** Done (2026-11-08)
+
 **Files to add or change:**
 - `client/src/components/Navbar.tsx` — the trigger and the mounted `<FeedbackDialog>`
 - `client/src/components/__tests__/Navbar.test.tsx` — new cases
