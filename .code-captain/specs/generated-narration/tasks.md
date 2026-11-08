@@ -179,6 +179,8 @@ export function wavDurationMs(bytes: Buffer): number                 // from the
 
 ### Task 5 — Cache-or-generate narration service
 
+**Status:** Done
+
 **Zone:** server
 **Depends on:** Task 4
 **Parallel-safe with:** Task 7, Task 8
