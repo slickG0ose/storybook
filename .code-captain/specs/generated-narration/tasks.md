@@ -261,6 +261,8 @@ POST /api/books/:id/narration               requireAuth → spendGate('narration
 
 ### Task 7 — Widen the provider seam and add `generatedProvider`
 
+**Status:** Done
+
 **Zone:** client
 **Depends on:** Task 1
 **Parallel-safe with:** Tasks 2–6

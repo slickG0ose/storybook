@@ -9,7 +9,7 @@ import type {
 } from './provider'
 
 /**
- * The only `NarrationProvider` implementation: the browser's Web Speech API.
+ * The device `NarrationProvider`: the browser's Web Speech API — the floor every other path falls back to.
  *
  * Costs nothing, makes no network call, needs no dependency — and in exchange it is the
  * messiest API in the platform. Everything unusual in this file is working around a
@@ -61,6 +61,9 @@ const INERT_HANDLE: NarrationHandle = {
 
 export const deviceProvider: NarrationProvider = {
   id: 'device',
+
+  // Web Speech refuses a non-gesture `speak()` by simply never starting on some engines.
+  needsStartWatchdog: true,
 
   isAvailable(): boolean {
     return getSynth() !== null
