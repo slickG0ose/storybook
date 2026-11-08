@@ -331,6 +331,8 @@ There is an empty state per filter and an active-user-filter chip with a clear b
 **Depends on:** 3, 4, 6, 7
 **Parallel-safe with:** none
 
+**Status:** Done (2026-11-08)
+
 **Files to add or change:**
 - `e2e/tests/feedback.spec.ts` (new, desktop `chromium`)
 - `e2e/tests/mobile/feedback.spec.ts` (new, `mobile-pixel` and `mobile-small`)
