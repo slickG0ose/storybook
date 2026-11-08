@@ -415,6 +415,8 @@ quota-denied prefetch makes the provider remember `quotaBlocked` for the session
 
 ### Task 11 — Pre-merge follow-ups
 
+**Status:** Done
+
 **Zone:** docs (harness) · **Depends on:** none (run last)
 
 For each item in spec §"ADR-worthy decisions", ensure exactly one tracking action exists:
