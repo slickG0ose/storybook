@@ -1,7 +1,7 @@
 # Read-aloud: generated voices (Kokoro via fal) — task plan
 
 > Spec: [spec.md](spec.md)
-> Status: Draft
+> Status: Accepted — Nick Konecny, 2026-11-08. Guardrails confirmed: (a) paid-API usage (Kokoro on fal, `narration` spend line); (b) Prisma schema change (`NarrationClip`). Open questions 1–3 ruled to their stated defaults: per-sentence clips; any signed-in reader may generate, billed to them; `generated:af_heart` on by default.
 > Last updated: 2026-11-08
 
 ## Overview
@@ -433,10 +433,11 @@ The PR body must carry the three manual obligations: one real generation with a 
 
 ## Open questions
 
-1. **Per-sentence vs per-page synthesis.** Default is per-sentence (spec table). Nick to
-   confirm, ideally after the fal-dashboard rounding check.
-2. **Who may generate.** Default: any signed-in reader of a readable book, billed to them.
+1. **Per-sentence vs per-page synthesis.** **Ruled 2026-11-08: per-sentence.** The
+   fal-dashboard rounding check is still unverified; if fal rounds per request, Task 3
+   switches pricing per the spec's Risks row.
+2. **Who may generate.** **Ruled 2026-11-08: the default.** any signed-in reader of a readable book, billed to them.
    The alternative is owner-and-admin only, with other readers getting cached audio or
    device TTS.
-3. **Generated voice as the default.** Default: `generated:af_heart` is selected
+3. **Generated voice as the default.** **Ruled 2026-11-08: the default.** `generated:af_heart` is selected
    automatically when available. The alternative is opt-in via the picker.

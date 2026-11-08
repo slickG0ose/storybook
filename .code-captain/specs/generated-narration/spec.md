@@ -1,6 +1,6 @@
 # Read-aloud: generated voices (Kokoro via fal)
 
-> Status: Draft
+> Status: Accepted — Nick Konecny, 2026-11-08. Guardrails confirmed: (a) paid-API usage (Kokoro on fal, `narration` spend line); (b) Prisma schema change (`NarrationClip`). Open questions 1–3 ruled to their stated defaults: per-sentence clips; any signed-in reader may generate, billed to them; `generated:af_heart` on by default.
 > Last updated: 2026-11-08
 > Backlog: [#156 — Read-aloud: move to generated voices](https://github.com/slickG0ose/storybook/issues/156)
 > Serves: [#157 — MVP beta: restore deploy for family/friends feedback](https://github.com/slickG0ose/storybook/issues/157), `docs/mvp-alpha-plan.md`
@@ -213,7 +213,7 @@ for the alpha.**
   is deferred. It needs the pause removed and a Media Session handler, plus an iOS listen,
   which is more than the alpha needs.
 
-### Per-sentence vs per-page synthesis (not yet ruled by Nick)
+### Per-sentence vs per-page synthesis (ruled 2026-11-08: per-sentence)
 
 | | **Per-sentence (default)** | Per-page |
 |---|---|---|
