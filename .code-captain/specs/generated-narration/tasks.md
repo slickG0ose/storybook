@@ -48,6 +48,8 @@ follow-through. Task 1 is the only shared prerequisite. After Task 1, the client
 
 ### Task 1 — Narration contract in `@storybook/shared`
 
+**Status:** Done
+
 **Zone:** multi-zone (shared + client)
 **Depends on:** none
 **Parallel-safe with:** none (everything depends on it)

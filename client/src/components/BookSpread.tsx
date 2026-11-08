@@ -8,6 +8,7 @@ import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useNarration } from '../hooks/useNarration'
 import NarrationPlayer from './NarrationPlayer'
 import type { NarrationChunk, NarrationPosition } from '../lib/narration/types'
+import { narrationTextFor } from '@storybook/shared'
 
 function formatRelativeTime(iso: string): string {
   const then = new Date(iso).getTime()
@@ -159,9 +160,7 @@ export default function BookSpread({
   const narration = useNarration({
     text:
       !spread ? null :
-      spread.kind === 'story' ? spread.page.text :
-      spread.kind === 'cover' ? `${book.title}. By ${book.author}.` :
-      'The End.',
+      narrationTextFor(book, spread.kind === 'story' ? spread.page.page_number : spread.kind),
     pageKey: spreadIndex,
     hasNext: canNext,
     onRequestNext: () => turnPage('next'),

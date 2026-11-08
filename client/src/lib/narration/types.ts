@@ -1,23 +1,14 @@
 /**
- * Client-internal narration types.
+ * Client-side narration types.
  *
- * These deliberately do NOT live in `@storybook/shared`: nothing here crosses the
- * network. Narration is a device-local capability (Web Speech API) with no route, no
- * Prisma model, and no wire shape, so putting these next to the cross-network contracts
- * would dilute what that package means.
+ * Most of these stay client-internal: voices, playback state, and position are
+ * device-local concerns with no wire shape. The exception is `NarrationChunk` — with
+ * generated voices (generated-narration spec), chunks now cross the network: the server
+ * synthesises one clip per chunk and returns offsets in the same space the client
+ * highlights in. So `NarrationChunk` lives in `@storybook/shared` and is re-exported
+ * here so existing imports don't churn.
  */
-
-/**
- * A speakable unit plus its `[start, end)` offsets into the original page text.
- *
- * The offsets are what let the renderer highlight a sentence without re-deriving
- * anything — `page.text.slice(start, end)` is exactly the region to wrap in a span.
- */
-export interface NarrationChunk {
-  text: string;
-  start: number;
-  end: number;
-}
+export type { NarrationChunk } from '@storybook/shared'
 
 export interface NarrationVoice {
   /** `SpeechSynthesisVoice.voiceURI` — the stable identifier across a voice list refresh. */
