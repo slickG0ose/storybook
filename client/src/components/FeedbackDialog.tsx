@@ -211,7 +211,7 @@ export default function FeedbackDialog({ open, onClose }: FeedbackDialogProps) {
             </div>
 
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              Your account, the page you're on, and your screen size are attached so we can follow up.
+              Your account, the page you're on, your screen size, and any recent page errors are attached so we can follow up.
             </p>
 
             {error && (
