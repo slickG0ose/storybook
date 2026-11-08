@@ -271,6 +271,8 @@ Dialog behaviour:
 **Depends on:** 1 (Task 4 only for manual verify against a real server)
 **Parallel-safe with:** 2, 3, 4, 5, 6
 
+**Status:** Done (2026-11-08)
+
 **Files to add or change:**
 - `client/src/pages/Admin.tsx`:
   - `Tab` gains `'feedback'`, with the tab label "Feedback"

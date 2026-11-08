@@ -1,10 +1,19 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link, Navigate } from 'react-router-dom'
-import { Shield, Users, BookOpen, FolderOpen, Loader2, RotateCcw, Star, AlertCircle, Trash2, MailCheck, Plus, Gauge } from 'lucide-react'
+import { Shield, Users, BookOpen, FolderOpen, Loader2, RotateCcw, Star, AlertCircle, Trash2, MailCheck, Plus, Gauge, MessageSquare } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { api } from '../lib/apiBase'
-import type { AdminUser, AdminBook, OrphanIllustration, AllowedEmail, AdminSpendResponse } from '../types'
+import AdminFeedbackTab, { type FeedbackStatusFilter, type FeedbackUserFilter } from '../components/AdminFeedbackTab'
+import type {
+  AdminUser,
+  AdminBook,
+  OrphanIllustration,
+  AllowedEmail,
+  AdminSpendResponse,
+  AdminFeedbackItem,
+  FeedbackStatus,
+} from '../types'
 
 // The orphan listing returns `path` as `/illustrations/<entry>`. The delete
 // endpoint takes the entry (directory name) as `:id`.
@@ -28,7 +37,7 @@ function formatRelativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString()
 }
 
-type Tab = 'users' | 'books' | 'orphans' | 'allowlist' | 'spend'
+type Tab = 'users' | 'books' | 'orphans' | 'allowlist' | 'spend' | 'feedback'
 
 export default function Admin() {
   const { user, loading: authLoading } = useAuth()
@@ -65,6 +74,14 @@ export default function Admin() {
   const [spend, setSpend] = useState<AdminSpendResponse | null>(null)
   const [spendLoading, setSpendLoading] = useState(true)
   const [spendError, setSpendError] = useState('')
+
+  // Feedback tab state (tester feedback widget, #157). Defaults to New — the triage queue.
+  const [feedback, setFeedback] = useState<AdminFeedbackItem[]>([])
+  const [feedbackLoading, setFeedbackLoading] = useState(true)
+  const [feedbackError, setFeedbackError] = useState<string | null>(null)
+  const [feedbackStatusFilter, setFeedbackStatusFilter] = useState<FeedbackStatusFilter>('new')
+  const [feedbackUserFilter, setFeedbackUserFilter] = useState<FeedbackUserFilter | null>(null)
+  const [feedbackSaving, setFeedbackSaving] = useState<Record<string, boolean>>({})
 
   const token = user?.token
 
@@ -202,6 +219,33 @@ export default function Admin() {
     }
   }, [token])
 
+  const fetchFeedback = useCallback(async () => {
+    if (!token) return
+    setFeedbackLoading(true)
+    setFeedbackError(null)
+    const params = new URLSearchParams()
+    if (feedbackStatusFilter !== 'all') params.set('status', feedbackStatusFilter)
+    if (feedbackUserFilter) params.set('user_id', feedbackUserFilter.id)
+    const qs = params.toString()
+    try {
+      const res = await fetch(api(`/api/admin/feedback${qs ? `?${qs}` : ''}`), {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) throw new Error('Failed to load feedback')
+      setFeedback((await res.json()) as AdminFeedbackItem[])
+    } catch (err) {
+      setFeedbackError(err instanceof Error ? err.message : 'Failed to load feedback')
+    } finally {
+      setFeedbackLoading(false)
+    }
+  }, [token, feedbackStatusFilter, feedbackUserFilter])
+
+  // Separate from the mount effect below: this one re-runs whenever a filter changes.
+  useEffect(() => {
+    if (!token) return
+    void fetchFeedback()
+  }, [token, fetchFeedback])
+
   useEffect(() => {
     if (!token) return
     void fetchUsers()
@@ -304,6 +348,35 @@ export default function Admin() {
     }
   }
 
+  // The card is updated in place rather than dropped when its new status no longer
+  // matches the filter — a mis-tap stays on screen and can be undone. The next fetch
+  // (filter change or reload) applies the filter.
+  const updateFeedbackStatus = async (id: string, status: FeedbackStatus) => {
+    if (!token) return
+    setFeedbackSaving(prev => ({ ...prev, [id]: true }))
+    try {
+      const res = await fetch(api(`/api/admin/feedback/${encodeURIComponent(id)}`), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ status }),
+      })
+      if (!res.ok) {
+        showError("Couldn't update that feedback's status.")
+        return
+      }
+      const updated = (await res.json()) as AdminFeedbackItem
+      setFeedback(prev => prev.map(f => (f.id === updated.id ? updated : f)))
+    } catch {
+      showError("Couldn't update that feedback's status.")
+    } finally {
+      setFeedbackSaving(prev => {
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
+    }
+  }
+
   const toggleFeatured = async (book: AdminBook) => {
     if (!token) return
     const next = !book.is_featured
@@ -337,13 +410,16 @@ export default function Admin() {
         Manage users, oversee the full catalog (including soft-deleted books), and inspect orphaned illustration directories.
       </p>
 
-      <div className="flex gap-2 mb-6">
+      {/* Wraps rather than scrolls: six pills overflowed the page at 360/393px, and a
+          wrapped row keeps every tab visible with no hidden-scroll affordance to discover. */}
+      <div className="flex flex-wrap gap-2 mb-6">
         {([
           { id: 'users', label: 'Users', icon: Users, count: users.length },
           { id: 'books', label: 'Books', icon: BookOpen, count: books.length },
           { id: 'orphans', label: 'Orphans', icon: FolderOpen, count: orphans.length },
           { id: 'allowlist', label: 'Allowlist', icon: MailCheck, count: allowlist.length },
           { id: 'spend', label: 'Spend', icon: Gauge, count: spend?.dailyByUser.length ?? 0 },
+          { id: 'feedback', label: 'Feedback', icon: MessageSquare, count: feedback.length },
         ] as const).map(t => {
           const Icon = t.icon
           const active = tab === t.id
@@ -352,7 +428,7 @@ export default function Admin() {
               key={t.id}
               onClick={() => setTab(t.id)}
               aria-pressed={active}
-              className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-semibold transition-colors cursor-pointer border-none ${
+              className={`flex items-center gap-1.5 min-h-11 px-4 py-1.5 rounded-full text-sm font-semibold transition-colors cursor-pointer border-none ${
                 active
                   ? 'bg-purple-500 text-white'
                   : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
@@ -398,6 +474,20 @@ export default function Admin() {
           onRetry={fetchAllowlist}
           onAdd={addAllowedEmail}
           onRemove={removeAllowedEmail}
+        />
+      )}
+      {tab === 'feedback' && (
+        <AdminFeedbackTab
+          items={feedback}
+          loading={feedbackLoading}
+          error={feedbackError}
+          statusFilter={feedbackStatusFilter}
+          onStatusFilter={setFeedbackStatusFilter}
+          userFilter={feedbackUserFilter}
+          onUserFilter={setFeedbackUserFilter}
+          onStatusChange={(id, status) => void updateFeedbackStatus(id, status)}
+          savingIds={feedbackSaving}
+          onRetry={() => void fetchFeedback()}
         />
       )}
       {tab === 'orphans' && (
