@@ -45,7 +45,15 @@ export interface RateLimitOptions {
   windowMs: number;
   /** Distinguishes counters when several routes use this middleware. */
   bucket: string;
+  /**
+   * The 429 body's `error` text. Defaults to the uploads wording, byte-identical to
+   * what this middleware returned before the option existed, so callers that omit it
+   * see no change.
+   */
+  message?: string;
 }
+
+const DEFAULT_MESSAGE = 'Too many uploads in a short time. Try again in a moment.';
 
 interface Counter {
   count: number;
@@ -107,7 +115,7 @@ export function resetRateLimits(): void {
   counters.clear();
 }
 
-export function rateLimit({ max, windowMs, bucket }: RateLimitOptions) {
+export function rateLimit({ max, windowMs, bucket, message }: RateLimitOptions) {
   return function rateLimitMiddleware(_req: Request, res: Response, next: NextFunction): void {
     const user = res.locals.user as { id: string } | undefined;
     if (!user) {
@@ -138,7 +146,7 @@ export function rateLimit({ max, windowMs, bucket }: RateLimitOptions) {
     );
     res.setHeader('Retry-After', String(retryAfterSeconds));
     res.status(429).json({
-      error: 'Too many uploads in a short time. Try again in a moment.',
+      error: message ?? DEFAULT_MESSAGE,
       retryAfterSeconds,
     });
   };

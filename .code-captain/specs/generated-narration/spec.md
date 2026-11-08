@@ -479,7 +479,7 @@ swap regenerates cleanly.
 
 ## ADR-worthy decisions
 
-- [ ] **ADR-031: Generated narration on Kokoro-82M via fal.** Why not ElevenLabs (under-18 policy), OpenAI TTS (2027-01-06 shutdown), or Polly (named fallback). Self-host exit (Apache-2.0). fal 18+ End-User term recorded as an accepted open risk. Write via /create-adr after spec approval.
+- [ ] **ADR-033: Generated narration on Kokoro-82M via fal.** Why not ElevenLabs (under-18 policy), OpenAI TTS (2027-01-06 shutdown), or Polly (named fallback). Self-host exit (Apache-2.0). fal 18+ End-User term recorded as an accepted open risk. Write via /create-adr after spec approval.
 - [ ] **Per-sentence clip granularity, and a cache key of `(book, slot, voice, model, sha256(text))` with server-derived text.** Includes the per-request-rounding caveat and Nick's ruling. Write via /create-adr.
 - [ ] **Narration audio lives in the illustration keyspace (`<bookId>/narration/`) and is served by the `/illustrations` mount.** Amends ADR-025's scope wording. Write via /create-adr.
 - [ ] **Narration is char-priced through `costCentsFor`, rounded up per page with a 1¢ floor. Cache hits are free. `POST` bills the requesting reader and `GET` is public for published books.** Write via /create-adr.

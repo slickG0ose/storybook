@@ -31,6 +31,7 @@ import uploadsRouter from './routes/uploads';
 import adminRouter from './routes/admin';
 import heroRouter from './routes/hero';
 import { narrationRouter, bookNarrationRouter } from './routes/narration';
+import feedbackRouter from './routes/feedback';
 import testRouter from './routes/test';
 import { snapshotDb } from './db/snapshot';
 import { bootstrapAllowlist } from './services/allowlist';
@@ -100,6 +101,7 @@ app.use('/api/cart', cartRouter);
 app.use('/api/orders', ordersRouter);
 app.use('/api/uploads', uploadsRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/feedback', feedbackRouter);
 // Public and unauthenticated on purpose — see the header comment in routes/hero.ts.
 app.use('/api/hero', heroRouter);
 

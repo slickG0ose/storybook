@@ -33,6 +33,15 @@ export type { OrphanIllustration } from '@storybook/shared';
 export type { AllowedEmail } from '@storybook/shared';
 export type { AdminSpendResponse, AdminSpendUserRow } from '@storybook/shared';
 export type { Page } from '@storybook/shared';
+// Tester feedback widget wire shapes (shared/src/feedback.ts). Types only — the
+// FEEDBACK_* value constants reach the client through a value re-export in lib/.
+export type {
+  AdminFeedbackItem,
+  FeedbackCategory,
+  FeedbackCreateRequest,
+  FeedbackCreateResponse,
+  FeedbackStatus,
+} from '@storybook/shared';
 
 import type { Book } from '@storybook/shared';
 

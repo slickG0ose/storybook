@@ -145,6 +145,9 @@ The auth routes, plus any route elsewhere whose auth requirement is itself load-
 | GET | `/api/books/:id/narration` | none (`getAuthUser` for draft visibility only, same as `GET /api/books/:id`) | Cached narration clip or `{ status: 'missing' }`. **Never calls fal and never touches spend** — asserted in `routes/__tests__/narration.test.ts`. |
 | POST | `/api/books/:id/narration` | `requireAuth → spendGate('narration') → validate` | Generates one slot's narration, billed (char-priced) to the requester. Body is `.strict()` `{ voiceId, slot }` — no text field; the server derives it. 404 not visible / nothing to read, 501 not configured, 502 upstream failed (nothing charged). |
 | PUT | `/api/admin/books/:id/hero-eligible` | `adminGate` | Toggles the editorial `Book.is_hero_eligible` flag. Returns `hero_frames_available`. |
+| POST | `/api/feedback` | bearer (`requireAuth`), then `rateLimit` 10 / 10 min per user | Tester feedback report. `user_id` comes from the token only, never the body. |
+| GET | `/api/admin/feedback` | `adminGate` | Feedback triage list, newest first, capped at 200. Optional `?status=` / `?user_id=` filters, parsed in the handler (bad value → 400). |
+| PATCH | `/api/admin/feedback/:id` | `adminGate` | Moves a report between `new` / `triaged` / `done`. Returns the full `AdminFeedbackItem`. |
 
 `GET /api/hero/pool` has **no auth middleware on purpose**, and adding an optional auth
 read is the one change that must not be made casually: the pool is a published list, so

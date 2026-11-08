@@ -4,7 +4,7 @@ Append-only log. Newest entries on top. Each entry should answer: *what was deci
 
 ---
 
-## ADR-033 — Generated narration is a second `NarrationProvider` selected by the `generated:` voice URI; segmentation moves to `@storybook/shared`; device TTS is the per-page fallback
+## ADR-035 — Generated narration is a second `NarrationProvider` selected by the `generated:` voice URI; segmentation moves to `@storybook/shared`; device TTS is the per-page fallback
 
 **Date:** 2026-11-08
 **Status:** Accepted. Nick Konecny accepted the spec on 2026-11-08 and ruled open question 3 (generated voice on by default) to its default. Recorded at Task 11, before merge.
@@ -26,7 +26,7 @@ Append-only log. Newest entries on top. Each entry should answer: *what was deci
 
 ### Alternative considered: a provider registry keyed by id, with a config flag
 
-It would be ready for a third provider. It was rejected for the reason ADR-011 gave: an abstraction built on spec. With two providers, the voice URI already carries the choice. A third provider (for example Polly, see [[ADR-031]]) would be server-side behind the synthesizer seam, not a third client provider. The client cannot tell which vendor made a WAV.
+It would be ready for a third provider. It was rejected for the reason ADR-011 gave: an abstraction built on spec. With two providers, the voice URI already carries the choice. A third provider (for example Polly, see [[ADR-033]]) would be server-side behind the synthesizer seam, not a third client provider. The client cannot tell which vendor made a WAV.
 
 ### Alternative considered: a separate `generatedVoice` pref key
 
@@ -45,7 +45,7 @@ It would keep device and generated choices apart. It was rejected because it wou
 
 ---
 
-## ADR-032 — Generated narration is cached per sentence on `(book, slot, voice, model, sha256(text))`, stored under `<bookId>/narration/`, and char-priced with the requester paying
+## ADR-034 — Generated narration is cached per sentence on `(book, slot, voice, model, sha256(text))`, stored under `<bookId>/narration/`, and char-priced with the requester paying
 
 **Date:** 2026-11-08
 **Status:** Accepted. Nick Konecny accepted the spec on 2026-11-08 and ruled open questions 1 (per-sentence) and 2 (any signed-in reader generates, billed to them) to their defaults. Recorded at Task 11, before merge.
@@ -82,8 +82,8 @@ Four coupled server decisions, grouped as in the ADR-004/011 precedent.
 - **An unparseable `segments_json` throws instead of regenerating.** A parse failure treated as a miss would re-synthesise, hit the unique key, re-read the same row, and loop, paying each time.
 - **Whitespace-only page text is `no-such-slot`.** It is decided before the quota check, so it is free, and `POST` answers 404. `GET` for a page the book doesn't have answers `200 { status: 'missing' }`, while `POST` answers 404.
 - **Partial uploads are left in place on failure.** Keys are deterministic, so the retry overwrites them. Superseded clips (after an edit) accumulate like superseded illustration versions. Pruning rides ADR-025's pruning follow-up.
-- **Test gaps, named.** The handler's char-priced quota re-check is wired but untested, because seed pages are too short to land between the 1¢ floor and the cap. The 503 monthly-ceiling path isn't exercised in the narration route tests (it reuses the existing `sendQuotaDenied`). No test makes a live fal call (see [[ADR-031]]).
-- **The R2 availability gate is in [[ADR-031]] and `isNarrationConfigured()`.** In production, narration is unavailable unless `STORAGE_BACKEND=r2`, because paid bytes on Render's ephemeral disk would be re-bought after every spin-down.
+- **Test gaps, named.** The handler's char-priced quota re-check is wired but untested, because seed pages are too short to land between the 1¢ floor and the cap. The 503 monthly-ceiling path isn't exercised in the narration route tests (it reuses the existing `sendQuotaDenied`). No test makes a live fal call (see [[ADR-033]]).
+- **The R2 availability gate is in [[ADR-033]] and `isNarrationConfigured()`.** In production, narration is unavailable unless `STORAGE_BACKEND=r2`, because paid bytes on Render's ephemeral disk would be re-bought after every spin-down.
 
 ### Deferred
 
@@ -96,7 +96,7 @@ Four coupled server decisions, grouped as in the ADR-004/011 precedent.
 
 ---
 
-## ADR-031 — Generated narration runs on Kokoro-82M via fal; the fal 18+ End-User term is an accepted open risk with self-hosted Kokoro as the exit
+## ADR-033 — Generated narration runs on Kokoro-82M via fal; the fal 18+ End-User term is an accepted open risk with self-hosted Kokoro as the exit
 
 **Date:** 2026-11-08
 **Status:** Accepted. Nick Konecny, 2026-11-08: spec accepted with guardrail (a), new paid-API usage (Kokoro on fal, `narration` spend line), confirmed on the spec Status line.
@@ -106,7 +106,7 @@ Four coupled server decisions, grouped as in the ADR-004/011 precedent.
 
 Narration audio is synthesised by **Kokoro-82M on fal**: `POST https://fal.run/fal-ai/kokoro/american-english` with `Authorization: Key $FAL_KEY` and the body `{ prompt, voice, speed: 1 }`. The response is `{ audio: { url } }`, pointing to a temporary 24 kHz mono 16-bit WAV that the server downloads and copies into storage. The price is $0.02 per 1,000 characters. It reuses the `FAL_KEY` illustrations already use ([[ADR-006]]). There are two curated voices, `af_heart` and `am_michael`, in `NARRATION_VOICES`.
 
-The vendor sits behind a one-method seam, `NarrationSynthesizer.synthesize(text, voiceId): Promise<Buffer>`, chosen by `getNarrationSynthesizer()`. `FalKokoroSynthesizer` uses raw `fetch` with no SDK, mirroring `providers/fal.ts`, and is the only implementation. The model id is part of the cache key ([[ADR-032]]), so swapping vendors regenerates cleanly and never mixes voices within a book.
+The vendor sits behind a one-method seam, `NarrationSynthesizer.synthesize(text, voiceId): Promise<Buffer>`, chosen by `getNarrationSynthesizer()`. `FalKokoroSynthesizer` uses raw `fetch` with no SDK, mirroring `providers/fal.ts`, and is the only implementation. The model id is part of the cache key ([[ADR-034]]), so swapping vendors regenerates cleanly and never mixes voices within a book.
 
 ### Why
 
@@ -127,6 +127,52 @@ The vendor sits behind a one-method seam, `NarrationSynthesizer.synthesize(text,
 - **The adapter is hardened at the download leg.** It accepts only `https:` on `fal.media` / `*.fal.media`, uses `redirect: 'error'`, enforces a 5 MB per-clip cap while streaming (`FAL_KOKORO_MAX_BYTES`), has a 60 s timeout, and redacts the key from any vendor error text. Every failure surfaces as `NarrationSynthesisError`, which the route maps to 502 with nothing charged. **Live check 2026-11-08** (one "Hi." call): audio came from `v3b.fal.media` with a 200 `audio/wav` and no redirect, matching both the allowlist and `redirect: 'error'`.
 - **Availability needs a usable `FAL_KEY` and, in production, `STORAGE_BACKEND=r2`.** `isNarrationConfigured()` returns `false` rather than throwing on an invalid `STORAGE_BACKEND`, so the public voices route can't crash. Without both, `GET /api/narration/voices` reports `available: false`, `POST` answers 501, and readers stay on device voices.
 - **No test calls fal.** The adapter test pins the request and response contract with a stubbed `fetch`. Service and route tests `vi.mock` the synthesizer. Green tests prove the wiring, not that Kokoro is called correctly or sounds right. One real generation with a real `FAL_KEY` is a named PR-body obligation. There is also a harmless import cycle between `synthesizer.ts` and `falKokoro.ts`, because the adapter imports the error type.
+
+---
+
+## ADR-032 — Tester feedback is a `Feedback` table with discrete context columns, triaged through `/api/admin/feedback`
+
+**Date:** 2026-11-08
+**Status:** Proposed — lands with the `tester-feedback-widget` PR; accepted when Nick merges it.
+**Scope:** `tester-feedback-widget` Tasks 1–8. Spec at [.code-captain/specs/tester-feedback-widget/spec.md](../specs/tester-feedback-widget/spec.md), plan at [tasks.md](../specs/tester-feedback-widget/tasks.md). Serves [#157](https://github.com/slickG0ose/storybook/issues/157) (friends-and-family alpha).
+
+### Decision
+
+**1. One `Feedback` row per report, context in discrete columns, not one JSON blob.** Route, book, viewport, theme, client and server build, user agent each get a column. **Why:** the admin list filters and renders by these fields, and typed columns keep the wire shape pinnable by `toMatchObject` (ADR-003). **Exception:** `recent_errors_json String?` is JSON, because it is a short variable-length list that is only ever displayed, never queried.
+
+**2. `user_id` comes from the auth token only; `session_id` is an unverified hint.** The create schema has no `user_id`, and `z.object()` strips one if sent. `session_id` reuses the cart UUID (`localStorage['storybook-session']`) for correlating a report with cart and order rows; nothing trusts it, so a missing or odd value never rejects a report.
+
+**3. Lifetimes follow the subject.** User delete cascades (a tester leaving takes their words with them); book delete sets `book_id` to null and keeps the report. An unknown `book_id` is stored as null rather than rejected — a tester never loses a report because of what page they were on.
+
+**4. Console errors are captured, narrowly.** Nick ruled yes (open question 3, 2026-11-08). The client keeps the last 5 `window` `error` and `unhandledrejection` messages, 300 chars each — not a `console.error` patch, which would sweep in React dev warnings and third-party noise. The server normalises rather than rejects. The dialog tells the tester these are attached.
+
+**5. Triage routes live in `admin.ts` under `/api/admin/feedback`,** not `GET/PATCH /api/feedback`. **Why:** reuses `adminGate`, which exists only inside that router, and keeps `/api/admin/*` one owner (`Admin.tsx`). The tester's `POST /api/feedback` is its own router behind `requireAuth` and a 10-per-10-minutes per-user `rateLimit`. No AI call, so no spend gate.
+
+### Deferred
+
+- **Screenshot capture.** Deferred: needs a new client dependency (guardrail), `html2canvas`-type libraries reportedly fail on Tailwind 4 `oklch()` colours, `r2.dev` images need bucket CORS, and the R2 bucket is public-read, so a screenshot of a tester's draft would be reachable by URL. Revisit if triage shows reports that can't be reproduced. Detail in spec §Screenshot capture.
+- **Notification on new feedback** (open question 2). Deferred: unanswered, so the spec default (a) applies — Nick checks `/admin` → Feedback, which opens on New. The cheapest upgrade is a client-only "N new" count on the tab (~30 min). Email means a new paid external API (guardrail, own spec); auto-filing GitHub issues would put testers' words in a public repo.
+
+---
+
+## ADR-031 — The feedback trigger lives in the sticky Navbar, not a floating button
+
+**Date:** 2026-11-08
+**Status:** Accepted — Nick confirmed open question 1 ("Yes, Navbar"), 2026-11-08.
+**Scope:** `tester-feedback-widget` spec ([spec.md](../specs/tester-feedback-widget/spec.md)) — `client/src/components/Navbar.tsx`, `FeedbackDialog.tsx`. Upholds **ADR-011 decision 5** and **ADR-017 decision 2**.
+
+### Decision
+
+The "Send feedback" trigger is an icon button in the sticky Navbar, shown only to signed-in users, styled like its neighbours. It is not `position: fixed`.
+
+**Why:** ADR-017 decision 2 leaves exactly two fixed surfaces — the error toast host owns the top, `UpdateToast` owns the bottom. A bottom-right floating button would sit exactly where `UpdateToast` renders on desktop and inside its full-width strip on mobile, and the existing per-element computed-style assertions would not catch the collision. The sticky Navbar is already on every page, reader and theater mode included. `e2e/tests/mobile/feedback.spec.ts` pins the trigger's `position` as not `fixed`, with a message naming ADR-017.
+
+**Consequence worth knowing:** the dialog renders as a **sibling** of `<nav>`, not inside it. The nav's `backdrop-blur-sm` makes it the containing block for `fixed` descendants, so an overlay inside it would be clipped to the 64px bar. Moving the dialog back inside the nav is a regression that RTL tests cannot see; `e2e/tests/feedback.spec.ts`'s theater test (overlay box equals viewport) catches it.
+
+### Alternatives considered
+
+- **Floating action button** (rejected): breaks the two-fixed-surface invariant; would need an ADR-017 amendment plus a z-order and offset negotiated against `UpdateToast`. About half a day more for a less discoverable control.
+- **Footer link** (rejected): the footer is below the fold on every long page, which is every page a tester is likely to have a finding on.
 
 ---
 
@@ -329,7 +375,7 @@ Static-first is not decoration: the fixture book's 13 PNGs ship inside the deplo
 
 **Date:** 2026-09-30
 **Status:** Accepted — Nick, 2026-10-31, with [[ADR-027]].
-**Scope:** new `server/src/services/storage.ts`; call sites in `illustrations.ts`, `providers/fal.ts`, `imagePin.ts`, `pdf.tsx`, `routes/admin.ts`. Spec: `.code-captain/specs/blob-storage-r2/spec.md` design decisions 1–3. **Keyspace widened 2026-11-08 by [[ADR-032]]:** generated narration audio is stored under `<bookId>/narration/` through the same seam and served by the same `/illustrations` mount, so "illustration bytes" in this entry now covers those WAVs too.
+**Scope:** new `server/src/services/storage.ts`; call sites in `illustrations.ts`, `providers/fal.ts`, `imagePin.ts`, `pdf.tsx`, `routes/admin.ts`. Spec: `.code-captain/specs/blob-storage-r2/spec.md` design decisions 1–3. **Keyspace widened 2026-11-08 by [[ADR-034]]:** generated narration audio is stored under `<bookId>/narration/` through the same seam and served by the same `/illustrations` mount, so "illustration bytes" in this entry now covers those WAVs too.
 
 ### Decision
 
@@ -1089,7 +1135,7 @@ Mitigation B therefore does **not** fix the reported bug — that is already fix
 ## ADR-011 — Read-aloud narration: device TTS, sentence highlighting, and the deferred generated-audio seam
 
 **Date:** 2026-08-22
-**Status:** Accepted. Decisions 1, 4 and 6 were amended 2026-11-08 by [[ADR-033]] (see the Amendment at the end of this entry).
+**Status:** Accepted. Decisions 1, 4 and 6 were amended 2026-11-08 by [[ADR-035]] (see the Amendment at the end of this entry).
 **Scope:** `read-aloud` phase 1 (Tier 2 Storefront milestone), Tasks 1–8. Spec at [.code-captain/specs/read-aloud/spec.md](../specs/read-aloud/spec.md); built on top of `mobile-pwa` (ADR-009's `forEachTheme` harness, ADR-010's `UpdateToast`). No backlog issue existed when the spec was written — one is drafted at [.code-captain/specs/read-aloud/issue-draft.md](../specs/read-aloud/issue-draft.md).
 
 ### Decision
@@ -1139,9 +1185,9 @@ Ship "Read to me" on the browser's own speech synthesiser. Page text is split in
 - **The installable-fake test pattern is now a convention, not a one-off.** [docs/conventions/client.md](../../docs/conventions/client.md) records it: browser device APIs absent from jsdom get an installable fake under `client/src/test/`, installed per test file and never globally, because the API-absent path is itself a state worth testing. The next device-API feature inherits the pattern instead of re-deriving it.
 - **Item 8 of the spec's ADR-worthy list is deliberately not duplicated here.** Generated/premium audio, downloadable audio artifacts, lock-screen playback, a dedicated "Listen" mode, narration in the legacy Reader view, global keyboard shortcuts, multi-language narration, and WebKit e2e coverage are tracked by the explicit `Deferred:` line in spec §"ADR-worthy decisions", each with reasoning in §"Out of scope". One tracking action per item — restating them as ADR decisions would create a second.
 
-### Amendment, 2026-11-08 — generated voices ([[ADR-031]], [[ADR-032]], [[ADR-033]])
+### Amendment, 2026-11-08 — generated voices ([[ADR-033]], [[ADR-034]], [[ADR-035]])
 
-Trigger #3 (voice quality becomes a complaint) fired on [#156](https://github.com/slickG0ose/storybook/issues/156), and the deferred generated-audio path is now built. Decisions 1, 4 and 6 above are amended. **[[ADR-033]]** records the client side: a second provider, selected by the `generated:` voice-URI namespace with no registry; segmentation and spread text moved to `@storybook/shared`; device TTS as the per-page fallback. **[[ADR-032]]** records the cache, storage and pricing. **[[ADR-031]]** records the vendor (Kokoro-82M on fal). Decisions 2, 3, 5 and 7, the `runId` guard, and the word-highlight kill switch are unchanged. The "no route, no Prisma model, no `COST_CENTS` entry" consequence above is no longer true. That is the amendment it asked for.
+Trigger #3 (voice quality becomes a complaint) fired on [#156](https://github.com/slickG0ose/storybook/issues/156), and the deferred generated-audio path is now built. Decisions 1, 4 and 6 above are amended. **[[ADR-035]]** records the client side: a second provider, selected by the `generated:` voice-URI namespace with no registry; segmentation and spread text moved to `@storybook/shared`; device TTS as the per-page fallback. **[[ADR-034]]** records the cache, storage and pricing. **[[ADR-033]]** records the vendor (Kokoro-82M on fal). Decisions 2, 3, 5 and 7, the `runId` guard, and the word-highlight kill switch are unchanged. The "no route, no Prisma model, no `COST_CENTS` entry" consequence above is no longer true. That is the amendment it asked for.
 
 ---
 

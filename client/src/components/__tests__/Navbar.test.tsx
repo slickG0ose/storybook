@@ -1,8 +1,34 @@
-import { render, screen } from '@testing-library/react'
-import { describe, it, expect, vi } from 'vitest'
+import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import Navbar from '../Navbar'
 import type { CartContextValue } from '../../context/CartContext'
+import type { useAuth } from '../../context/AuthContext'
+
+type AuthValue = ReturnType<typeof useAuth>
+
+// Mutable per test: signed out and resolved by default, so the pre-existing cases keep
+// asserting the logged-out row.
+const auth = vi.hoisted(() => ({
+  current: { user: null, loading: false } as Pick<AuthValue, 'user' | 'loading'>,
+}))
+
+vi.mock('../../context/AuthContext', () => ({
+  useAuth: (): AuthValue => ({
+    ...auth.current,
+    login: vi.fn(),
+    register: vi.fn(),
+    logout: vi.fn(),
+  }),
+}))
+
+const TESTER: NonNullable<AuthValue['user']> = {
+  id: 'u-1',
+  email: 'tester@example.com',
+  name: 'Test Er',
+  token: 'tok-1',
+  role: 'user',
+}
 
 const mockToggle = vi.fn()
 
@@ -59,6 +85,10 @@ function renderNavbar() {
 }
 
 describe('Navbar', () => {
+  beforeEach(() => {
+    auth.current = { user: null, loading: false }
+  })
+
   it('renders the StoryBook brand', () => {
     renderNavbar()
     expect(screen.getByText('StoryBook')).toBeInTheDocument()
@@ -95,5 +125,26 @@ describe('Navbar', () => {
     for (const name of ['StoryBook', 'Browse', 'Create a Book', 'Cart', 'Sign In']) {
       expect(screen.getByRole('link', { name })).toBeInTheDocument()
     }
+  })
+
+  describe('feedback trigger', () => {
+    it('is absent when signed out', () => {
+      renderNavbar()
+      expect(screen.queryByRole('button', { name: 'Send feedback' })).not.toBeInTheDocument()
+    })
+
+    it('is absent while auth is still loading, even with a cached user', () => {
+      auth.current = { user: TESTER, loading: true }
+      renderNavbar()
+      expect(screen.queryByRole('button', { name: 'Send feedback' })).not.toBeInTheDocument()
+    })
+
+    it('opens the feedback dialog when a signed-in user clicks it', () => {
+      auth.current = { user: TESTER, loading: false }
+      renderNavbar()
+      expect(screen.queryByRole('dialog', { name: 'Send feedback' })).not.toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Send feedback' }))
+      expect(screen.getByRole('dialog', { name: 'Send feedback' })).toBeInTheDocument()
+    })
   })
 })

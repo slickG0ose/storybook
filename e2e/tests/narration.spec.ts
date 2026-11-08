@@ -142,7 +142,7 @@ test.describe('Read-aloud narration', () => {
     page,
   }) => {
     await installNoSpeech(page);
-    // Generated voices also make the player usable (ADR-033), so a developer `.env` with a
+    // Generated voices also make the player usable (ADR-035), so a developer `.env` with a
     // real FAL_KEY would otherwise turn this into a test of the AI path. Pin "no voices at all".
     await page.route('**/api/narration/voices', (route) =>
       route.fulfill({ json: { available: false, voices: [] } }),

@@ -45,7 +45,8 @@ called from; change a route's shape and this tells you the single file to update
 | `pages/CreateBook.tsx` | `/api/generate`, `/api/uploads/style-reference` |
 | `pages/Checkout.tsx` | `POST /api/orders` |
 | `pages/OrderConfirmation.tsx` | `GET /api/orders/:id` |
-| `pages/Admin.tsx` | all of `/api/admin/*` |
+| `pages/Admin.tsx` | all of `/api/admin/*` (includes `/api/admin/feedback[/:id]`) |
+| `lib/feedback.ts` | `POST /api/feedback` (called from `components/FeedbackDialog.tsx`) |
 
 Rules this table encodes:
 
@@ -72,6 +73,7 @@ Fan-out per router. `db/prisma` is elided where a route only reads through a ser
 | `admin` | `allowlist`, `spend` | `heroPool` | `validate` |
 | `hero` | — | `heroPool` | `validate` |
 | `narration` | `narration/narration`, `narration/synthesizer` (`isNarrationConfigured`) | — | `requireAuth`, `spendGate`, `validate` |
+| `feedback` | — | — | `requireAuth`, `rateLimit`, `validate` |
 | `test` | `allowlist` | — | `validate` |
 
 ### Fan-in — change here, check there
@@ -118,13 +120,15 @@ The narrow exceptions, all of which import a **schema** (not a type) because the
 validate at runtime: `client/src/lib/cartCache.ts` (`CartGetResponseSchema`),
 `client/src/lib/useHeroPool.ts` (`HeroPoolResponseSchema`), and the routers that pass
 schemas to `validate()` (`books`, `cart`, `orders`, `admin`, `hero`, `test`, `generate`,
-`narration`), plus `client/src/lib/narration/api.ts`, which `safeParse`s all three
-narration responses.
+`narration`, `feedback`), plus `client/src/lib/narration/api.ts`, which `safeParse`s all
+three narration responses.
 
 One further exception, for the same underlying reason — it needs a **value** at
 runtime, not a type: `client/src/lib/ageRanges.ts` re-exports `AGE_RANGES`, so it cannot
 ride the types-only `client/src/types.ts` barrel. `CreateBook.tsx` imports the list from
-there rather than from `@storybook/shared`.
+there rather than from `@storybook/shared`. `client/src/lib/feedback.ts` does the same for
+`FEEDBACK_CATEGORIES` and `FEEDBACK_MESSAGE_MAX`, and `client/src/lib/recentErrors.ts`
+imports `FEEDBACK_RECENT_ERRORS_MAX` / `FEEDBACK_RECENT_ERROR_CHARS` directly.
 
 **`shared/src/narration.ts` fans out further than any other schema file**, because it
 carries runtime functions, not just schemas: `splitIntoUtterances` and

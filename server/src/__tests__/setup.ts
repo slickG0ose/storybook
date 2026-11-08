@@ -9,6 +9,7 @@ import generateRouter from '../routes/generate';
 import uploadsRouter from '../routes/uploads';
 import heroRouter from '../routes/hero';
 import { narrationRouter, bookNarrationRouter } from '../routes/narration';
+import feedbackRouter from '../routes/feedback';
 import { resetAuthRateLimits } from '../middleware/authRateLimit';
 
 const seedBooks = [
@@ -55,6 +56,7 @@ export async function resetDatabase() {
   // Every supertest request comes from loopback, so one test's failed logins would
   // otherwise spend the next test's budget.
   resetAuthRateLimits();
+  await prisma.feedback.deleteMany();
   await prisma.usageLog.deleteMany();
   await prisma.orderItem.deleteMany();
   await prisma.order.deleteMany();
@@ -97,6 +99,7 @@ export function createTestApp(): express.Express {
   app.use('/api/admin', adminRouter);
   app.use('/api/generate', generateRouter);
   app.use('/api/uploads', uploadsRouter);
+  app.use('/api/feedback', feedbackRouter);
   // Mounted with no auth middleware, matching index.ts. If a future edit adds one here
   // the auth-invariance test in routes/__tests__/hero.test.ts goes red, which is the
   // point — see the header comment in routes/hero.ts.

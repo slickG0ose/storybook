@@ -422,7 +422,7 @@ quota-denied prefetch makes the provider remember `quotaBlocked` for the session
 **Zone:** docs (harness) · **Depends on:** none (run last)
 
 For each item in spec §"ADR-worthy decisions", ensure exactly one tracking action exists:
-a matching ADR (expected: ADR-031 for the Kokoro/fal choice and the 18+ term risk, plus
+a matching ADR (expected: ADR-033 for the Kokoro/fal choice and the 18+ term risk, plus
 ADRs or grouped decisions for the cache key and granularity, the storage keyspace, the
 pricing, and the ADR-011 amendment), a linked issue, or an explicit `Deferred:` line with
 reasoning (Media Session, transcoding, publish-time generation, per-page synthesis). Add an

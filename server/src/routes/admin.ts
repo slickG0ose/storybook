@@ -15,6 +15,12 @@ import {
   AllowlistDeleteResponseSchema,
   AllowedEmailSchema,
   AdminSpendResponseSchema,
+  AdminFeedbackListQuerySchema,
+  AdminFeedbackListResponseSchema,
+  AdminFeedbackStatusRequestSchema,
+  AdminFeedbackStatusResponseSchema,
+  type AdminFeedbackItem,
+  type AdminFeedbackStatusRequest,
   type AllowlistAddRequest,
   type AdminBookFeaturedRequest,
   type AdminBookHeroEligibleRequest,
@@ -475,5 +481,146 @@ router.get(
       monthlyLimitCents: monthlyGlobalLimitCents(),
       adminBypassEnabled: adminBypassEnabled(),
     });
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Tester feedback triage (#157, spec .code-captain/specs/tester-feedback-widget/)
+//
+// The tester-facing POST lives in routes/feedback.ts. These two are the admin side:
+// list (newest first, optional status / user filters) and move a report along
+// new → triaged → done. Both are adminGate → validate → handler, so a non-admin
+// with a bad body is told 403, never 400.
+// ---------------------------------------------------------------------------
+
+const FEEDBACK_LIST_LIMIT = 200;
+
+const feedbackInclude = {
+  user: { select: { email: true, name: true } },
+  book: { select: { title: true } },
+} as const;
+
+type FeedbackRow = {
+  id: string;
+  user_id: string;
+  session_id: string;
+  category: string;
+  message: string;
+  route: string;
+  book_id: string | null;
+  user_agent: string | null;
+  viewport_width: number;
+  viewport_height: number;
+  theme: string;
+  client_build: string | null;
+  server_build: string | null;
+  recent_errors_json: string | null;
+  status: string;
+  created_at: Date;
+  updated_at: Date;
+  user: { email: string; name: string };
+  book: { title: string } | null;
+};
+
+/**
+ * Null, unparseable, or non-array JSON all read as []. A malformed column must never
+ * take the whole triage list down with it; non-string entries are dropped.
+ */
+function parseRecentErrors(json: string | null): string[] {
+  if (!json) return [];
+  try {
+    const parsed = JSON.parse(json) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((e): e is string => typeof e === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+/** The one row → wire mapping, shared by the list and the status PATCH. */
+function toAdminFeedbackItem(row: FeedbackRow): AdminFeedbackItem {
+  return {
+    id: row.id,
+    user_id: row.user_id,
+    user_email: row.user.email,
+    user_name: row.user.name,
+    session_id: row.session_id,
+    // category / theme / status are free strings in Prisma (SQLite has no enums);
+    // the response validator still checks them against the shared enums.
+    category: row.category as AdminFeedbackItem['category'],
+    message: row.message,
+    route: row.route,
+    book_id: row.book_id,
+    book_title: row.book?.title ?? null,
+    user_agent: row.user_agent,
+    viewport_width: row.viewport_width,
+    viewport_height: row.viewport_height,
+    theme: row.theme as AdminFeedbackItem['theme'],
+    client_build: row.client_build,
+    server_build: row.server_build,
+    recent_errors: parseRecentErrors(row.recent_errors_json),
+    status: row.status as AdminFeedbackItem['status'],
+    created_at: row.created_at.toISOString(),
+    updated_at: row.updated_at.toISOString(),
+  };
+}
+
+router.get(
+  '/feedback',
+  adminGate,
+  validate({
+    name: 'GET /api/admin/feedback',
+    response: AdminFeedbackListResponseSchema,
+  }),
+  async (req: Request, res: Response) => {
+    // validate() only covers bodies, so the query is parsed here.
+    const query = AdminFeedbackListQuerySchema.safeParse(req.query);
+    if (!query.success) {
+      const summary = query.error.issues
+        .map(issue => `${issue.path.join('.') || '(root)'}: ${issue.message}`)
+        .join('; ');
+      return res.status(400).json({ error: `Invalid query: ${summary}` });
+    }
+
+    const { status, user_id } = query.data;
+    const rows = await prisma.feedback.findMany({
+      where: {
+        ...(status ? { status } : {}),
+        ...(user_id ? { user_id } : {}),
+      },
+      orderBy: { created_at: 'desc' },
+      take: FEEDBACK_LIST_LIMIT,
+      include: feedbackInclude,
+    });
+
+    res.json(rows.map(toAdminFeedbackItem));
+  },
+);
+
+router.patch(
+  '/feedback/:id',
+  adminGate,
+  validate({
+    name: 'PATCH /api/admin/feedback/:id',
+    request: AdminFeedbackStatusRequestSchema,
+    response: AdminFeedbackStatusResponseSchema,
+  }),
+  async (req: Request<{ id: string }>, res: Response) => {
+    const { status } = req.body as AdminFeedbackStatusRequest;
+
+    const existing = await prisma.feedback.findUnique({
+      where: { id: req.params.id },
+      select: { id: true },
+    });
+    if (!existing) {
+      return res.status(404).json({ error: 'Feedback not found.' });
+    }
+
+    const updated = await prisma.feedback.update({
+      where: { id: req.params.id },
+      data: { status },
+      include: feedbackInclude,
+    });
+
+    res.json(toAdminFeedbackItem(updated));
   },
 );

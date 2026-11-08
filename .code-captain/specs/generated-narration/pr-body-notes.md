@@ -1,6 +1,6 @@
 # PR-body notes — generated-narration (#156)
 
-Draft material for `/ship`. Spec: `.code-captain/specs/generated-narration/spec.md`. Plan: `.code-captain/specs/generated-narration/tasks.md`. Decisions: ADR-031, ADR-032 and ADR-033 in `.code-captain/product/decisions.md`, plus an amendment note on ADR-011 and a Scope note on ADR-025.
+Draft material for `/ship`. Spec: `.code-captain/specs/generated-narration/spec.md`. Plan: `.code-captain/specs/generated-narration/tasks.md`. Decisions: ADR-033, ADR-034 and ADR-035 in `.code-captain/product/decisions.md`, plus an amendment note on ADR-011 and a Scope note on ADR-025.
 
 ## Manual obligations (CI cannot discharge these)
 
@@ -12,7 +12,7 @@ No test calls fal. Green tests prove the wiring, not that Kokoro is called corre
    - the WAVs exist under `<bookId>/narration/`;
    - a replay writes no new `UsageLog` row.
 
-   **Also read the fal dashboard's billed amount for the sentence-by-sentence sample.** This is still unverified. If fal rounds each request up to 1K characters, change `narrationCostCents` in `server/src/services/spend.ts` to `segments × 2¢` before merge (see ADR-032 Consequences).
+   **Also read the fal dashboard's billed amount for the sentence-by-sentence sample.** This is still unverified. If fal rounds each request up to 1K characters, change `narrationCostCents` in `server/src/services/spend.ts` to `segments × 2¢` before merge (see ADR-034 Consequences).
 2. **One desktop Chrome listen.** `af_heart` should be audible within a few seconds of the first Play. The sentence highlight should stay in step. Auto-advance should run through the book without a stall on cached or prefetched pages. Check the gap between sentences.
 3. **One iPhone listen, covering the first-Play gesture prime.** On a cold (uncached) page, the first Play should start audio after the network wait, with no "Tap play to continue". That confirms the silent-WAV prime unlocks the element. Auto-advanced pages should also play without another tap.
 
@@ -53,7 +53,7 @@ Production availability needs `STORAGE_BACKEND=r2` and the five `R2_*` vars set 
 
 ## Accepted open risk
 
-fal's terms (2026-09-08) require a Customer Solution's End Users to be 18+. Account holders are adults, which is the same posture as illustrations. The exit is self-hosted Kokoro (Apache-2.0), with Amazon Polly as the named fallback. See ADR-031.
+fal's terms (2026-09-08) require a Customer Solution's End Users to be 18+. Account holders are adults, which is the same posture as illustrations. The exit is self-hosted Kokoro (Apache-2.0), with Amazon Polly as the named fallback. See ADR-033.
 
 ### Task 9 surprises
 - AI disclosure is a visible line in the player (the settings panel is closed by default), not literally under the select.
