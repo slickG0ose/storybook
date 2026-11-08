@@ -137,6 +137,8 @@ router.post(
 **Depends on:** 3 (serial with it; shared `test.db`)
 **Parallel-safe with:** 5, 6, 7
 
+**Status:** Done (2026-11-08)
+
 **Files to add or change:**
 - `server/src/routes/admin.ts` — two routes behind the existing module-local `adminGate`
 - `docs/conventions/call-graph.md` — mention `/api/admin/feedback` in the admin row if the table lists sub-paths

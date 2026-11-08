@@ -143,6 +143,8 @@ The auth routes, plus any route elsewhere whose auth requirement is itself load-
 | GET | `/api/hero/pool` | **none — and must stay none** | Hero-rotation pool frames. Public, read-only, `Cache-Control: public, max-age=300`. Never reads the authenticated user. |
 | PUT | `/api/admin/books/:id/hero-eligible` | `adminGate` | Toggles the editorial `Book.is_hero_eligible` flag. Returns `hero_frames_available`. |
 | POST | `/api/feedback` | bearer (`requireAuth`), then `rateLimit` 10 / 10 min per user | Tester feedback report. `user_id` comes from the token only, never the body. |
+| GET | `/api/admin/feedback` | `adminGate` | Feedback triage list, newest first, capped at 200. Optional `?status=` / `?user_id=` filters, parsed in the handler (bad value → 400). |
+| PATCH | `/api/admin/feedback/:id` | `adminGate` | Moves a report between `new` / `triaged` / `done`. Returns the full `AdminFeedbackItem`. |
 
 `GET /api/hero/pool` has **no auth middleware on purpose**, and adding an optional auth
 read is the one change that must not be made casually: the pool is a published list, so
