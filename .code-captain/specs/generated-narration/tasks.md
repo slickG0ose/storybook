@@ -364,6 +364,8 @@ quota-denied prefetch makes the provider remember `quotaBlocked` for the session
 
 ### Task 9 — Player UI: AI disclosure, preparing state, fallback notice
 
+**Status:** Done
+
 **Zone:** client
 **Depends on:** Task 8
 **Parallel-safe with:** none

@@ -182,6 +182,137 @@ describe('NarrationPlayer', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Tap play to continue.')
   })
 
+  describe('generated voices (AI disclosure, preparing, fallback notice)', () => {
+    const GENERATED: NarrationVoice[] = [
+      { uri: 'generated:af_heart', name: 'Heart — Warm storyteller', lang: 'en-US', localService: false, isDefault: true, kind: 'generated' },
+      { uri: 'generated:am_michael', name: 'Michael — Calm and steady', lang: 'en-US', localService: false, isDefault: false, kind: 'generated' },
+    ]
+    const MIXED = [...GENERATED, ...VOICES]
+
+    it('groups AI voices ahead of device voices, labelled label — description', () => {
+      render(<NarrationPlayer narration={makeNarration({ voices: MIXED })} pageLabel="page 3" />)
+
+      const select = screen.getByLabelText<HTMLSelectElement>('Voice')
+      const [aiGroup, deviceGroup] = [...select.querySelectorAll('optgroup')]
+      expect([aiGroup?.label, deviceGroup?.label]).toEqual(['AI voices', "This device's voices"])
+      expect([...(aiGroup?.querySelectorAll('option') ?? [])].map((o) => o.textContent)).toEqual([
+        'Heart — Warm storyteller',
+        'Michael — Calm and steady',
+      ])
+      expect([...(deviceGroup?.querySelectorAll('option') ?? [])].map((o) => o.textContent)).toEqual([
+        'Alice',
+        'Bruno',
+      ])
+      // With AI voices listed the null choice resolves to one, so it is not "Device default".
+      expect(screen.getByRole('option', { name: 'Default voice' })).toHaveValue('')
+    })
+
+    it('omits the AI group, and keeps "Device default", when no generated voice is listed', () => {
+      render(<NarrationPlayer narration={makeNarration({ voices: VOICES })} pageLabel="page 3" />)
+
+      const select = screen.getByLabelText<HTMLSelectElement>('Voice')
+      expect([...select.querySelectorAll('optgroup')].map((group) => group.label)).toEqual([
+        "This device's voices",
+      ])
+      expect(screen.getByRole('option', { name: 'Device default' })).toBeInTheDocument()
+    })
+
+    it('shows the AI disclosure only while a generated voice is the active one', () => {
+      const { rerender } = render(
+        <NarrationPlayer
+          narration={makeNarration({ voices: MIXED, activeVoiceURI: 'generated:af_heart' })}
+          pageLabel="page 3"
+        />,
+      )
+      // Visible text outside the (closed) settings disclosure, not a tooltip.
+      const disclosure = screen.getByTestId('narration-ai-disclosure')
+      expect(disclosure).toHaveTextContent('AI-generated voice.')
+      expect(disclosure).toBeVisible()
+      expect(screen.getByTestId('narration-settings')).not.toContainElement(disclosure)
+
+      rerender(
+        <NarrationPlayer
+          narration={makeNarration({ voices: MIXED, activeVoiceURI: 'voice-a' })}
+          pageLabel="page 3"
+        />,
+      )
+      expect(screen.queryByTestId('narration-ai-disclosure')).not.toBeInTheDocument()
+
+      rerender(
+        <NarrationPlayer
+          narration={makeNarration({ voices: VOICES, activeVoiceURI: null })}
+          pageLabel="page 3"
+        />,
+      )
+      expect(screen.queryByText('AI-generated voice.')).not.toBeInTheDocument()
+    })
+
+    it('spins the play button and announces "Preparing voice…" while preparing, keeping its name', () => {
+      const { rerender } = render(
+        <NarrationPlayer narration={makeNarration()} pageLabel="page 3" />,
+      )
+      expect(screen.queryByTestId('narration-preparing')).not.toBeInTheDocument()
+
+      // The hook enters `playing` optimistically and flags `preparing` until audio flows.
+      rerender(
+        <NarrationPlayer
+          narration={makeNarration({ state: 'playing', preparing: true })}
+          pageLabel="page 3"
+        />,
+      )
+      const button = screen.getByRole('button', { name: 'Pause' })
+      expect(button).toBeEnabled()
+      expect(button).toContainElement(screen.getByTestId('narration-preparing'))
+      expect(screen.getByTestId('narration-preparing')).toHaveClass('motion-safe:animate-spin')
+      expect(screen.getByRole('status')).toHaveTextContent('Preparing voice…')
+
+      rerender(
+        <NarrationPlayer
+          narration={makeNarration({ state: 'playing', preparing: false })}
+          pageLabel="page 3"
+        />,
+      )
+      expect(screen.queryByTestId('narration-preparing')).not.toBeInTheDocument()
+      expect(screen.getByRole('status')).toHaveTextContent('Reading page 3')
+    })
+
+    it('renders the fallback notice as one line in the player, not a toast', () => {
+      render(
+        <NarrationPlayer
+          narration={makeNarration({
+            voices: MIXED,
+            state: 'playing',
+            notice: 'AI voice is done for today. Using device voice.',
+          })}
+          pageLabel="page 3"
+        />,
+      )
+      const notice = screen.getByTestId('narration-notice')
+      expect(notice).toHaveTextContent('AI voice is done for today. Using device voice.')
+      expect(screen.getByTestId('narration-player')).toContainElement(notice)
+      expect(notice.className).not.toMatch(/(^|:|\s)(fixed|absolute|sticky)(\s|$)/)
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
+
+    it('still shows the unavailable copy, and no AI line, when both voice lists are empty', () => {
+      render(
+        <NarrationPlayer
+          narration={makeNarration({
+            state: 'unavailable',
+            voiceStatus: 'unavailable',
+            voices: [],
+            activeVoiceURI: 'generated:af_heart',
+          })}
+          pageLabel="page 3"
+        />,
+      )
+      expect(screen.getByTestId('narration-unavailable')).toHaveTextContent(
+        "Read-aloud isn't available in this browser.",
+      )
+      expect(screen.queryByTestId('narration-ai-disclosure')).not.toBeInTheDocument()
+    })
+  })
+
   it('stays in normal flow — UpdateToast is the app’s only bottom-fixed surface', () => {
     render(<NarrationPlayer narration={makeNarration()} pageLabel="page 3" className="mx-auto" />)
 

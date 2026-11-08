@@ -40,11 +40,19 @@ export const START_WATCHDOG_MS = 1500
 /**
  * The generated-path failures that fall back to the device voice instead of stopping.
  * One line each, shown in the player (not a toast). Copy per spec §Design question 3.
+ *
+ * Each says what the reader can do first and what is happening now second, and each must
+ * stay on one line in the player at a 360 px viewport (about 310 px of text in Nunito at
+ * `text-sm`; the longest is ~285 px). Re-measure before lengthening one.
+ *
+ * `generation-unavailable` also covers a server with no `FAL_KEY` (501), where signing in
+ * will not help; the provider does not tell the two apart, and signed-out is the case a
+ * reader can act on.
  */
 export const FALLBACK_NOTICES = {
-  'generation-unavailable': "Using this device's voice — AI voices aren't available here.",
-  quota: "Using this device's voice — daily limit reached.",
-  'synthesis-failed': "Using this device's voice — the AI voice couldn't load this page.",
+  'generation-unavailable': 'Sign in for the AI voice. Using device voice.',
+  quota: 'AI voice is done for today. Using device voice.',
+  'synthesis-failed': "AI voice couldn't load. Using device voice.",
 } as const satisfies Partial<Record<NarrationErrorReason, string>>
 
 type FallbackReason = keyof typeof FALLBACK_NOTICES
