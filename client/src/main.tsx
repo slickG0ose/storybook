@@ -8,6 +8,11 @@ import { CartProvider } from './context/CartContext'
 import { ThemeProvider } from './context/ThemeContext'
 import { ToastProvider } from './context/ToastContext'
 import UpdateToast from './components/UpdateToast'
+import { installRecentErrorCapture } from './lib/recentErrors'
+
+// Before render, so an error thrown while the app boots is still captured. Feeds
+// recent_errors on tester feedback reports (FeedbackDialog).
+installRecentErrorCapture()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

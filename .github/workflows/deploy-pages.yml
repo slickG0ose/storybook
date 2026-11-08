@@ -56,6 +56,7 @@ jobs:
           # which is what it did before #120. Set the repo variable once a canonical
           # origin exists (#77) and Open Graph cards start resolving.
           VITE_PUBLIC_ORIGIN: ${{ vars.VITE_PUBLIC_ORIGIN }}
+          VITE_APP_COMMIT: ${{ github.sha }}
         run: npm run build
       # SPA fallback: GitHub Pages has no client-side-router rewrite, so a
       # direct visit or refresh on a deep route (e.g. /storybook/book/<id>)

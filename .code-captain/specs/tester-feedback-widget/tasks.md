@@ -55,6 +55,8 @@ There are 9 tasks. Shared schemas come first (1). Then the server runs serially:
 **Depends on:** 1
 **Parallel-safe with:** 5, 6, 7 (client-only)
 
+**Status:** Done (2026-11-08)
+
 **Files to add or change:**
 - `server/prisma/schema.prisma` — the `Feedback` model from the spec, plus `feedback Feedback[]` on `User` and `Book`
 - `server/prisma/migrations/<ts>_add-feedback/migration.sql` — from `cd server && npm run db:migrate -- --name add-feedback`
@@ -171,6 +173,8 @@ Put the row→wire mapping in one local `toAdminFeedbackItem(row)` helper, used 
 **Zone:** client (+ one line in `.github/`)
 **Depends on:** 1
 **Parallel-safe with:** 2, 3, 4, 7
+
+**Status:** Done (2026-11-08)
 
 **Files to add or change:**
 - `client/src/lib/feedback.ts` (new) — `buildFeedbackContext`, `submitFeedback`, and value re-exports of `FEEDBACK_CATEGORIES` / `FEEDBACK_MESSAGE_MAX`
