@@ -70,6 +70,7 @@ Fan-out per router. `db/prisma` is elided where a route only reads through a ser
 | `uploads` | `spend` | `apiKeys` | `requireAuth`, `spendGate`, `rateLimit` |
 | `admin` | `allowlist`, `spend` | `heroPool` | `validate` |
 | `hero` | — | `heroPool` | `validate` |
+| `feedback` | — | — | `requireAuth`, `rateLimit`, `validate` |
 | `test` | `allowlist` | — | `validate` |
 
 ### Fan-in — change here, check there

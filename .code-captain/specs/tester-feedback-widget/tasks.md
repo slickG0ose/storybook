@@ -87,6 +87,8 @@ There are 9 tasks. Shared schemas come first (1). Then the server runs serially:
 **Depends on:** 2
 **Parallel-safe with:** 5, 6, 7
 
+**Status:** Done (2026-11-08)
+
 **Files to add or change:**
 - `server/src/middleware/rateLimit.ts` — add `message?: string` to `RateLimitOptions`. The 429 body uses `message ?? 'Too many uploads in a short time. Try again in a moment.'`, so the default stays byte-identical.
 - `server/src/routes/feedback.ts` (new) — the router
