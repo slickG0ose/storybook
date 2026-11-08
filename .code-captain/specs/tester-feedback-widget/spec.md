@@ -1,6 +1,6 @@
 # Tester feedback widget
 
-> Status: Draft
+> Status: Done — all 9 tasks shipped on `agent/feat/tester-feedback-widget`
 > Last updated: 2026-11-08
 > Backlog: [#157 — MVP beta: restore deploy for family/friends feedback, with temp logins](https://github.com/slickG0ose/storybook/issues/157)
 
@@ -102,6 +102,9 @@ export const FeedbackCreateRequestSchema = z.object({
   viewport_height: z.number().int().min(0).max(10000),
   theme: z.enum(['light', 'dark']),
   client_build: z.string().max(64).nullable(),
+  // Added by open question 3 (yes): last 5 window errors, 300 chars each; server normalises.
+  recent_errors: z.array(z.string().max(5000)).max(50).default([])
+    .transform((errs) => errs.slice(-5).map((e) => e.slice(0, 300))),
 });
 export const FeedbackCreateResponseSchema = z.object({
   id: z.string(),
@@ -126,6 +129,7 @@ export const AdminFeedbackItemSchema = z.object({
   theme: z.enum(['light', 'dark']),
   client_build: z.string().nullable(),
   server_build: z.string().nullable(),
+  recent_errors: z.array(z.string()), // parsed from recent_errors_json; null → []
   status: FeedbackStatusSchema,
   created_at: z.string(),
   updated_at: z.string(),
@@ -231,7 +235,7 @@ All state lives in the `Feedback` table. The client keeps only dialog-local Reac
 
 - **Screenshot capture.** Deferred: it needs a new client dependency (CLAUDE.md guardrail) and a private storage path that does not exist yet. Recommendation and reasoning below.
 - Email, push, or GitHub-issue notification on new feedback. This is open question 2. The default is none.
-- Console-error capture. This is open question 3. The default is none.
+- ~~Console-error capture.~~ **In scope:** Nick answered yes to open question 3 on 2026-11-08. See `tasks.md` §Open questions 3 and ADR-032 decision 4.
 - Replies to testers, threads, or in-app "your feedback was triaged" messages.
 - Feedback from signed-out visitors. Every alpha tester has an account.
 - Viewing a tester's **draft** book from the route link. As admin, Nick gets the normal non-owner 404 on someone else's draft. The card shows `book_title` from the join, so he still knows which book it was. Admin access to drafts is a separate decision.

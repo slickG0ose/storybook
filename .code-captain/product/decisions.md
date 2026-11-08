@@ -33,7 +33,7 @@ Append-only log. Newest entries on top. Each entry should answer: *what was deci
 
 **Date:** 2026-11-08
 **Status:** Accepted — Nick confirmed open question 1 ("Yes, Navbar"), 2026-11-08.
-**Scope:** `client/src/components/Navbar.tsx`, `FeedbackDialog.tsx`. Upholds **ADR-011 decision 5** and **ADR-017 decision 2**.
+**Scope:** `tester-feedback-widget` spec ([spec.md](../specs/tester-feedback-widget/spec.md)) — `client/src/components/Navbar.tsx`, `FeedbackDialog.tsx`. Upholds **ADR-011 decision 5** and **ADR-017 decision 2**.
 
 ### Decision
 

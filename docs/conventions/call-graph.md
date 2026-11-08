@@ -44,7 +44,8 @@ called from; change a route's shape and this tells you the single file to update
 | `pages/CreateBook.tsx` | `/api/generate`, `/api/uploads/style-reference` |
 | `pages/Checkout.tsx` | `POST /api/orders` |
 | `pages/OrderConfirmation.tsx` | `GET /api/orders/:id` |
-| `pages/Admin.tsx` | all of `/api/admin/*` |
+| `pages/Admin.tsx` | all of `/api/admin/*` (includes `/api/admin/feedback[/:id]`) |
+| `lib/feedback.ts` | `POST /api/feedback` (called from `components/FeedbackDialog.tsx`) |
 
 Rules this table encodes:
 
@@ -77,7 +78,7 @@ Fan-out per router. `db/prisma` is elided where a route only reads through a ser
 
 Ranked by blast radius. These are the modules where a signature change is not local:
 
-1. **`db/prisma.ts`** — imported by every service, `lib/heroPool`, and 7 routers. The
+1. **`db/prisma.ts`** — imported by every service, `lib/heroPool`, and 8 routers. The
    only persistence path; nothing else opens the DB.
 2. **`services/spend.ts`** — `books`, `generate`, `uploads`, `admin`, plus
    `middleware/spendGate`. Any spend-accounting change touches all four routers.
@@ -115,12 +116,14 @@ service.** Each zone re-exports through its own barrel:
 The narrow exceptions, all of which import a **schema** (not a type) because they
 validate at runtime: `client/src/lib/cartCache.ts` (`CartGetResponseSchema`),
 `client/src/lib/useHeroPool.ts` (`HeroPoolResponseSchema`), and the routers that pass
-schemas to `validate()` (`books`, `cart`, `orders`, `admin`, `hero`, `test`, `generate`).
+schemas to `validate()` (`books`, `cart`, `orders`, `admin`, `hero`, `test`, `generate`, `feedback`).
 
 One further exception, for the same underlying reason — it needs a **value** at
 runtime, not a type: `client/src/lib/ageRanges.ts` re-exports `AGE_RANGES`, so it cannot
 ride the types-only `client/src/types.ts` barrel. `CreateBook.tsx` imports the list from
-there rather than from `@storybook/shared`.
+there rather than from `@storybook/shared`. `client/src/lib/feedback.ts` does the same for
+`FEEDBACK_CATEGORIES` and `FEEDBACK_MESSAGE_MAX`, and `client/src/lib/recentErrors.ts`
+imports `FEEDBACK_RECENT_ERRORS_MAX` / `FEEDBACK_RECENT_ERROR_CHARS` directly.
 
 Changing a schema in `shared/src/<domain>.ts` means checking, in order: the router that
 validates it → the client barrel → the wire-shape test
