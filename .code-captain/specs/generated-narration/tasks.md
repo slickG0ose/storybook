@@ -85,6 +85,8 @@ export const GENERATED_VOICE_PREFIX = 'generated:'
 
 ### Task 2 — `NarrationClip` model and migrations
 
+**Status:** Done
+
 **Zone:** server
 **Depends on:** Task 1, plus Nick's guardrail confirmation (schema change)
 **Parallel-safe with:** Task 7

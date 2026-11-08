@@ -58,6 +58,8 @@ export async function resetDatabase() {
   await prisma.orderItem.deleteMany();
   await prisma.order.deleteMany();
   await prisma.cartItem.deleteMany();
+  // Cascades from book anyway; explicit so the wipe order doesn't depend on it.
+  await prisma.narrationClip.deleteMany();
   await prisma.bookVersion.deleteMany();
   await prisma.illustrationVersion.deleteMany();
   await prisma.page.deleteMany();
