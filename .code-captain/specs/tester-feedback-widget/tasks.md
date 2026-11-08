@@ -372,6 +372,8 @@ There is an empty state per filter and an active-user-filter chip with a clear b
 
 **Zone:** docs (harness) · **Depends on:** none (run last)
 
+**Status:** Done (2026-11-08) — ADR-031, ADR-032; open question 2 deferred; open questions 1 and 3 resolved by Nick.
+
 For each ADR-worthy item in `spec.md` §"ADR-worthy decisions" and each item under §"Open questions" below, make sure exactly one tracking action exists: a matching ADR, a linked issue, or an explicit `Deferred:` line with reasoning.
 
 - Navbar placement → `/create-adr`. If Nick overruled open question 1, this becomes the ADR-017 amendment instead.
@@ -401,6 +403,8 @@ Resolve 1 before Task 6. Resolve 3 before Task 2, if the answer is yes. 2 can wa
   - (d) auto-file a GitHub issue per report: a repo-scoped token in Render, and it puts testers' words in a public repo
 
   **Default if unanswered:** (a), with (b) as a cheap add-on.
+
+  Deferred: unanswered at merge time, so (a) applies — see ADR-032 §Deferred. (b) is the first upgrade if Nick wants a nudge.
 - **3. RESOLVED 2026-11-08 — Nick: "Yes, include them."** Shared schema already amended in the commit after Task 1: `FeedbackCreateRequestSchema.recent_errors` (optional, defaults `[]`, server keeps last 5 × 300 chars) and `AdminFeedbackItemSchema.recent_errors: string[]`, constants `FEEDBACK_RECENT_ERRORS_MAX` / `FEEDBACK_RECENT_ERROR_CHARS`. Task 2 adds `recent_errors_json String?`; Task 3 stores it; Task 4 parses it back to `string[]` (null → `[]`); Task 5 adds the ring buffer in `main.tsx`; Task 7 shows the errors in the card. Original question: auto-include the last few client console errors? Shape if yes:
   - a ring buffer of the last 5 `window` `error` + `unhandledrejection` events, installed in `main.tsx`, each truncated to 300 characters
   - not a `console.error` monkey-patch, which also catches React dev warnings and third-party noise
