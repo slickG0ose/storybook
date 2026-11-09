@@ -18,7 +18,7 @@
     "audit:resolution": "node scripts/audit-resolution.mjs"
   },
   "devDependencies": {
-    "concurrently": "^9.1.0",
-    "vitest": "^4.1.7"
+    "concurrently": "^10.0.7",
+    "vitest": "^4.1.12"
   }
 }
