@@ -214,12 +214,13 @@ async function runGeneration(
       } catch (err) {
         failed = true;
         // Never log the text (user content) or vendor detail beyond the message.
+        const safeSlotKey = slotKey(slot).replace(/\r?\n|\r/g, '');
         const safeVoiceId = String(voiceId).replace(/\r?\n|\r/g, '');
         const safeErrorMessage = (err instanceof Error ? err.message : String(err)).replace(/\r?\n|\r/g, '');
         console.error(
           'Narration synthesis failed for %s/%s/%s segment %s: %s',
           bookId,
-          slotKey(slot),
+          safeSlotKey,
           safeVoiceId,
           String(index),
           safeErrorMessage,
