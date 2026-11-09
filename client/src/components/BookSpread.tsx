@@ -93,6 +93,60 @@ type SpreadKind =
   | { kind: 'story'; page: Page; pageIndex: number }
   | { kind: 'end' }
 
+/**
+ * Page-turn image readiness. The text of a spread is in memory and paints the instant
+ * `spreadIndex` changes; the illustration is a network fetch plus a decode. Without this,
+ * the turn un-fades with the new text beside the *previous* picture (or an empty box)
+ * for however long the fetch takes — most visible during read-aloud, which turns pages
+ * on its own the moment a page's audio ends.
+ *
+ * Module-level on purpose: a decoded URL stays decoded in the browser's image cache
+ * across remounts of the reader, so re-checking it would only add latency.
+ */
+const decodedImageUrls = new Set<string>()
+const pendingImageDecodes = new Map<string, Promise<void>>()
+
+/** Longest a page turn will hold for its image before showing the page anyway. */
+const IMAGE_WAIT_CAP_MS = 800
+
+function preloadImage(src: string): Promise<void> {
+  if (decodedImageUrls.has(src)) return Promise.resolve()
+  const pending = pendingImageDecodes.get(src)
+  if (pending) return pending
+  const img = new Image()
+  // No decode() (jsdom, very old engines): treat as ready so the turn is never held.
+  if (typeof img.decode !== 'function') {
+    decodedImageUrls.add(src)
+    return Promise.resolve()
+  }
+  // Ready = bytes loaded (or failed — a broken image must not block the turn), then a
+  // short best-effort decode. decode() alone is not enough: Chrome can leave it pending
+  // indefinitely for a document that is not rendering, so it is raced, never awaited bare.
+  const loaded = new Promise<void>(resolve => {
+    img.onload = () => resolve()
+    img.onerror = () => resolve()
+  })
+  img.src = src
+  const done = loaded
+    .then(() => Promise.race([
+      img.decode().catch(() => undefined),
+      new Promise<void>(resolve => setTimeout(resolve, 100)),
+    ]))
+    .then(() => {
+      decodedImageUrls.add(src)
+      pendingImageDecodes.delete(src)
+    })
+  pendingImageDecodes.set(src, done)
+  return done
+}
+
+function spreadImageUrl(spread: SpreadKind | undefined, book: BookWithPages): string | null {
+  if (!spread) return null
+  if (spread.kind === 'story') return spread.page.illustration_url ? api(spread.page.illustration_url) : null
+  if (spread.kind === 'cover') return book.cover_url ? api(book.cover_url) : null
+  return null
+}
+
 export default function BookSpread({
   book,
   isOwner,
@@ -138,14 +192,43 @@ export default function BookSpread({
   const canPrev = spreadIndex > 0
   const canNext = spreadIndex < spreads.length - 1
 
+  // Read inside the turn's timeout, which outlives the render that scheduled it.
+  const latest = useRef({ spreads, spreadIndex, book })
+  latest.current = { spreads, spreadIndex, book }
+
+  // Warm the neighbours' illustrations so a turn usually finds its image already decoded.
+  const neighbourImageKey = [spreadIndex - 1, spreadIndex + 1, spreadIndex + 2]
+    .map(i => spreadImageUrl(spreads[i], book))
+    .filter((u): u is string => !!u)
+    .join('\n')
+  useEffect(() => {
+    if (!neighbourImageKey) return
+    for (const src of neighbourImageKey.split('\n')) void preloadImage(src)
+  }, [neighbourImageKey])
+
   const turnPage = (dir: 'next' | 'prev'): void => {
     if (flipping) return
     if (dir === 'next' && !canNext) return
     if (dir === 'prev' && !canPrev) return
     setFlipping(dir)
     setTimeout(() => {
-      setSpreadIndex(i => dir === 'next' ? i + 1 : i - 1)
-      setFlipping(null)
+      const { spreads: s, spreadIndex: i, book: b } = latest.current
+      const target = dir === 'next' ? i + 1 : i - 1
+      // Text and picture swap in the same commit: hold the faded-out state until the
+      // target's image is decoded, capped so a slow or broken image can't stall reading.
+      const commit = (): void => {
+        setSpreadIndex(target)
+        setFlipping(null)
+      }
+      const src = spreadImageUrl(s[target], b)
+      if (!src || decodedImageUrls.has(src)) {
+        commit()
+        return
+      }
+      void Promise.race([
+        preloadImage(src),
+        new Promise<void>(resolve => setTimeout(resolve, IMAGE_WAIT_CAP_MS)),
+      ]).then(commit)
     }, 250)
   }
 
@@ -765,7 +848,11 @@ function PageIllustration({
     return (
       <div className="flex-1 flex flex-col">
         <div className="flex-1 rounded-xl overflow-hidden shadow-md">
+          {/* Keyed by URL so a page turn mounts a fresh element instead of re-pointing
+              the old one, which would keep painting the previous page's picture until
+              the new file arrived. */}
           <img
+            key={page.illustration_url}
             src={api(page.illustration_url)}
             alt={page.illustration_description}
             className="w-full h-full object-cover"
