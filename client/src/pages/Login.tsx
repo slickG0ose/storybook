@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { LogIn } from 'lucide-react'
+import { LogIn, Loader2 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
 export default function Login() {
@@ -66,9 +66,14 @@ export default function Login() {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full bg-purple-500 hover:bg-purple-600 disabled:opacity-50 text-white py-3 rounded-xl font-bold transition-colors cursor-pointer"
+            aria-busy={submitting || undefined}
+            className="w-full bg-purple-500 hover:bg-purple-600 disabled:opacity-50 text-white py-3 rounded-xl font-bold transition-colors cursor-pointer flex items-center justify-center gap-2"
           >
-            {submitting ? 'Signing in...' : 'Sign In'}
+            {submitting ? (
+              <><Loader2 size={18} className="animate-spin" aria-hidden="true" /> Signing in...</>
+            ) : (
+              'Sign In'
+            )}
           </button>
         </form>
 
