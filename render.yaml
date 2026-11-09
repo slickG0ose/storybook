@@ -58,7 +58,7 @@ services:
       - key: NODE_ENV
         value: production
       - key: NODE_VERSION
-        value: '22'
+        value: '24'
       # Proxies to trust when reading X-Forwarded-For, which decides the address
       # the auth rate limit keys on. Measured against the live service (ADR-030):
       # 1 and 2 read rotating proxy addresses and silently defeat the limit.

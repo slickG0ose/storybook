@@ -110,7 +110,7 @@ These three bugs hit on the first attempt to apply the Blueprint. All three are 
 
 2. **Shell state leaked across YAML literal-block lines.** The original buildCommand had `cd server && ...` on two separate lines. Render runs the literal block as a single bash script, so the working directory from line 2 persisted into line 3, and the second `cd server` tried to enter `server/server/` which doesn't exist. Fix: chain `cd server && cmd1 && cmd2` on one logical line.
 
-3. **Node version drift.** Render defaulted to Node 24 (bleeding edge); the rest of the stack (CI workflow, local dev) is on Node 22. Fix: explicit `NODE_VERSION: '22'` env var in render.yaml.
+3. **Node version drift.** Render defaulted to Node 24 (bleeding edge); the rest of the stack (CI workflow, local dev) is on Node 22. Fix: explicit `NODE_VERSION: '22'` env var in render.yaml. *(2026-11: moved to `'24'` alongside CI — Node 22 is maintenance-only LTS.)*
 
 If you see `bash: line N: cd: server: No such file or directory` in a build log after future schema changes, you've likely re-introduced bug #2.
 
