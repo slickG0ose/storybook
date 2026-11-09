@@ -126,8 +126,13 @@ export default function NarrationPlayer({
   const loading = !unavailable && voiceStatus === 'loading'
   const disabled = unavailable || loading
 
+  // The picker offers AI voices only (Nick's ruling, 2026-11-09). Device voices remain the
+  // hook's invisible fallback and are never listed; with no AI voices there is no picker.
   const generatedVoices = voices.filter((voice) => voice.kind === 'generated')
-  const deviceVoices = voices.filter((voice) => voice.kind === 'device')
+  const selectedVoiceURI =
+    generatedVoices.find((voice) => voice.uri === activeVoiceURI)?.uri ??
+    generatedVoices[0]?.uri ??
+    ''
   // Keyed off the voice a Play press would use, not `prefs.voiceURI`: with no saved choice
   // the default ladder picks `generated:af_heart`, and that must be disclosed too.
   const aiVoiceActive =
@@ -284,43 +289,26 @@ export default function NarrationPlayer({
           </summary>
 
           <div className="flex flex-col gap-3 border-t border-amber-200 dark:border-gray-700 p-3">
-            <label className="flex flex-col gap-1">
-              <span className={FIELD_LABEL_CLASS}>Voice</span>
-              <select
-                value={prefs.voiceURI ?? ''}
-                onChange={(event) =>
-                  setPrefs({ voiceURI: event.target.value === '' ? null : event.target.value })
-                }
-                className={SELECT_CLASS}
-              >
-                {/* Null means "let the device decide" — the hook falls back to its own
-                    default-voice ladder, which is the better answer on a device whose
-                    voice list we have never seen. Once AI voices are listed that ladder
-                    starts at `generated:af_heart`, so "Device default" would mislabel it. */}
-                <option value="">
-                  {generatedVoices.length > 0 ? 'Default voice' : 'Device default'}
-                </option>
-                {/* Generated voices' `name` is already `label — description` (useVoices). */}
-                {generatedVoices.length > 0 && (
-                  <optgroup label="AI voices">
-                    {generatedVoices.map((voice) => (
-                      <option key={voice.uri} value={voice.uri}>
-                        {voice.name}
-                      </option>
-                    ))}
-                  </optgroup>
-                )}
-                {deviceVoices.length > 0 && (
-                  <optgroup label="This device's voices">
-                    {deviceVoices.map((voice) => (
-                      <option key={voice.uri} value={voice.uri}>
-                        {voice.name}
-                      </option>
-                    ))}
-                  </optgroup>
-                )}
-              </select>
-            </label>
+            {generatedVoices.length > 0 && (
+              <label className="flex flex-col gap-1">
+                <span className={FIELD_LABEL_CLASS}>Voice</span>
+                {/* Always a `generated:*` value: there is no "default" option, because the
+                    hook's ladder already resolves an unset or stale choice to Heart, and
+                    `activeVoiceURI` is exactly that resolution. Generated voices' `name` is
+                    already `label — description` (useVoices). */}
+                <select
+                  value={selectedVoiceURI}
+                  onChange={(event) => setPrefs({ voiceURI: event.target.value })}
+                  className={SELECT_CLASS}
+                >
+                  {generatedVoices.map((voice) => (
+                    <option key={voice.uri} value={voice.uri}>
+                      {voice.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
 
             <label className="flex flex-col gap-1">
               <span className={FIELD_LABEL_CLASS}>Speed</span>

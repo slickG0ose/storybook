@@ -265,8 +265,32 @@ describe('useVoices — generated voices', () => {
     expect(result.current.deviceDefaultVoiceURI).toBe('zoe-local')
   })
 
-  it('rung 0 does not override a persisted device voice that is still present', async () => {
+  // Premise rewritten 2026-11-09: the picker is AI-only now, so a device voice persisted
+  // before that change no longer wins over the generated default.
+  it('ignores a persisted device voice when generated voices are available', async () => {
     stubVoicesRoute(VOICES_BODY)
+    installFakeSpeech({ voices: MIXED_VOICES })
+
+    const { result } = renderHook(() => useVoices('daniel-remote', { generated: true }))
+    await flush()
+
+    expect(result.current.defaultVoiceURI).toBe(DEFAULT_GENERATED_VOICE_URI)
+    // The fallback target still honours it — the device ladder is unchanged.
+    expect(result.current.deviceDefaultVoiceURI).toBe('daniel-remote')
+  })
+
+  it('keeps a persisted generated voice when generated voices are available', async () => {
+    stubVoicesRoute(VOICES_BODY)
+    installFakeSpeech({ voices: MIXED_VOICES })
+
+    const { result } = renderHook(() => useVoices('generated:am_michael', { generated: true }))
+    await flush()
+
+    expect(result.current.defaultVoiceURI).toBe('generated:am_michael')
+  })
+
+  it('honours a persisted device voice when generation is unavailable', async () => {
+    stubVoicesRoute({ ...VOICES_BODY, available: false })
     installFakeSpeech({ voices: MIXED_VOICES })
 
     const { result } = renderHook(() => useVoices('daniel-remote', { generated: true }))

@@ -109,20 +109,17 @@ describe('NarrationPlayer', () => {
     expect(screen.queryByTestId('narration-unavailable')).not.toBeInTheDocument()
   })
 
-  it('lists the available voices and persists a choice through setPrefs', async () => {
-    const narration = makeNarration({ voices: VOICES })
+  // Premise rewritten 2026-11-09: device voices are never listed. With only device voices
+  // there is no picker at all; the rate control and auto-advance remain.
+  it('hides the voice picker, keeping the other settings, when no AI voice is listed', () => {
+    const narration = makeNarration({ voices: VOICES, activeVoiceURI: 'voice-a' })
     render(<NarrationPlayer narration={narration} pageLabel="page 3" />)
 
-    const select = screen.getByLabelText('Voice')
-    expect(screen.getByRole('option', { name: 'Alice' })).toBeInTheDocument()
-    expect(screen.getByRole('option', { name: 'Bruno' })).toBeInTheDocument()
-
-    await userEvent.selectOptions(select, 'voice-b')
-    expect(narration.setPrefs).toHaveBeenCalledWith({ voiceURI: 'voice-b' })
-
-    // "Device default" hands the choice back to the hook's default-voice ladder.
-    await userEvent.selectOptions(select, '')
-    expect(narration.setPrefs).toHaveBeenCalledWith({ voiceURI: null })
+    expect(screen.getByTestId('narration-settings')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Voice')).not.toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'Alice' })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Speed')).toBeInTheDocument()
+    expect(screen.getByLabelText('Turn pages automatically')).toBeInTheDocument()
   })
 
   it('offers exactly RATE_OPTIONS as speeds and persists the choice through setPrefs', async () => {
@@ -189,32 +186,44 @@ describe('NarrationPlayer', () => {
     ]
     const MIXED = [...GENERATED, ...VOICES]
 
-    it('groups AI voices ahead of device voices, labelled label — description', () => {
-      render(<NarrationPlayer narration={makeNarration({ voices: MIXED })} pageLabel="page 3" />)
+    it('lists only the AI voices, labelled label — description, with no default option', () => {
+      render(
+        <NarrationPlayer
+          narration={makeNarration({ voices: MIXED, activeVoiceURI: 'generated:af_heart' })}
+          pageLabel="page 3"
+        />,
+      )
 
       const select = screen.getByLabelText<HTMLSelectElement>('Voice')
-      const [aiGroup, deviceGroup] = [...select.querySelectorAll('optgroup')]
-      expect([aiGroup?.label, deviceGroup?.label]).toEqual(['AI voices', "This device's voices"])
-      expect([...(aiGroup?.querySelectorAll('option') ?? [])].map((o) => o.textContent)).toEqual([
-        'Heart — Warm storyteller',
-        'Michael — Calm and steady',
+      expect(select.querySelectorAll('optgroup')).toHaveLength(0)
+      expect([...select.options].map((o) => [o.value, o.textContent])).toEqual([
+        ['generated:af_heart', 'Heart — Warm storyteller'],
+        ['generated:am_michael', 'Michael — Calm and steady'],
       ])
-      expect([...(deviceGroup?.querySelectorAll('option') ?? [])].map((o) => o.textContent)).toEqual([
-        'Alice',
-        'Bruno',
-      ])
-      // With AI voices listed the null choice resolves to one, so it is not "Device default".
-      expect(screen.getByRole('option', { name: 'Default voice' })).toHaveValue('')
+      expect(select).toHaveValue('generated:af_heart')
+      expect(screen.queryByRole('option', { name: /default/i })).not.toBeInTheDocument()
+      expect(screen.queryByRole('option', { name: 'Alice' })).not.toBeInTheDocument()
     })
 
-    it('omits the AI group, and keeps "Device default", when no generated voice is listed', () => {
-      render(<NarrationPlayer narration={makeNarration({ voices: VOICES })} pageLabel="page 3" />)
+    it('selects the active voice and persists a new choice through setPrefs', async () => {
+      const narration = makeNarration({ voices: MIXED, activeVoiceURI: 'generated:am_michael' })
+      render(<NarrationPlayer narration={narration} pageLabel="page 3" />)
 
       const select = screen.getByLabelText<HTMLSelectElement>('Voice')
-      expect([...select.querySelectorAll('optgroup')].map((group) => group.label)).toEqual([
-        "This device's voices",
-      ])
-      expect(screen.getByRole('option', { name: 'Device default' })).toBeInTheDocument()
+      expect(select).toHaveValue('generated:am_michael')
+
+      await userEvent.selectOptions(select, 'generated:af_heart')
+      expect(narration.setPrefs).toHaveBeenCalledWith({ voiceURI: 'generated:af_heart' })
+    })
+
+    it('shows the first AI voice, never a device one, if the active voice is not listed', () => {
+      render(
+        <NarrationPlayer
+          narration={makeNarration({ voices: MIXED, activeVoiceURI: 'voice-b' })}
+          pageLabel="page 3"
+        />,
+      )
+      expect(screen.getByLabelText('Voice')).toHaveValue('generated:af_heart')
     })
 
     it('shows the AI disclosure only while a generated voice is the active one', () => {

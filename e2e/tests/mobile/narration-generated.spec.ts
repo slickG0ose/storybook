@@ -270,6 +270,49 @@ test.describe('Read-aloud with a generated voice on mobile', () => {
     });
   });
 
+  test('offers only the AI voices, Heart by default over a saved device voice, in either theme', async ({
+    page,
+  }) => {
+    // A device voice saved before the picker went AI-only (2026-11-09). It must neither be
+    // listed nor win: the effective voice is Heart.
+    await page.evaluate(() =>
+      localStorage.setItem(
+        'storybook-narration',
+        JSON.stringify({ voiceURI: 'urn:fake:daniel', rate: 1, autoAdvance: true }),
+      ),
+    );
+    await stubNarration(page, book);
+    await page.goto(BOOK_PATH);
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('Luna and the Star Garden');
+
+    await forEachTheme(page, async (theme) => {
+      await test.step(`${theme} mode`, async () => {
+        await expect(
+          page.getByTestId('narration-ai-disclosure'),
+          `[${theme}] a saved device voice won over the AI default`,
+        ).toBeVisible();
+
+        await page.getByTestId('narration-settings').locator('summary').click();
+        const voice = page.getByRole('combobox', { name: 'Voice', exact: true });
+        await expect(voice).toBeVisible();
+        await expect(voice).toHaveValue('generated:af_heart');
+        await expect(voice.locator('optgroup')).toHaveCount(0);
+        await expect(voice.locator('option')).toHaveText([
+          'Heart — Warm storyteller',
+          'Michael — Calm and steady',
+        ]);
+        // The panel is open, so the voice select is measured as a tap target too.
+        await expectPlayerLayout(page, theme);
+
+        await voice.selectOption('generated:am_michael');
+        await expect(voice).toHaveValue('generated:am_michael');
+        await expect(page.getByTestId('narration-ai-disclosure')).toBeVisible();
+        // Reset for the next theme pass, which reloads with whatever was persisted.
+        await voice.selectOption('generated:af_heart');
+      });
+    });
+  });
+
   test('falls back to the device voice on a quota denial and stops asking, in either theme', async ({
     page,
   }) => {
@@ -340,6 +383,16 @@ test.describe('Read-aloud with a generated voice on mobile', () => {
 
         await expectPlayerLayout(page, theme);
         await page.getByRole('button', { name: 'Stop reading' }).click();
+
+        // No AI voices to pick, and device voices are never listed: no voice picker at all.
+        // The rest of the settings panel stays.
+        await page.getByTestId('narration-settings').locator('summary').click();
+        await expect(page.getByRole('combobox', { name: 'Speed', exact: true })).toBeVisible();
+        await expect(
+          page.getByRole('combobox', { name: 'Voice', exact: true }),
+          `[${theme}] a voice picker rendered with no AI voices available`,
+        ).toHaveCount(0);
+        await expectPlayerLayout(page, theme);
       });
     });
   });
