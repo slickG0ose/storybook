@@ -95,9 +95,9 @@ describe('deviceProvider', () => {
       })
 
       expect(deviceProvider.listVoices()).toEqual([
-        { uri: 'l-alba', name: 'Alba', lang: 'es-ES', localService: true, isDefault: false },
-        { uri: 'l-wren', name: 'Wren', lang: 'en-GB', localService: true, isDefault: true },
-        { uri: 'r-zoe', name: 'Zoe', lang: 'en-US', localService: false, isDefault: false },
+        { uri: 'l-alba', name: 'Alba', lang: 'es-ES', localService: true, isDefault: false, kind: 'device' },
+        { uri: 'l-wren', name: 'Wren', lang: 'en-GB', localService: true, isDefault: true, kind: 'device' },
+        { uri: 'r-zoe', name: 'Zoe', lang: 'en-US', localService: false, isDefault: false, kind: 'device' },
       ])
     })
   })

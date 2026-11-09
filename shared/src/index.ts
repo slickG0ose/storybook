@@ -11,4 +11,5 @@ export * from './admin';
 export * from './test';
 export * from './pdf';
 export * from './hero';
+export * from './narration';
 export * from './feedback';

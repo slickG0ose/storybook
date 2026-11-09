@@ -4,6 +4,132 @@ Append-only log. Newest entries on top. Each entry should answer: *what was deci
 
 ---
 
+## ADR-035 — Generated narration is a second `NarrationProvider` selected by the `generated:` voice URI; segmentation moves to `@storybook/shared`; device TTS is the per-page fallback
+
+**Date:** 2026-11-08
+**Status:** Accepted. Nick Konecny accepted the spec on 2026-11-08 and ruled open question 3 (generated voice on by default) to its default. Recorded at Task 11, before merge.
+**Scope:** `generated-narration` spec ([#156](https://github.com/slickG0ose/storybook/issues/156)), Tasks 1, 7, 8, 9. Files: `client/src/lib/narration/{provider,generatedProvider,api,chunk}.ts`, `client/src/hooks/{useNarration,useVoices}.ts`, `shared/src/narration.ts`. Spec at [.code-captain/specs/generated-narration/spec.md](../specs/generated-narration/spec.md) §Design questions 3, 5, 7. **Amends [[ADR-011]] decisions 1, 4 and 6.** Read that ADR alongside this one.
+
+### Decision
+
+1. **Two providers and no registry (amends ADR-011 decision 4).** `NarrationProvider` now has `deviceProvider` and `createGeneratedProvider()`. `useNarration` picks between them with a two-branch conditional. It uses the generated provider when the effective voice URI starts with `generated:` (`GENERATED_VOICE_PREFIX` in `shared/src/narration.ts`), the voices route said `available: true`, there is a `{ bookId, slot }` target, and the session is not quota-blocked. In every other case it uses the device provider. ADR-011 said a selector earns its place when a second provider lands. A conditional is all two providers need, so there is still no registry, no factory and no flag. The interface grew optional members for the generated path: `target`, `onPreparing`, `prefetch`, `setRate`, and a required `needsStartWatchdog`.
+2. **The voice namespace lives inside the existing pref.** `prefs.voiceURI` keeps its type and its `storybook-narration` key. Generated voices are stored as `generated:af_heart` or `generated:am_michael`. There is no prefs migration, and an old stored device URI still works. `useVoices` gains **rung 0**: when generated voices are available and nothing is persisted, the default is `generated:af_heart`. Rungs 2–5 run over device voices only. Otherwise a generated voice, tagged `en-US`, would silently win rung 3. A persisted `generated:*` URI while generation is unavailable is "not in the list" (rung 1's existing rule) and falls through to the device ladder.
+3. **Segmentation and spread text move to `@storybook/shared` (amends ADR-011 decision 6).** `splitIntoUtterances`, `MAX_CHUNK_CHARS`, `NarrationChunk` and `narrationTextFor(book, slot)` now live in `shared/src/narration.ts`. `client/src/lib/narration/chunk.ts` is a re-export, so imports don't change. The server synthesises one clip per chunk and returns offsets in the client's highlight coordinates, so both sides must split by the same function. Segmentation now crosses the network, and shared is where cross-network contracts live. Prefs stay client-local. Only the segmentation contract moved.
+4. **Device TTS is the floor, per page (amends ADR-011 decision 1).** Generated audio is now built, so decision 1's deferral is lifted for the alpha. Device TTS stays. The hook falls back when the voices route is unavailable, when a signed-out reader hits an uncached page, on a POST failure (501/401/409/429/503/5xx/network), when a clip fails to load, or when the server's segment offsets don't match the client's chunks. The fallback re-speaks the page **from the failed chunk** on the device default voice, under a fresh `runId` with the watchdog armed, and sets a one-line `notice`.
+5. **Playback is one `<audio>` element per provider, primed in the gesture.** `speak()` plays a silent WAV data URI synchronously, before any `await`, so iOS treats the element as unlocked when clips arrive after the network call. Clip *i* is chunk *i*: `playing` → `onChunkStart(i)`, `ended` → `onChunkEnd(i)`. Rate is `playbackRate` and is never sent to the server. `play()` rejecting with `NotAllowedError` reports `'not-allowed'` directly, so `needsStartWatchdog` is `false` for this provider. Otherwise a slow cold fetch would trip the 1.5 s watchdog and show a false "Tap play to continue". Kokoro returns no word timings, so `wordRange` stays `null`. That is already the shipped Safari/Android path from ADR-011 decision 2.
+
+### Why
+
+- **ADR-011 trigger #3 fired.** Voice quality became the complaint (Nick on #156: "default browser is clunky and most voices are awful"). The friends-and-family alpha (#157) is the first time anyone else hears a book.
+- **The seam ADR-011 built paid off as designed.** The hook's state machine, the `runId` guard, page-index-as-master, and the in-flow player all carried over unchanged. The new work is one provider file and a selection branch.
+- **Fallback keeps the feature from ever going silent.** No FAL_KEY, no R2, no quota and signed-out readers all degrade to phase-1 behaviour, which is tested and shipped.
+
+### Alternative considered: a provider registry keyed by id, with a config flag
+
+It would be ready for a third provider. It was rejected for the reason ADR-011 gave: an abstraction built on spec. With two providers, the voice URI already carries the choice. A third provider (for example Polly, see [[ADR-033]]) would be server-side behind the synthesizer seam, not a third client provider. The client cannot tell which vendor made a WAV.
+
+### Alternative considered: a separate `generatedVoice` pref key
+
+It would keep device and generated choices apart. It was rejected because it would need a prefs migration and a second source of truth for "which voice is selected". Namespacing the existing URI gives one picker, one value, and no migration.
+
+### Consequences
+
+- **HTTP → reason mapping, decided in Task 7.** 501 and **401** map to `'generation-unavailable'`. The spec didn't name 401: a stale token behaves like being signed out. 429 and 503 map to `'quota'`, which is **sticky for the session** (`quotaBlockedRef`), so a quota-denied reader doesn't POST once per page. Everything else is a one-off failure that the next page retries.
+- **The fallback is sticky per page.** After a mid-page fallback, the rest of that page stays on the device voice. The next page tries generated again unless quota-blocked. One page can therefore mix voices, and the player's notice says so. This was accepted for the alpha (spec Risks).
+- **Cancel does not abort an in-flight POST.** The generation is already paid for, so it is allowed to finish and is cached for the next Play.
+- **The client's in-memory clip cache is keyed `(bookId, slot, voiceId)` without the text hash.** If someone edits a page mid-session and the edit leaves the sentence offsets identical, the old audio could replay until reload. The server cache is keyed by hash and is correct. This is a client-only staleness window, accepted for the alpha.
+- **Preload uses a second, never-played `Audio` element.** Only the primed element ever calls `play()`, so the iOS unlock rule still holds.
+- **The voices route answer is cached at module level, once per session, including a failure.** A server whose availability changes mid-session won't be noticed until reload. The hook gained a `nextTarget` argument (for prefetch) and an `activeVoiceURI` result (the player's AI disclosure keys off it).
+- **What CI cannot prove: the gesture prime.** It is an assumption only an iPhone listen can confirm. It is a named PR-body obligation, along with a desktop Chrome listen. `client/src/test/fakeAudio.ts` (and the e2e media fake Task 10 adds) is our model of `HTMLMediaElement`, as ADR-011 decision 7 said of `fakeSpeech`.
+- **Pre-existing, found in Task 8 and not part of this decision:** `client/eslint.config.js` only lints `**/*.{js,jsx}`, so `npm run lint` covers no TypeScript. This needs its own issue.
+
+---
+
+## ADR-034 — Generated narration is cached per sentence on `(book, slot, voice, model, sha256(text))`, stored under `<bookId>/narration/`, and char-priced with the requester paying
+
+**Date:** 2026-11-08
+**Status:** Accepted. Nick Konecny accepted the spec on 2026-11-08 and ruled open questions 1 (per-sentence) and 2 (any signed-in reader generates, billed to them) to their defaults. Recorded at Task 11, before merge.
+**Scope:** `generated-narration` spec ([#156](https://github.com/slickG0ose/storybook/issues/156)), Tasks 2–6. Files: `server/prisma/schema.prisma` (`NarrationClip`, migrations `20261108182116_add_narration_clip` / `20261108182119_add_narration_clip`), `server/src/services/spend.ts`, `server/src/services/narration/{synthesizer,falKokoro,narration}.ts`, `server/src/routes/narration.ts`. Spec at [.code-captain/specs/generated-narration/spec.md](../specs/generated-narration/spec.md) §Design questions 2, 4, 7. **Widens [[ADR-025]]'s keyspace**, and ADR-025's Scope line now points here.
+
+### Decision
+
+Four coupled server decisions, grouped as in the ADR-004/011 precedent.
+
+1. **Per-sentence clips (open question 1, ruled 2026-11-08).** The server splits the page with the shared `splitIntoUtterances` and asks Kokoro for **one clip per chunk**, at most 4 in parallel (`NARRATION_SYNTH_CONCURRENCY`). Segment *i* is chunk *i*, so sentence highlighting, Previous/Next sentence and tap-to-seek stay exact with no timing estimates. Kokoro returns no timing map, so per-page clips would need a char-share estimate that drifts.
+2. **Cache key `(book_id, slot, voice_id, model, text_hash)`, with the text derived on the server.** `NarrationClip` is unique on that tuple. `slot` is `'cover' | 'end' | 'p<N>'`. `model` is the fal endpoint id (`NARRATION_MODEL`), following the [[ADR-013]] pin lesson that a model change must regenerate and never mix voices. `text_hash` is the SHA-256 of exactly what `narrationTextFor(book, slot)` produced. **The client never sends text.** `NarrationGenerateRequestSchema` is `.strict()` with only `voiceId` and `slot`, so the route cannot become an open TTS proxy billed to us. An edit changes the hash and regenerates. A version restore brings back old text and hits the old row for free. `BookVersion` is not touched, because narration is derived from text (as with [[ADR-019]]). Segments are a JSON column (`segments_json`) that is read and written whole, following [[ADR-002]].
+3. **Audio lives in the illustration keyspace and is served by the `/illustrations` mount.** Keys are `<bookId>/narration/<slot>-<voiceId>-<hash16>-<i>.wav`, written through `getStorage().put(key, bytes, 'audio/wav')`. URLs are relative (`/illustrations/<key>`), so local static serving and the [[ADR-026]] 302 to R2 both work unchanged. There is no second storage seam, mount or redirect handler.
+4. **Char-priced through `costCentsFor`, rounded up per page with a 1¢ floor. Cache hits are free. `POST` bills the requesting reader and `GET` is public.** `UsageKind` gains `'narration'`. `COST_CENTS.narration = 1` is the floor that `spendGate('narration')` reserves before the book is loaded. `costCentsFor('narration', undefined, chars)` returns `max(1, ceil(chars × NARRATION_CENTS_PER_1K_CHARS / 1000))` with the constant set to `2`. The handler's `checkQuota` and `recordUsage` take the same `chars`. A hit never checks quota, never calls the synthesizer and never records. On a miss: check quota **before** any synth call, record **only after** every segment is stored and the row exists, and record nothing on any failure. `POST /api/books/:id/narration` is `requireAuth → spendGate → validate → handler`. Any signed-in reader of a readable book may generate, and they are billed (open question 2). `GET /api/books/:id/narration` needs no auth, matches `GET /api/books/:id` visibility, and never touches fal or spend.
+
+### Why
+
+- **Exact highlighting with zero estimation code** is the ADR-011 product, and per-sentence clips keep it for free.
+- **Server-derived text is the security boundary.** A client-supplied string on a paid route would let anyone with an account synthesise anything at our expense.
+- **One keyspace means the admin purge and orphan scan already work.** `listBookFiles` (`illustrations.ts`) and `imagePin.ts` drop subdirectory keys. The admin orphan scan groups by the first segment, so narration counts as part of its book.
+- **A global cache bounds total exposure** at catalog characters × 2 voices, however many times books are played.
+
+### Alternatives considered
+
+- **Per-page clips** (held as an upgrade path): fewer fal requests and natural prosody across sentences, but they need a char-share timing estimate for highlighting. Revisit if sentence-boundary prosody is the top alpha listening complaint, or if fal rounds per request (below).
+- **A separate `/narration` storage root and mount** (rejected): cleaner naming, but it is the second seam ADR-025 exists to prevent, and the purge and orphan scan would need teaching. The `/illustrations` name now covers audio. That naming wart is accepted.
+- **A fixed per-page `COST_CENTS.narration`** (rejected): it under-prices long pages and has no link to the per-character price that actually moves.
+- **Owner-and-admin-only generation** (open question 2 alternative, not taken): it would protect owners from readers spending on their books, but readers would hear device voices on every uncached page.
+
+### Consequences
+
+- **Accepted overcount.** `UsageLog.cost_cents` is an integer, so a 220-char page (0.44¢ actual) records 1¢. A 5-page book records about 7¢ per voice against about 2.2¢ actual. Moving to millicents would need a migration, which isn't worth it at alpha volume.
+- **Still unverified: fal per-request rounding.** fal's pricing page says "$0.02 per 1000 characters" and mentions no per-request minimum. Nick is to read the billed amount for the existing sentence-by-sentence sample in the fal dashboard. If fal rounds each request up to 1K characters, per-sentence costs about 6–8× more and the caps under-count. The fix is confined to `narrationCostCents` in `spend.ts`: price `segments × NARRATION_CENTS_PER_1K_CHARS`, with the caller passing the segment count. Every gate and record already routes through `costCentsFor`. The function's doc comment carries the same warning.
+- **Concurrent first-Plays share one in-flight promise** (in-process map; Render runs one instance), and only the originator is charged. If the originator hit *their* quota, a joining caller retries against their own quota. An upstream failure is shared. The unique constraint is the cross-process backstop: a losing `create` (P2002) reads the winner's row and records nothing.
+- **An unparseable `segments_json` throws instead of regenerating.** A parse failure treated as a miss would re-synthesise, hit the unique key, re-read the same row, and loop, paying each time.
+- **Whitespace-only page text is `no-such-slot`.** It is decided before the quota check, so it is free, and `POST` answers 404. `GET` for a page the book doesn't have answers `200 { status: 'missing' }`, while `POST` answers 404.
+- **Partial uploads are left in place on failure.** Keys are deterministic, so the retry overwrites them. Superseded clips (after an edit) accumulate like superseded illustration versions. Pruning rides ADR-025's pruning follow-up.
+- **Test gaps, named.** The handler's char-priced quota re-check is wired but untested, because seed pages are too short to land between the 1¢ floor and the cap. The 503 monthly-ceiling path isn't exercised in the narration route tests (it reuses the existing `sendQuotaDenied`). No test makes a live fal call (see [[ADR-033]]).
+- **The R2 availability gate is in [[ADR-033]] and `isNarrationConfigured()`.** In production, narration is unavailable unless `STORAGE_BACKEND=r2`, because paid bytes on Render's ephemeral disk would be re-bought after every spin-down.
+
+### Deferred
+
+**Deferred:** the spec's §"ADR-worthy decisions" `Deferred:` item. This is its one tracking action, with the reasoning recorded here so it isn't spread across the spec.
+
+- **Media Session / lock-screen playback.** This is ADR-011 trigger #1. It needs the `visibilitychange` pause removed, a Media Session handler, and an iOS listen to prove it. That is more than the alpha needs. Revisit when a tester asks for screen-off listening.
+- **WAV → MP3/Opus transcoding.** About 10× smaller (a 5-page book is about 3.5 MB of WAV per voice), but it needs ffmpeg or a codec dependency on a 512 MB Render instance. R2's free tier (10 GB, zero egress, [[ADR-027]]) covers the alpha. Revisit if the bucket approaches the free tier or mobile data use becomes a complaint.
+- **Publish-time generation.** It pays for every page in every voice whether heard or not, and it turns `PUT /publish` (free today) into a paid, fallible step. Held as an explicit owner action ("Prepare narration") if first-Play latency (estimated 2–4 s cold, not measured) becomes the top complaint.
+- **Per-page synthesis.** See decision 1 and the Alternatives above. Revisit on a prosody complaint or confirmed fal per-request rounding.
+
+---
+
+## ADR-033 — Generated narration runs on Kokoro-82M via fal; the fal 18+ End-User term is an accepted open risk with self-hosted Kokoro as the exit
+
+**Date:** 2026-11-08
+**Status:** Accepted. Nick Konecny, 2026-11-08: spec accepted with guardrail (a), new paid-API usage (Kokoro on fal, `narration` spend line), confirmed on the spec Status line.
+**Scope:** `generated-narration` spec ([#156](https://github.com/slickG0ose/storybook/issues/156)), Task 4. Files: `server/src/services/narration/{synthesizer,falKokoro}.ts`, `NARRATION_MODEL` in `shared/src/narration.ts`. Spec at [.code-captain/specs/generated-narration/spec.md](../specs/generated-narration/spec.md) §"Decisions already made", §Constraints, §Risks.
+
+### Decision
+
+Narration audio is synthesised by **Kokoro-82M on fal**: `POST https://fal.run/fal-ai/kokoro/american-english` with `Authorization: Key $FAL_KEY` and the body `{ prompt, voice, speed: 1 }`. The response is `{ audio: { url } }`, pointing to a temporary 24 kHz mono 16-bit WAV that the server downloads and copies into storage. The price is $0.02 per 1,000 characters. It reuses the `FAL_KEY` illustrations already use ([[ADR-006]]). There are two curated voices, `af_heart` and `am_michael`, in `NARRATION_VOICES`.
+
+The vendor sits behind a one-method seam, `NarrationSynthesizer.synthesize(text, voiceId): Promise<Buffer>`, chosen by `getNarrationSynthesizer()`. `FalKokoroSynthesizer` uses raw `fetch` with no SDK, mirroring `providers/fal.ts`, and is the only implementation. The model id is part of the cache key ([[ADR-034]]), so swapping vendors regenerates cleanly and never mixes voices within a book.
+
+### Why
+
+- **Sound quality at a trivial price.** Kokoro reads like a narrator rather than an OS voice. About 2.2¢ per 5-page book per voice is noise next to illustration spend.
+- **No new vendor relationship or credential.** fal is already approved for illustrations.
+- **A real exit.** Kokoro's weights are Apache-2.0, so the model can be self-hosted if fal's terms or pricing change. The seam makes that one new adapter file.
+
+### Alternatives considered
+
+- **ElevenLabs** (rejected): best-in-class voices, but its use policy (updated 2026-10-09) prohibits products directed at under-18s without written approval. This is a children's book store.
+- **OpenAI TTS** (rejected): its models shut down on 2027-01-06, which is weeks after the alpha.
+- **Amazon Polly** (the named fallback): its FAQ explicitly permits child-directed apps, subject to COPPA. It would be a second `NarrationSynthesizer` plus a `NARRATION_MODEL` change. It isn't first choice because of voice quality and the new AWS credential and account it brings.
+- **Self-hosted Kokoro** (the exit, not the start): no third-party terms at all, but it means running and paying for an inference host, which the alpha doesn't justify.
+
+### Consequences
+
+- **Open risk, accepted for the alpha: fal's terms (2026-09-08) require a Customer Solution's End Users to be 18+.** Account holders here are adults, and children listen through a parent's account. That is the same posture already accepted for illustrations on fal. The listener is a child, so this is a real exposure and not a technicality. **Exit paths:** self-host Kokoro (Apache-2.0, preferred, because the voices don't change) or Polly (named, child-directed use permitted). Revisit before any general launch, or if fal clarifies the term.
+- **The adapter is hardened at the download leg.** It accepts only `https:` on `fal.media` / `*.fal.media`, uses `redirect: 'error'`, enforces a 5 MB per-clip cap while streaming (`FAL_KOKORO_MAX_BYTES`), has a 60 s timeout, and redacts the key from any vendor error text. Every failure surfaces as `NarrationSynthesisError`, which the route maps to 502 with nothing charged. **Live check 2026-11-08** (one "Hi." call): audio came from `v3b.fal.media` with a 200 `audio/wav` and no redirect, matching both the allowlist and `redirect: 'error'`.
+- **Availability needs a usable `FAL_KEY` and, in production, `STORAGE_BACKEND=r2`.** `isNarrationConfigured()` returns `false` rather than throwing on an invalid `STORAGE_BACKEND`, so the public voices route can't crash. Without both, `GET /api/narration/voices` reports `available: false`, `POST` answers 501, and readers stay on device voices.
+- **No test calls fal.** The adapter test pins the request and response contract with a stubbed `fetch`. Service and route tests `vi.mock` the synthesizer. Green tests prove the wiring, not that Kokoro is called correctly or sounds right. One real generation with a real `FAL_KEY` is a named PR-body obligation. There is also a harmless import cycle between `synthesizer.ts` and `falKokoro.ts`, because the adapter imports the error type.
+
+---
+
 ## ADR-032 — Tester feedback is a `Feedback` table with discrete context columns, triaged through `/api/admin/feedback`
 
 **Date:** 2026-11-08
@@ -249,7 +375,7 @@ Static-first is not decoration: the fixture book's 13 PNGs ship inside the deplo
 
 **Date:** 2026-09-30
 **Status:** Accepted — Nick, 2026-10-31, with [[ADR-027]].
-**Scope:** new `server/src/services/storage.ts`; call sites in `illustrations.ts`, `providers/fal.ts`, `imagePin.ts`, `pdf.tsx`, `routes/admin.ts`. Spec: `.code-captain/specs/blob-storage-r2/spec.md` design decisions 1–3.
+**Scope:** new `server/src/services/storage.ts`; call sites in `illustrations.ts`, `providers/fal.ts`, `imagePin.ts`, `pdf.tsx`, `routes/admin.ts`. Spec: `.code-captain/specs/blob-storage-r2/spec.md` design decisions 1–3. **Keyspace widened 2026-11-08 by [[ADR-034]]:** generated narration audio is stored under `<bookId>/narration/` through the same seam and served by the same `/illustrations` mount, so "illustration bytes" in this entry now covers those WAVs too.
 
 ### Decision
 
@@ -1009,7 +1135,7 @@ Mitigation B therefore does **not** fix the reported bug — that is already fix
 ## ADR-011 — Read-aloud narration: device TTS, sentence highlighting, and the deferred generated-audio seam
 
 **Date:** 2026-08-22
-**Status:** Accepted
+**Status:** Accepted. Decisions 1, 4 and 6 were amended 2026-11-08 by [[ADR-035]] (see the Amendment at the end of this entry).
 **Scope:** `read-aloud` phase 1 (Tier 2 Storefront milestone), Tasks 1–8. Spec at [.code-captain/specs/read-aloud/spec.md](../specs/read-aloud/spec.md); built on top of `mobile-pwa` (ADR-009's `forEachTheme` harness, ADR-010's `UpdateToast`). No backlog issue existed when the spec was written — one is drafted at [.code-captain/specs/read-aloud/issue-draft.md](../specs/read-aloud/issue-draft.md).
 
 ### Decision
@@ -1058,6 +1184,10 @@ Ship "Read to me" on the browser's own speech synthesiser. Page text is split in
 - **The roadmap line that predicted this feature has been reconciled, not deleted.** `.code-captain/product/roadmap.md:176` now reads as two halves — shipped phase 1 on device TTS, and deferred generated audio keeping its original "cache audio per page like illustrations" phrasing, because that instinct was right and the deferred design mirrors `IllustrationVersion` deliberately. A future reader must not implement the roadmap version by mistake, nor conclude narration is unbuilt.
 - **The installable-fake test pattern is now a convention, not a one-off.** [docs/conventions/client.md](../../docs/conventions/client.md) records it: browser device APIs absent from jsdom get an installable fake under `client/src/test/`, installed per test file and never globally, because the API-absent path is itself a state worth testing. The next device-API feature inherits the pattern instead of re-deriving it.
 - **Item 8 of the spec's ADR-worthy list is deliberately not duplicated here.** Generated/premium audio, downloadable audio artifacts, lock-screen playback, a dedicated "Listen" mode, narration in the legacy Reader view, global keyboard shortcuts, multi-language narration, and WebKit e2e coverage are tracked by the explicit `Deferred:` line in spec §"ADR-worthy decisions", each with reasoning in §"Out of scope". One tracking action per item — restating them as ADR decisions would create a second.
+
+### Amendment, 2026-11-08 — generated voices ([[ADR-033]], [[ADR-034]], [[ADR-035]])
+
+Trigger #3 (voice quality becomes a complaint) fired on [#156](https://github.com/slickG0ose/storybook/issues/156), and the deferred generated-audio path is now built. Decisions 1, 4 and 6 above are amended. **[[ADR-035]]** records the client side: a second provider, selected by the `generated:` voice-URI namespace with no registry; segmentation and spread text moved to `@storybook/shared`; device TTS as the per-page fallback. **[[ADR-034]]** records the cache, storage and pricing. **[[ADR-033]]** records the vendor (Kokoro-82M on fal). Decisions 2, 3, 5 and 7, the `runId` guard, and the word-highlight kill switch are unchanged. The "no route, no Prisma model, no `COST_CENTS` entry" consequence above is no longer true. That is the amendment it asked for.
 
 ---
 

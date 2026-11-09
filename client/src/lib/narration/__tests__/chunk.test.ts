@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { splitIntoUtterances, MAX_CHUNK_CHARS } from '../chunk'
-import type { NarrationChunk } from '../types'
+import { splitIntoUtterances, MAX_CHUNK_CHARS } from '@storybook/shared'
+import type { NarrationChunk } from '@storybook/shared'
 
 /** `chunks.map(c => text.slice(c.start, c.end)).join('')` must reproduce the input exactly. */
 function roundTrip(text: string, chunks: NarrationChunk[]): string {

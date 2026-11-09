@@ -8,6 +8,7 @@ import adminRouter from '../routes/admin';
 import generateRouter from '../routes/generate';
 import uploadsRouter from '../routes/uploads';
 import heroRouter from '../routes/hero';
+import { narrationRouter, bookNarrationRouter } from '../routes/narration';
 import feedbackRouter from '../routes/feedback';
 import { resetAuthRateLimits } from '../middleware/authRateLimit';
 
@@ -60,6 +61,8 @@ export async function resetDatabase() {
   await prisma.orderItem.deleteMany();
   await prisma.order.deleteMany();
   await prisma.cartItem.deleteMany();
+  // Cascades from book anyway; explicit so the wipe order doesn't depend on it.
+  await prisma.narrationClip.deleteMany();
   await prisma.bookVersion.deleteMany();
   await prisma.illustrationVersion.deleteMany();
   await prisma.page.deleteMany();
@@ -89,6 +92,8 @@ export function createTestApp(): express.Express {
 
   app.use('/api/auth', authRouter);
   app.use('/api/books', booksRouter);
+  app.use('/api/books', bookNarrationRouter);
+  app.use('/api/narration', narrationRouter);
   app.use('/api/cart', cartRouter);
   app.use('/api/orders', ordersRouter);
   app.use('/api/admin', adminRouter);

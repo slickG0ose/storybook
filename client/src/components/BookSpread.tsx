@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ChevronLeft, ChevronRight, Image as ImageIcon, RefreshCw, Loader2, Paintbrush, Check, History, Maximize2, Minimize2 } from 'lucide-react'
 import type { BookWithPages, FontFamily, IllustrationVersion, Page, TextSize } from '../types'
 import { api } from '../lib/apiBase'
@@ -8,6 +8,10 @@ import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useNarration } from '../hooks/useNarration'
 import NarrationPlayer from './NarrationPlayer'
 import type { NarrationChunk, NarrationPosition } from '../lib/narration/types'
+import type { NarrationTarget } from '../lib/narration/provider'
+import { createGeneratedProvider } from '../lib/narration/generatedProvider'
+import { useAuth } from '../context/AuthContext'
+import { narrationTextFor, nextSlot, type NarrationSlot } from '@storybook/shared'
 
 function formatRelativeTime(iso: string): string {
   const then = new Date(iso).getTime()
@@ -156,15 +160,35 @@ export default function BookSpread({
    * the book front to back; the end spread reads "The End." and stops, because `hasNext`
    * is false there.
    */
+  /*
+   * Generated voices. The provider owns one `<audio>` element for its lifetime (the iOS
+   * gesture unlock lives on it), so it is built once per mounted spread and reads the token
+   * through a ref — a sign-in or token refresh must not rebuild it and drop the unlock.
+   */
+  const { user } = useAuth()
+  const tokenRef = useRef<string | null>(user?.token ?? null)
+  tokenRef.current = user?.token ?? null
+  const generatedProvider = useMemo(
+    () => createGeneratedProvider({ getToken: () => tokenRef.current }),
+    [],
+  )
+
+  const slot: NarrationSlot | null =
+    !spread ? null : spread.kind === 'story' ? spread.page.page_number : spread.kind
+  const following = slot === null ? null : nextSlot(slot, pages.map((page) => page.page_number))
+  // No id, no cache key: a book without one is read with the device voice.
+  const target: NarrationTarget | null = book.id && slot !== null ? { bookId: book.id, slot } : null
+  const nextTarget: NarrationTarget | null =
+    book.id && following !== null ? { bookId: book.id, slot: following } : null
+
   const narration = useNarration({
-    text:
-      !spread ? null :
-      spread.kind === 'story' ? spread.page.text :
-      spread.kind === 'cover' ? `${book.title}. By ${book.author}.` :
-      'The End.',
+    text: slot === null ? null : narrationTextFor(book, slot),
     pageKey: spreadIndex,
     hasNext: canNext,
     onRequestNext: () => turnPage('next'),
+    target,
+    nextTarget,
+    generatedProvider,
   })
   const narrationAvailable = narration.state !== 'unavailable'
 

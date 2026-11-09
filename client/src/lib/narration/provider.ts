@@ -1,24 +1,39 @@
+import type { NarrationSlot } from '@storybook/shared'
 import type { NarrationChunk, NarrationVoice } from './types'
 
 /**
- * The narration seam: one interface, one implementation (`deviceProvider`), imported
- * directly by `useNarration`.
+ * The narration seam: one interface, two implementations, selected in `useNarration`.
  *
- * There is deliberately **no registry, no factory, and no config flag** here. A selector
- * with one option and a flag nobody can flip is an abstraction built entirely on
- * speculation; when a second provider actually lands, that is when a selector earns its
- * place. What this interface buys today is testability — the hook can be driven against
- * a fake without stubbing a browser global inside itself — and it happens to also keep
- * the deferred generated-audio path open at a cost of one file.
+ * - `deviceProvider` — the browser's Web Speech API. Free, offline, sounds different on
+ *   every device. Always the floor.
+ * - `createGeneratedProvider()` — server-generated clips (Kokoro via fal, one WAV per
+ *   chunk) played through a single `<audio>` element. See `generatedProvider.ts`.
  *
- * A future generated-audio provider would return a handle backed by an `<audio>` element,
- * fire `onChunkStart` / `onChunkEnd` from `timeupdate` against a per-chunk timing map,
- * and register with the Media Session API for lock-screen playback. Nothing in the hook
- * or the player would change.
+ * There is deliberately **no registry and no config flag**. The hook picks with a
+ * two-branch conditional on the voice URI (`generated:<id>`) — ADR-011 decision 4 said a
+ * selector earns its place when a second provider lands, and a conditional is all two
+ * providers need.
+ *
+ * The optional members (`target`, `onPreparing`, `prefetch`, `setRate`) exist for the
+ * generated path; `deviceProvider` ignores or omits them.
  */
 
 /** Normalised failure reasons. The raw engine codes are mapped by the provider. */
-export type NarrationErrorReason = 'canceled' | 'not-allowed' | 'synthesis-failed' | 'unknown'
+export type NarrationErrorReason =
+  | 'canceled'
+  | 'not-allowed'
+  | 'synthesis-failed'
+  | 'unknown'
+  /** Generated path only: 501, voices unavailable, or a signed-out reader on a cache miss. */
+  | 'generation-unavailable'
+  /** Generated path only: the server denied the spend (429/503). Sticky for the session. */
+  | 'quota'
+
+/** Which piece of which book is being read — the generated provider's cache key. */
+export interface NarrationTarget {
+  bookId: string
+  slot: NarrationSlot
+}
 
 /**
  * Callbacks are fired for as long as the handle is live. After `cancel()`, a provider
@@ -32,12 +47,19 @@ export interface NarrationEvents {
   /** Fired once, after the final chunk's `onChunkEnd`. Never after `cancel()`. */
   onDone(): void
   onError(reason: NarrationErrorReason): void
+  /**
+   * Generated path only: fired inside `speak()` when the clips have to be fetched (or
+   * generated) before anything can play. The first `onChunkStart` ends the preparing state.
+   */
+  onPreparing?(): void
 }
 
 export interface NarrationHandle {
   cancel(): void
   pause(): void
   resume(): void
+  /** Applies a rate change live. Absent means the caller must restart to change rate. */
+  setRate?(rate: number): void
 }
 
 export interface NarrationSpeakOptions {
@@ -46,10 +68,12 @@ export interface NarrationSpeakOptions {
   rate: number
   /** Absolute index into `chunks`; reported chunk indices stay absolute, never re-based. */
   fromChunk: number
+  /** Required by the generated provider (it fetches clips per book + slot); ignored by device. */
+  target?: NarrationTarget
 }
 
 export interface NarrationProvider {
-  readonly id: 'device' // future: | 'generated'
+  readonly id: 'device' | 'generated'
   isAvailable(): boolean
   listVoices(): NarrationVoice[]
   speak(
@@ -57,4 +81,13 @@ export interface NarrationProvider {
     opts: NarrationSpeakOptions,
     events: NarrationEvents,
   ): NarrationHandle
+  /** Warm the next slot so auto-advance does not stall. Fire-and-forget; never throws. */
+  prefetch?(target: NarrationTarget, voiceURI: string): void
+  /**
+   * True when the provider can fail silently on a missing user gesture, so the hook must
+   * arm its start watchdog. False for providers that report gesture refusal themselves
+   * (`play()` rejecting with `NotAllowedError`) — a watchdog there would trip on a slow
+   * cold fetch and show a false "Tap play to continue".
+   */
+  readonly needsStartWatchdog: boolean
 }
