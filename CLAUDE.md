@@ -100,7 +100,7 @@ Server deploy is Render, auto-deploying on push to `master` via `render.yaml`. C
 
 AI calls cost real money, so every paid operation is metered and capped. Code lives in [server/src/services/spend.ts](server/src/services/spend.ts); the Express middleware is [server/src/middleware/spendGate.ts](server/src/middleware/spendGate.ts) (`spendGate(kind)`, mounted per route).
 
-- **Per-call cost** is a fixed table, not a measured value: `COST_CENTS = { story: 6, illustration: 4, cover: 4 }`. Update it when model pricing moves — a stale figure makes the caps silently wrong.
+- **Per-call cost** is a fixed table, not a measured value: `COST_CENTS = { story: 6, illustration: 4, cover: 4, style_reference: 2, narration: 1 }`. Update it when model pricing moves — a stale figure makes the caps silently wrong. `narration` is char-priced: `costCentsFor('narration', undefined, chars)` charges `ceil(chars × NARRATION_CENTS_PER_1K_CHARS / 1000)` per slot (cover, each page, end) (2¢ per 1K chars) with `COST_CENTS.narration` as the 1¢ floor that `spendGate('narration')` reserves.
 - **Two windows, both UTC:** a per-user daily cap and a global monthly ceiling.
 - `checkQuota()` decides; `recordUsage()` writes the `UsageLog` row. A route must call both — gating without recording lets spend run away.
 

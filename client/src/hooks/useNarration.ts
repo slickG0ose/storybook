@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { GENERATED_VOICE_PREFIX } from '@storybook/shared'
 import { splitIntoUtterances } from '../lib/narration/chunk'
 import { deviceProvider } from '../lib/narration/deviceProvider'
 import { clampRate, readPrefs, writePrefs, type NarrationPrefs } from '../lib/narration/prefs'
@@ -6,6 +7,8 @@ import type {
   NarrationErrorReason,
   NarrationEvents,
   NarrationHandle,
+  NarrationProvider,
+  NarrationTarget,
 } from '../lib/narration/provider'
 import type {
   NarrationChunk,
@@ -34,6 +37,34 @@ export const AUTO_ADVANCE_DELAY_MS = 400
 /** iOS may refuse a `speak()` that did not originate in a gesture; do not appear frozen. */
 export const START_WATCHDOG_MS = 1500
 
+/**
+ * The generated-path failures that fall back to the device voice instead of stopping.
+ * One line each, shown in the player (not a toast). Copy per spec §Design question 3.
+ *
+ * Each says what the reader can do first and what is happening now second, and each must
+ * stay on one line in the player at a 360 px viewport (about 310 px of text in Nunito at
+ * `text-sm`; the longest is ~285 px). Re-measure before lengthening one.
+ *
+ * `generation-unavailable` also covers a server with no `FAL_KEY` (501), where signing in
+ * will not help; the provider does not tell the two apart, and signed-out is the case a
+ * reader can act on.
+ */
+export const FALLBACK_NOTICES = {
+  'generation-unavailable': 'Sign in for the AI voice. Using device voice.',
+  quota: 'AI voice is done for today. Using device voice.',
+  'synthesis-failed': "AI voice couldn't load. Using device voice.",
+} as const satisfies Partial<Record<NarrationErrorReason, string>>
+
+type FallbackReason = keyof typeof FALLBACK_NOTICES
+
+function isFallbackReason(reason: NarrationErrorReason): reason is FallbackReason {
+  return reason in FALLBACK_NOTICES
+}
+
+function isGeneratedURI(uri: string | null): uri is string {
+  return uri !== null && uri.startsWith(GENERATED_VOICE_PREFIX)
+}
+
 export interface UseNarrationArgs {
   /** The text of the page currently on screen, or null on spreads with nothing to read. */
   text: string | null
@@ -43,6 +74,19 @@ export interface UseNarrationArgs {
   onRequestNext: () => void
   /** False on the last spread, so narration stops instead of requesting a turn. */
   hasNext: boolean
+  /**
+   * Which book + slot is on screen — the generated provider's cache key. Null when there is
+   * nothing generated audio could be keyed on (e.g. a preview without an id); the device
+   * voice is used then.
+   */
+  target?: NarrationTarget | null
+  /** The slot after this one, prefetched while this one plays. Null on the last spread. */
+  nextTarget?: NarrationTarget | null
+  /**
+   * The generated provider, constructed once by the host (it owns the token getter). Null
+   * or absent means device-only — exactly the pre-generated-narration hook.
+   */
+  generatedProvider?: NarrationProvider | null
 }
 
 export interface UseNarrationResult {
@@ -63,6 +107,15 @@ export interface UseNarrationResult {
   setPrefs(next: Partial<NarrationPrefs>): void
   voices: NarrationVoice[]
   voiceStatus: VoiceStatus
+  /**
+   * The voice a Play press would select: the persisted device voice, or else the ladder's
+   * pick (which may be `generated:af_heart`). The player's AI disclosure keys off this.
+   */
+  activeVoiceURI: string | null
+  /** True while generated clips are being fetched or generated, before the first clip plays. */
+  preparing: boolean
+  /** One line explaining a fallback to the device voice; null when there is nothing to say. */
+  notice: string | null
 }
 
 export function useNarration({
@@ -70,19 +123,52 @@ export function useNarration({
   pageKey,
   onRequestNext,
   hasNext,
+  target = null,
+  nextTarget = null,
+  generatedProvider = null,
 }: UseNarrationArgs): UseNarrationResult {
   // Availability is read once: a browser does not grow a speech engine mid-session, and
   // re-reading it per render would make every callback depend on a value that never moves.
-  const [available] = useState(() => deviceProvider.isAvailable())
+  const [deviceAvailable] = useState(() => deviceProvider.isAvailable())
+  const [generatedCapable] = useState(
+    () => generatedProvider !== null && generatedProvider.isAvailable(),
+  )
 
   const chunks = useMemo(() => (text ? splitIntoUtterances(text) : []), [text])
 
   const [prefs, setPrefsState] = useState<NarrationPrefs>(readPrefs)
-  const { voices, status: voiceStatus, defaultVoiceURI } = useVoices(prefs.voiceURI)
+  const {
+    voices,
+    status: voiceStatus,
+    defaultVoiceURI,
+    deviceDefaultVoiceURI,
+    generatedAvailable,
+  } = useVoices(prefs.voiceURI, { generated: generatedCapable })
 
-  const [state, setState] = useState<NarrationState>(available ? 'idle' : 'unavailable')
+  /**
+   * Generated narration is usable only when the host wired a provider, the browser can
+   * play audio, and the voices route said `available: true`. The route answers
+   * asynchronously, so on a device with no speech engine the player turns from
+   * unavailable to usable once it does.
+   */
+  const generatedUsable = generatedCapable && generatedAvailable
+  const available = deviceAvailable || generatedUsable
+
+  /**
+   * A persisted device voice is honoured as-is (the device provider ignores it if it has
+   * gone). Otherwise the ladder decides — which already maps a persisted `generated:*` voice
+   * to the device ladder when generation is unusable, since it is then not in the list.
+   */
+  const activeVoiceURI =
+    prefs.voiceURI !== null && !isGeneratedURI(prefs.voiceURI) ? prefs.voiceURI : defaultVoiceURI
+
+  // Never `'unavailable'` internally: availability is applied on the way out, so a late
+  // voices-route answer needs no state transition to bring the player to life.
+  const [state, setState] = useState<NarrationState>('idle')
   const [position, setPosition] = useState<NarrationPosition | null>(null)
   const [needsGesture, setNeedsGesture] = useState(false)
+  const [preparing, setPreparing] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
 
   /**
    * Provider callbacks fire from timers and engine events, long after the render that
@@ -99,6 +185,30 @@ export function useNarration({
   hasNextRef.current = hasNext
   const onRequestNextRef = useRef(onRequestNext)
   onRequestNextRef.current = onRequestNext
+  const activeVoiceURIRef = useRef(activeVoiceURI)
+  activeVoiceURIRef.current = activeVoiceURI
+  const deviceDefaultVoiceURIRef = useRef(deviceDefaultVoiceURI)
+  deviceDefaultVoiceURIRef.current = deviceDefaultVoiceURI
+  const generatedUsableRef = useRef(generatedUsable)
+  generatedUsableRef.current = generatedUsable
+  const generatedProviderRef = useRef(generatedProvider)
+  generatedProviderRef.current = generatedProvider
+  const targetRef = useRef(target)
+  targetRef.current = target
+  const nextTargetRef = useRef(nextTarget)
+  nextTargetRef.current = nextTarget
+
+  /** A spend denial keeps the device voice for the rest of the session (no POST storm). */
+  const quotaBlockedRef = useRef(false)
+  /** Set by a generated failure; the rest of this page plays on the device. Reset per page. */
+  const deviceForPageRef = useRef(false)
+  /** The next slot is prefetched once per page, on its first chunk start. */
+  const prefetchedForPageRef = useRef(false)
+  /**
+   * Fallback re-enters `startPlayback` from inside a provider callback, and `makeEvents` is
+   * itself a dependency of `startPlayback` — a ref breaks the cycle.
+   */
+  const startPlaybackRef = useRef<(fromChunk: number, gesture: boolean) => void>(() => {})
 
   const stateRef = useRef(state)
   const positionRef = useRef(position)
@@ -133,6 +243,12 @@ export function useNarration({
     setNeedsGesture(next)
   }, [])
 
+  const noticeRef = useRef(notice)
+  const applyNotice = useCallback((next: string | null) => {
+    noticeRef.current = next
+    setNotice(next)
+  }, [])
+
   const clearWatchdog = useCallback(() => {
     if (watchdogRef.current === null) return
     clearTimeout(watchdogRef.current)
@@ -152,6 +268,7 @@ export function useNarration({
     runIdRef.current += 1
     handleRef.current?.cancel()
     handleRef.current = null
+    setPreparing(false)
   }, [clearTimers])
 
   /** The end of a page: either request the turn, or stop cleanly. */
@@ -179,6 +296,37 @@ export function useNarration({
     [applyPosition, applyState, clearTimers],
   )
 
+  /**
+   * A generated failure is not the end of the page: the device voice is the floor. The page
+   * re-speaks from the failed chunk on `deviceProvider`, under a **fresh** `runId` (the
+   * re-entry goes through `startPlayback`, which aborts first), so the generated handle's
+   * stragglers are discarded by the same guard that protects page turns.
+   *
+   * The re-speak is not inside a gesture — it follows a network round trip — so the device
+   * path's start watchdog is armed, and a refusing iOS degrades to "Tap play to continue",
+   * whose tap then plays on the device (this page is pinned to it) rather than looping
+   * back through the failing generated path.
+   */
+  const fallBack = useCallback(
+    (reason: FallbackReason) => {
+      if (reason === 'quota') quotaBlockedRef.current = true
+      deviceForPageRef.current = true
+      applyNotice(FALLBACK_NOTICES[reason])
+      handleRef.current = null
+
+      if (!deviceAvailable) {
+        // Nothing to fall back to. Stop honestly; the notice says why.
+        clearTimers()
+        applyState('idle')
+        applyPosition(null)
+        return
+      }
+
+      startPlaybackRef.current(positionRef.current?.chunkIndex ?? 0, false)
+    },
+    [applyNotice, applyPosition, applyState, clearTimers, deviceAvailable],
+  )
+
   const fail = useCallback(
     (reason: NarrationErrorReason) => {
       // `'canceled'` is what our own `cancel()` produces on every engine. It is expected
@@ -203,16 +351,36 @@ export function useNarration({
   )
 
   const makeEvents = useCallback(
-    (runId: number): NarrationEvents => {
+    (runId: number, provider: NarrationProvider, voiceURI: string | null): NarrationEvents => {
       const stale = (): boolean => runId !== runIdRef.current
 
       return {
+        onPreparing() {
+          if (stale()) return
+          setPreparing(true)
+        },
+
         onChunkStart(chunkIndex: number) {
           if (stale()) return
           // Audio is flowing, so whatever the watchdog was worried about did not happen.
           clearWatchdog()
+          setPreparing(false)
           if (needsGestureRef.current) applyNeedsGesture(false)
           applyPosition({ chunkIndex, wordRange: null })
+
+          // Warm the next page while this one plays, so auto-advance does not stall on a
+          // cold generation. Only when the page is actually going to turn by itself.
+          if (
+            !prefetchedForPageRef.current &&
+            provider.prefetch &&
+            voiceURI !== null &&
+            prefsRef.current.autoAdvance &&
+            hasNextRef.current &&
+            nextTargetRef.current
+          ) {
+            prefetchedForPageRef.current = true
+            provider.prefetch(nextTargetRef.current, voiceURI)
+          }
         },
 
         /**
@@ -255,12 +423,41 @@ export function useNarration({
 
         onError(reason: NarrationErrorReason) {
           if (stale()) return
+          setPreparing(false)
+          if (provider.id === 'generated' && isFallbackReason(reason)) {
+            fallBack(reason)
+            return
+          }
           fail(reason)
         },
       }
     },
-    [applyNeedsGesture, applyPosition, clearWatchdog, fail, finish],
+    [applyNeedsGesture, applyPosition, clearWatchdog, fail, fallBack, finish],
   )
+
+  /**
+   * The two-branch selector (spec §Design question 3). Generated iff the voice is a
+   * `generated:` URI, generation is usable, there is a target to key clips on, and neither
+   * a session quota denial nor an earlier failure on this page has pinned the device.
+   * A generated voice that cannot be used is spoken with the device ladder's pick — handing
+   * a `generated:` URI to the device engine would only get its arbitrary default.
+   */
+  const route = useCallback((): { provider: NarrationProvider; voiceURI: string | null } => {
+    const voiceURI = activeVoiceURIRef.current
+    if (!isGeneratedURI(voiceURI)) return { provider: deviceProvider, voiceURI }
+
+    const generated = generatedProviderRef.current
+    if (
+      generated !== null &&
+      generatedUsableRef.current &&
+      targetRef.current !== null &&
+      !quotaBlockedRef.current &&
+      !deviceForPageRef.current
+    ) {
+      return { provider: generated, voiceURI }
+    }
+    return { provider: deviceProvider, voiceURI: deviceDefaultVoiceURIRef.current }
+  }, [])
 
   /**
    * @param gesture true when this call is inside a user gesture. Only non-gesture starts
@@ -281,6 +478,15 @@ export function useNarration({
 
       const from = Math.min(Math.max(0, Math.floor(fromChunk)), list.length - 1)
       const runId = runIdRef.current
+      const { provider, voiceURI } = route()
+
+      // Generated was unusable (or failed) on a browser with no speech engine: nothing
+      // can speak this page.
+      if (provider === deviceProvider && !deviceAvailable) {
+        applyState('idle')
+        applyPosition(null)
+        return
+      }
 
       if (gesture) applyNeedsGesture(false)
       applyState('playing')
@@ -288,17 +494,20 @@ export function useNarration({
       // and it is what `pause()` then `play()` resumes from if no `start` ever arrives.
       applyPosition({ chunkIndex: from, wordRange: null })
 
-      handleRef.current = deviceProvider.speak(
+      handleRef.current = provider.speak(
         list,
         {
-          voiceURI: prefsRef.current.voiceURI ?? defaultVoiceURIRef.current,
+          voiceURI,
           rate: prefsRef.current.rate,
           fromChunk: from,
+          target: provider === deviceProvider ? undefined : (targetRef.current ?? undefined),
         },
-        makeEvents(runId),
+        makeEvents(runId, provider, voiceURI),
       )
 
-      if (gesture) return
+      // The generated provider reports gesture refusal itself (`NotAllowedError`); a
+      // watchdog there would trip on a slow cold fetch and show a false "Tap play".
+      if (gesture || !provider.needsStartWatchdog) return
 
       watchdogRef.current = setTimeout(() => {
         watchdogRef.current = null
@@ -310,8 +519,9 @@ export function useNarration({
         applyNeedsGesture(true)
       }, START_WATCHDOG_MS)
     },
-    [abort, applyNeedsGesture, applyPosition, applyState, available, makeEvents],
+    [abort, applyNeedsGesture, applyPosition, applyState, available, deviceAvailable, makeEvents, route],
   )
+  startPlaybackRef.current = startPlayback
 
   const play = useCallback(
     (fromChunk?: number) => {
@@ -400,17 +610,42 @@ export function useNarration({
       setPrefsState(merged)
       writePrefs(merged)
 
+      const voiceChanged = merged.voiceURI !== previous.voiceURI
+      const rateChanged = merged.rate !== previous.rate
+
+      if (voiceChanged) {
+        // A new voice is a fresh attempt: the notice was about the old one, and a page
+        // pinned to the device by a one-off failure may try generated again. A quota
+        // denial stays sticky — the server would only say no again.
+        deviceForPageRef.current = false
+        if (!quotaBlockedRef.current) applyNotice(null)
+        // The ref the selector reads is otherwise only refreshed on the next render.
+        activeVoiceURIRef.current =
+          merged.voiceURI !== null && !isGeneratedURI(merged.voiceURI)
+            ? merged.voiceURI
+            : merged.voiceURI !== null && voices.some((voice) => voice.uri === merged.voiceURI)
+              ? merged.voiceURI
+              : defaultVoiceURIRef.current
+      }
+
+      // A handle that can retune live (the `<audio>` provider's `playbackRate`) gets the
+      // new rate without losing its place in the clip.
+      if (rateChanged && !voiceChanged && handleRef.current?.setRate) {
+        handleRef.current.setRate(merged.rate)
+        return
+      }
+
       // Neither rate nor voice can be changed on an utterance that is already queued, so
       // the only way to apply one now is to cancel and re-speak from the current sentence.
       // `autoAdvance` deliberately does not restart — it only changes what happens at the
       // end of the page.
-      const needsRestart = merged.rate !== previous.rate || merged.voiceURI !== previous.voiceURI
+      const needsRestart = rateChanged || voiceChanged
       if (!needsRestart) return
       if (stateRef.current !== 'playing') return
 
       startPlayback(positionRef.current?.chunkIndex ?? 0, true)
     },
-    [startPlayback],
+    [applyNotice, startPlayback, voices],
   )
 
   /**
@@ -428,11 +663,15 @@ export function useNarration({
     const wasPlaying = stateRef.current === 'playing'
     abort()
     applyPosition(null)
+    // A one-off failure retries on the next page; a quota denial does not.
+    deviceForPageRef.current = false
+    prefetchedForPageRef.current = false
+    if (!quotaBlockedRef.current && noticeRef.current !== null) applyNotice(null)
 
     if (!wasPlaying) return
     // Not a user gesture — this is the seam the watchdog exists for.
     startPlayback(0, false)
-  }, [abort, applyPosition, pageKey, startPlayback])
+  }, [abort, applyNotice, applyPosition, pageKey, startPlayback])
 
   /**
    * Backgrounding the tab or locking the screen stops the audio on iOS regardless of what
@@ -464,7 +703,7 @@ export function useNarration({
   }, [clearTimers])
 
   return {
-    state,
+    state: available ? state : 'unavailable',
     position,
     chunks,
     needsGesture,
@@ -478,5 +717,8 @@ export function useNarration({
     setPrefs,
     voices,
     voiceStatus,
+    activeVoiceURI,
+    preparing,
+    notice,
   }
 }

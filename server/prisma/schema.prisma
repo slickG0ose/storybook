@@ -75,6 +75,7 @@ model Book {
   pages      Page[]
   versions   BookVersion[]
   illustration_versions IllustrationVersion[]
+  narration_clips NarrationClip[]
   cartItems  CartItem[]
   orderItems OrderItem[]
   feedback   Feedback[]
@@ -92,6 +93,27 @@ model IllustrationVersion {
   book Book @relation(fields: [book_id], references: [id], onDelete: Cascade)
 
   @@unique([book_id, page_number, version])
+}
+
+// Generated read-aloud audio, one row per (book, slot, voice, model, text).
+// Spec: .code-captain/specs/generated-narration/spec.md. The text hash is in the
+// key, so revised text never serves stale audio; segments are read and written
+// whole (ADR-002 JSON-column precedent), never queried.
+model NarrationClip {
+  id            Int      @id @default(autoincrement())
+  book_id       String
+  slot          String   // 'cover' | 'end' | 'p<N>'
+  voice_id      String   // 'af_heart' | 'am_michael'
+  model         String   // 'fal-ai/kokoro/american-english'
+  text_hash     String   // sha256 hex of the synthesised text
+  chars         Int      // what was billed against
+  segments_json String   // [{ index, start, end, key, durationMs }]
+  created_by    String?  // who paid
+  created_at    DateTime @default(now())
+
+  book Book @relation(fields: [book_id], references: [id], onDelete: Cascade)
+
+  @@unique([book_id, slot, voice_id, model, text_hash])
 }
 
 model BookVersion {

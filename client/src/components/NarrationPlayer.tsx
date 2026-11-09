@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type JSX } from 'react'
 import { LoaderCircle, Pause, Play, Settings2, SkipBack, SkipForward, Square } from 'lucide-react'
+import { GENERATED_VOICE_PREFIX } from '@storybook/shared'
 import { RATE_OPTIONS } from '../lib/narration/prefs'
 import type { NarrationState } from '../lib/narration/types'
 import type { UseNarrationResult } from '../hooks/useNarration'
@@ -32,6 +33,18 @@ const TAP_TO_CONTINUE = 'Tap play to continue.'
 
 /** Task 7 asserts this copy verbatim on the `installNoSpeech` path. */
 const UNAVAILABLE_COPY = "Read-aloud isn't available in this browser."
+
+/** Spec §Design question 6: visible text, not a tooltip, whenever a generated voice is in use. */
+const AI_DISCLOSURE = 'AI-generated voice.'
+
+/** Announced while generated clips are fetched or generated, before the first one plays. */
+const PREPARING_COPY = 'Preparing voice…'
+
+/**
+ * One full-width line in the player. Shared by the hint, the fallback notice, and the AI
+ * disclosure so the three stack identically; colour is added per line.
+ */
+const LINE_CLASS = 'w-full text-center text-sm'
 
 const TRANSPORT_CLASS =
   'min-h-11 min-w-11 inline-flex items-center justify-center rounded-full border-none ' +
@@ -76,9 +89,13 @@ function statusFor(
   state: NarrationState,
   previousState: NarrationState,
   needsGesture: boolean,
+  preparing: boolean,
   pageLabel: string,
 ): string {
   if (needsGesture) return TAP_TO_CONTINUE
+  // `preparing` arrives with `state === 'playing'`; saying "Reading page 3" over silence
+  // would be a lie, so the wait is announced instead and the read follows when audio does.
+  if (preparing) return PREPARING_COPY
   if (state === 'playing') return `Reading ${pageLabel}`
   if (state === 'paused') return 'Paused'
   if (state === 'idle' && (previousState === 'playing' || previousState === 'paused')) {
@@ -92,12 +109,29 @@ export default function NarrationPlayer({
   pageLabel,
   className,
 }: NarrationPlayerProps): JSX.Element {
-  const { state, needsGesture, prefs, setPrefs, voices, voiceStatus } = narration
+  const {
+    state,
+    needsGesture,
+    prefs,
+    setPrefs,
+    voices,
+    voiceStatus,
+    activeVoiceURI,
+    preparing,
+    notice,
+  } = narration
 
   const playing = state === 'playing'
   const unavailable = state === 'unavailable' || voiceStatus === 'unavailable'
   const loading = !unavailable && voiceStatus === 'loading'
   const disabled = unavailable || loading
+
+  const generatedVoices = voices.filter((voice) => voice.kind === 'generated')
+  const deviceVoices = voices.filter((voice) => voice.kind === 'device')
+  // Keyed off the voice a Play press would use, not `prefs.voiceURI`: with no saved choice
+  // the default ladder picks `generated:af_heart`, and that must be disclosed too.
+  const aiVoiceActive =
+    !unavailable && activeVoiceURI !== null && activeVoiceURI.startsWith(GENERATED_VOICE_PREFIX)
 
   const [statusMessage, setStatusMessage] = useState('')
   const previousStateRef = useRef<NarrationState>(state)
@@ -105,11 +139,11 @@ export default function NarrationPlayer({
   useEffect(() => {
     const previousState = previousStateRef.current
     previousStateRef.current = state
-    const next = statusFor(state, previousState, needsGesture, pageLabel)
+    const next = statusFor(state, previousState, needsGesture, preparing, pageLabel)
     // Never re-announce the same string twice in a row — React bails out on an identical
     // value, so the live region's text node does not change and nothing is re-read.
     setStatusMessage((current) => (current === next ? current : next))
-  }, [state, needsGesture, pageLabel])
+  }, [state, needsGesture, preparing, pageLabel])
 
   return (
     <div
@@ -143,7 +177,20 @@ export default function NarrationPlayer({
           aria-pressed={playing}
           className={PLAY_CLASS}
         >
-          {playing ? <Pause size={20} aria-hidden="true" /> : <Play size={20} aria-hidden="true" />}
+          {/* The accessible name stays Play/Pause while preparing — pausing a slow
+              generation is a real action — and only the icon says "wait". */}
+          {preparing ? (
+            <LoaderCircle
+              size={20}
+              aria-hidden="true"
+              data-testid="narration-preparing"
+              className="motion-safe:animate-spin"
+            />
+          ) : playing ? (
+            <Pause size={20} aria-hidden="true" />
+          ) : (
+            <Play size={20} aria-hidden="true" />
+          )}
         </button>
 
         <button
@@ -197,9 +244,32 @@ export default function NarrationPlayer({
       {needsGesture && !unavailable && (
         <p
           data-testid="narration-hint"
-          className="w-full text-center text-sm text-amber-700 dark:text-amber-300"
+          className={`${LINE_CLASS} text-amber-700 dark:text-amber-300`}
         >
           {TAP_TO_CONTINUE}
+        </p>
+      )}
+
+      {/* A fallback to the device voice: one line in the player, never a toast. */}
+      {notice !== null && !unavailable && (
+        <p
+          data-testid="narration-notice"
+          className={`${LINE_CLASS} text-gray-600 dark:text-gray-300`}
+        >
+          {notice}
+        </p>
+      )}
+
+      {/*
+        * Outside the settings disclosure on purpose: that is closed by default, and a
+        * disclosure nobody can see without opening a menu is not a disclosure.
+        */}
+      {aiVoiceActive && (
+        <p
+          data-testid="narration-ai-disclosure"
+          className={`${LINE_CLASS} text-purple-700 dark:text-purple-300`}
+        >
+          {AI_DISCLOSURE}
         </p>
       )}
 
@@ -225,13 +295,30 @@ export default function NarrationPlayer({
               >
                 {/* Null means "let the device decide" — the hook falls back to its own
                     default-voice ladder, which is the better answer on a device whose
-                    voice list we have never seen. */}
-                <option value="">Device default</option>
-                {voices.map((voice) => (
-                  <option key={voice.uri} value={voice.uri}>
-                    {voice.name}
-                  </option>
-                ))}
+                    voice list we have never seen. Once AI voices are listed that ladder
+                    starts at `generated:af_heart`, so "Device default" would mislabel it. */}
+                <option value="">
+                  {generatedVoices.length > 0 ? 'Default voice' : 'Device default'}
+                </option>
+                {/* Generated voices' `name` is already `label — description` (useVoices). */}
+                {generatedVoices.length > 0 && (
+                  <optgroup label="AI voices">
+                    {generatedVoices.map((voice) => (
+                      <option key={voice.uri} value={voice.uri}>
+                        {voice.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {deviceVoices.length > 0 && (
+                  <optgroup label="This device's voices">
+                    {deviceVoices.map((voice) => (
+                      <option key={voice.uri} value={voice.uri}>
+                        {voice.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
             </label>
 
