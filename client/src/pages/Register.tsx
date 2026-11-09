@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { UserPlus } from 'lucide-react'
+import { UserPlus, Loader2 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
 export default function Register() {
@@ -78,9 +78,14 @@ export default function Register() {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full bg-purple-500 hover:bg-purple-600 disabled:opacity-50 text-white py-3 rounded-xl font-bold transition-colors cursor-pointer"
+            aria-busy={submitting || undefined}
+            className="w-full bg-purple-500 hover:bg-purple-600 disabled:opacity-50 text-white py-3 rounded-xl font-bold transition-colors cursor-pointer flex items-center justify-center gap-2"
           >
-            {submitting ? 'Creating account...' : 'Create Account'}
+            {submitting ? (
+              <><Loader2 size={18} className="animate-spin" aria-hidden="true" /> Creating account...</>
+            ) : (
+              'Create Account'
+            )}
           </button>
         </form>
 
