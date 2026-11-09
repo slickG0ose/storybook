@@ -215,8 +215,12 @@ async function runGeneration(
         failed = true;
         // Never log the text (user content) or vendor detail beyond the message.
         console.error(
-          `Narration synthesis failed for ${bookId}/${slotKey(slot)}/${voiceId} segment ${index}:`,
-          err instanceof Error ? err.message : err,
+          'Narration synthesis failed for %s/%s/%s segment %s: %s',
+          bookId,
+          slotKey(slot),
+          voiceId,
+          String(index),
+          err instanceof Error ? err.message : String(err),
         );
       }
     }
