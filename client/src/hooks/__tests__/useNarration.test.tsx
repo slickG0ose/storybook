@@ -742,10 +742,32 @@ describe('useNarration — generated voices', () => {
       expect(control.spoken()).toEqual([])
     })
 
-    it('speaks a device voice through the device provider', async () => {
+    // Premise rewritten 2026-11-09: the picker is AI-only while generation is available, so
+    // a device voice persisted before that change is ignored rather than spoken.
+    it('ignores a persisted device voice while generation is available', async () => {
+      localStorage.setItem(
+        'storybook-narration',
+        JSON.stringify({ voiceURI: 'urn:voice:daniel', rate: 1, autoAdvance: false }),
+      )
       const { result, generated } = await renderGenerated()
 
-      act(() => result.current.setPrefs({ voiceURI: 'urn:voice:daniel' }))
+      expect(result.current.activeVoiceURI).toBe('generated:af_heart')
+      act(() => result.current.play())
+
+      expect(generated.calls).toHaveLength(1)
+      expect(generated.last().opts).toMatchObject({ voiceURI: 'generated:af_heart' })
+      expect(control.spoken()).toEqual([])
+    })
+
+    it('speaks a persisted device voice through the device provider when generation is unavailable', async () => {
+      stubVoicesRoute(false)
+      localStorage.setItem(
+        'storybook-narration',
+        JSON.stringify({ voiceURI: 'urn:voice:daniel', rate: 1, autoAdvance: false }),
+      )
+      const { result, generated } = await renderGenerated()
+
+      expect(result.current.activeVoiceURI).toBe('urn:voice:daniel')
       act(() => result.current.play())
 
       expect(generated.calls).toHaveLength(0)

@@ -7,7 +7,7 @@ Append-only log. Newest entries on top. Each entry should answer: *what was deci
 ## ADR-035 — Generated narration is a second `NarrationProvider` selected by the `generated:` voice URI; segmentation moves to `@storybook/shared`; device TTS is the per-page fallback
 
 **Date:** 2026-11-08
-**Status:** Accepted. Nick Konecny accepted the spec on 2026-11-08 and ruled open question 3 (generated voice on by default) to its default. Recorded at Task 11, before merge.
+**Status:** Accepted. Nick Konecny accepted the spec on 2026-11-08 and ruled open question 3 (generated voice on by default) to its default. Recorded at Task 11, before merge. Decision 2 and the picker design were amended 2026-11-09 (see the Amendment at the end of this entry).
 **Scope:** `generated-narration` spec ([#156](https://github.com/slickG0ose/storybook/issues/156)), Tasks 1, 7, 8, 9. Files: `client/src/lib/narration/{provider,generatedProvider,api,chunk}.ts`, `client/src/hooks/{useNarration,useVoices}.ts`, `shared/src/narration.ts`. Spec at [.code-captain/specs/generated-narration/spec.md](../specs/generated-narration/spec.md) §Design questions 3, 5, 7. **Amends [[ADR-011]] decisions 1, 4 and 6.** Read that ADR alongside this one.
 
 ### Decision
@@ -42,6 +42,17 @@ It would keep device and generated choices apart. It was rejected because it wou
 - **The voices route answer is cached at module level, once per session, including a failure.** A server whose availability changes mid-session won't be noticed until reload. The hook gained a `nextTarget` argument (for prefetch) and an `activeVoiceURI` result (the player's AI disclosure keys off it).
 - **What CI cannot prove: the gesture prime.** It is an assumption only an iPhone listen can confirm. It is a named PR-body obligation, along with a desktop Chrome listen. `client/src/test/fakeAudio.ts` (and the e2e media fake Task 10 adds) is our model of `HTMLMediaElement`, as ADR-011 decision 7 said of `fakeSpeech`.
 - **Pre-existing, found in Task 8 and not part of this decision:** `client/eslint.config.js` only lints `**/*.{js,jsx}`, so `npm run lint` covers no TypeScript. This needs its own issue.
+
+### Amendment, 2026-11-09 — the picker lists AI voices only
+
+Nick Konecny ruled this on 2026-11-09, after the first listen on prod: the device voices were the original complaint, so testers should not be offered them. Shipped on `agent/feat/ai-voices-only`. Four changes to decision 2 and to the picker:
+
+1. **When generated voices are available, the picker lists only them** (Heart, Michael). The "AI voices" / "This device's voices" optgroups and the empty "Default voice" / "Device default" option are gone. The select's value is always a `generated:*` URI.
+2. **Rung 0 no longer needs "nothing persisted".** While generated voices are available, the effective voice is the persisted `generated:*` voice if listed, otherwise `generated:af_heart`. A persisted *device* URI is ignored, not rewritten. Decision 2's "an old stored device URI still works" now holds only while generation is unavailable.
+3. **Decision 4 is unchanged.** The device provider remains the invisible per-page fallback, with the same triggers and notices.
+4. **With no generated voices available, the Voice select is hidden.** Speed and auto-advance stay, and the device ladder picks as before. A reader can no longer choose a device voice anywhere in the UI.
+
+AI-voice disclosure now rests on the visible "AI-generated voice." line alone, since the options no longer sit under an "AI voices" group label. The spec's §Default ladder and Design question 6 carry a superseded note pointing here.
 
 ---
 

@@ -106,8 +106,9 @@ function documentLanguage(): string {
 /**
  * The default-voice ladder, in order. Every rung exists for a reason:
  *
- * 0. `generated:af_heart` — when generated voices are available and **nothing is
- *    persisted** (Nick's ruling, 2026-11-08). See `pickDefaultVoiceURI`.
+ * 0. When generated voices are available, the ladder stops here: a persisted generated
+ *    voice, else `generated:af_heart` (Nick's rulings, 2026-11-08 and 2026-11-09). See
+ *    `pickDefaultVoiceURI`. Rungs 1–6 are the device ladder.
  * 1. The persisted choice — **only if it is still in the list.** Voices disappear across
  *    OS updates and do not exist at all on a different device.
  * 2. A local voice matching `navigator.language`. Local voices need no network, so they
@@ -151,25 +152,30 @@ function pickDeviceVoiceURI(
 }
 
 /**
- * Rung 0, then the device ladder. Rungs 2–5 run over **device voices only**: a generated
- * voice is tagged `en-US` and would otherwise win rung 3 on any English page, silently
- * overriding a reader who persisted a device voice that has since vanished.
+ * When generated voices are available the picker offers **only** them (Nick's ruling,
+ * 2026-11-09), so the effective voice is always a `generated:*` URI: the persisted one if
+ * it is still listed, otherwise `generated:af_heart`. A persisted **device** voice — saved
+ * before the picker went AI-only — is ignored here rather than rewritten in storage; the
+ * next pick overwrites it. The device ladder survives as the invisible fallback
+ * (`deviceDefaultVoiceURI`) for when generation cannot be used on a given play.
  *
- * A persisted `generated:*` URI while generation is unavailable is simply "not in the
- * list" — rung 1's existing rule — so it falls through to the device ladder unchanged.
+ * When generated voices are not available this is the device ladder unchanged. A persisted
+ * `generated:*` URI is then simply "not in the list" — rung 1's existing rule — so it falls
+ * through to the device ladder.
  */
 function pickDefaultVoiceURI(
   generated: NarrationVoice[],
   device: NarrationVoice[],
   persistedVoiceURI: string | null,
 ): string | null {
-  const hasGeneratedDefault = generated.some((voice) => voice.uri === DEFAULT_GENERATED_VOICE_URI)
-  if (persistedVoiceURI === null && hasGeneratedDefault) return DEFAULT_GENERATED_VOICE_URI
-  if (persistedVoiceURI && generated.some((voice) => voice.uri === persistedVoiceURI)) {
-    return persistedVoiceURI
+  if (generated.length > 0) {
+    if (persistedVoiceURI && generated.some((voice) => voice.uri === persistedVoiceURI)) {
+      return persistedVoiceURI
+    }
+    const heart = generated.find((voice) => voice.uri === DEFAULT_GENERATED_VOICE_URI)
+    return (heart ?? generated[0])?.uri ?? null
   }
-  // Last resort on a device with no speech engine at all: the generated voice beats silence.
-  return pickDeviceVoiceURI(device, persistedVoiceURI) ?? generated[0]?.uri ?? null
+  return pickDeviceVoiceURI(device, persistedVoiceURI)
 }
 
 interface VoiceListState {

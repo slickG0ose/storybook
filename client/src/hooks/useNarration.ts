@@ -65,6 +65,20 @@ function isGeneratedURI(uri: string | null): uri is string {
   return uri !== null && uri.startsWith(GENERATED_VOICE_PREFIX)
 }
 
+/**
+ * The voice a Play press would use. With AI voices available, `defaultVoiceURI` is already
+ * a `generated:*` URI (useVoices ignores a persisted device voice then). Without them, a
+ * persisted device voice is honoured as-is.
+ */
+function resolveActiveVoiceURI(
+  persisted: string | null,
+  generatedAvailable: boolean,
+  defaultVoiceURI: string | null,
+): string | null {
+  if (!generatedAvailable && persisted !== null && !isGeneratedURI(persisted)) return persisted
+  return defaultVoiceURI
+}
+
 export interface UseNarrationArgs {
   /** The text of the page currently on screen, or null on spreads with nothing to read. */
   text: string | null
@@ -154,13 +168,17 @@ export function useNarration({
   const generatedUsable = generatedCapable && generatedAvailable
   const available = deviceAvailable || generatedUsable
 
+  const generatedAvailableRef = useRef(generatedAvailable)
+  generatedAvailableRef.current = generatedAvailable
+
   /**
-   * A persisted device voice is honoured as-is (the device provider ignores it if it has
-   * gone). Otherwise the ladder decides — which already maps a persisted `generated:*` voice
-   * to the device ladder when generation is unusable, since it is then not in the list.
+   * While AI voices are offered the picker lists only them, so the ladder's generated pick
+   * wins and a persisted device voice is ignored. Otherwise a persisted device voice is
+   * honoured as-is (the device provider ignores it if it has gone), and the ladder decides
+   * the rest — which already maps a persisted `generated:*` voice to the device ladder,
+   * since it is then not in the list.
    */
-  const activeVoiceURI =
-    prefs.voiceURI !== null && !isGeneratedURI(prefs.voiceURI) ? prefs.voiceURI : defaultVoiceURI
+  const activeVoiceURI = resolveActiveVoiceURI(prefs.voiceURI, generatedAvailable, defaultVoiceURI)
 
   // Never `'unavailable'` internally: availability is applied on the way out, so a late
   // voices-route answer needs no state transition to bring the player to life.
@@ -621,11 +639,15 @@ export function useNarration({
         if (!quotaBlockedRef.current) applyNotice(null)
         // The ref the selector reads is otherwise only refreshed on the next render.
         activeVoiceURIRef.current =
-          merged.voiceURI !== null && !isGeneratedURI(merged.voiceURI)
+          merged.voiceURI !== null &&
+          isGeneratedURI(merged.voiceURI) &&
+          voices.some((voice) => voice.uri === merged.voiceURI)
             ? merged.voiceURI
-            : merged.voiceURI !== null && voices.some((voice) => voice.uri === merged.voiceURI)
-              ? merged.voiceURI
-              : defaultVoiceURIRef.current
+            : resolveActiveVoiceURI(
+                merged.voiceURI,
+                generatedAvailableRef.current,
+                defaultVoiceURIRef.current,
+              )
       }
 
       // A handle that can retune live (the `<audio>` provider's `playbackRate`) gets the

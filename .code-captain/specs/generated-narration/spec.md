@@ -135,7 +135,7 @@ current one starts playing.**
   starts with `generated:` **and** the voices route said `available: true`. Otherwise it uses
   `deviceProvider`. This is a two-branch conditional, not a registry. ADR-011 decision 4
   said the selector earns its place when a second provider lands, and it now has.
-- **Default ladder:** new rung 0. When generated voices are available and nothing is
+- **Default ladder** *(superseded 2026-11-09: AI-only picker, see the ADR-035 Amendment)*: new rung 0. When generated voices are available and nothing is
   persisted, the default is `generated:af_heart`. A persisted `generated:*` URI while
   generation is unavailable falls through to the existing device ladder. That is rung 1's
   existing "only if it is still in the list" rule, unchanged.
@@ -234,6 +234,8 @@ but it should be known. Checking the billed amount of the existing sentence-by-s
 sample in the fal dashboard settles it.
 
 ### Design question 6 — AI-voice disclosure
+
+> **Superseded 2026-11-09.** The picker now lists AI voices only, with no optgroups, and disclosure rests on the "AI-generated voice." line. See the ADR-035 Amendment in `.code-captain/product/decisions.md`.
 
 **Default: disclose in the voice picker and in the playing status, not in a modal.**
 

@@ -72,8 +72,9 @@ test.describe('Read-aloud on mobile', () => {
         await expectNoHorizontalOverflow(page);
         await expectTapTargets(page, PLAYER_CONTROLS, PRIMARY_TAP_MIN);
 
-        // Open: the two <select>s and the checkbox row are the realistic overflow risk, and
-        // the selects are only measurable as tap targets once they are actually rendered.
+        // Open: the <select>s (speed always; voice only when AI voices are available) and
+        // the checkbox row are the realistic overflow risk, and the selects are only
+        // measurable as tap targets once they are actually rendered.
         await page.getByTestId('narration-settings').locator('summary').click();
         await expect(page.locator('[data-testid="narration-settings"][open]')).toHaveCount(1);
         await expectNoHorizontalOverflow(page);
