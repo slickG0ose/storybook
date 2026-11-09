@@ -430,7 +430,7 @@ export default function Admin() {
               aria-pressed={active}
               className={`flex items-center gap-1.5 min-h-11 px-4 py-1.5 rounded-full text-sm font-semibold transition-colors cursor-pointer border-none ${
                 active
-                  ? 'bg-purple-500 text-white'
+                  ? 'bg-purple-500 dark:bg-purple-500 text-white dark:text-white'
                   : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
               }`}
             >
