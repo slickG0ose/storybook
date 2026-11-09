@@ -174,10 +174,14 @@ export async function generateNarration(
   }
 }
 
+// Strips control characters so a crafted id can't forge log lines (CodeQL js/log-injection).
+// The newline replace must stay LAST and keep the literal `/\n|\r/g` shape: that is the
+// form CodeQL recognises as a log-injection sanitizer. `/\r?\n|\r/g` (the earlier autofix)
+// strips the same characters but is not recognised, so the alert stayed open.
 function toLogSafe(value: unknown): string {
   return String(value)
-    .replace(/\r?\n|\r/g, '')
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+    .replace(/\n|\r/g, '');
 }
 
 async function runGeneration(
