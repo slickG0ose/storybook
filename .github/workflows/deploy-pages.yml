@@ -1,20 +1,24 @@
 name: Deploy client to GitHub Pages
 
-# Manual-only trigger until Pages is enabled in repo settings
-# (Settings > Pages > Source: GitHub Actions) and VITE_API_BASE_URL is
-# set as a repo Action secret (the Render service URL).
+# Deploys on every push to master that touches the client bundle's inputs,
+# so the live site can't fall behind master the way it did for two months
+# before #198 (Render already auto-deploys the server on the same push).
+# workflow_dispatch stays for redeploying by hand, e.g. after changing the
+# VITE_API_BASE_URL secret or VITE_PUBLIC_ORIGIN variable.
 #
-# To enable auto-deploy on every push to master, uncomment the `push`
-# block below. See docs/deploy-spike-render.md for the prereqs.
+# Known window: a PR that changes server and client together lands on Pages
+# in ~1-2 min while Render takes longer to build, so for a few minutes the
+# new client can talk to the old server. Keep wire changes additive
+# (server-first) when a PR spans both. See docs/deploy-spike-render.md.
 on:
   workflow_dispatch:
-  # push:
-  #   branches: [master]
-  #   paths:
-  #     - 'client/**'
-  #     - 'shared/**'
-  #     - 'package-lock.json'
-  #     - '.github/workflows/deploy-pages.yml'
+  push:
+    branches: [master]
+    paths:
+      - 'client/**'
+      - 'shared/**'
+      - 'package-lock.json'
+      - '.github/workflows/deploy-pages.yml'
 
 permissions:
   contents: read

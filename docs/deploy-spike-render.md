@@ -11,7 +11,7 @@ This document is the click-by-click for taking the artifacts in this branch and 
 | Artifact | Purpose |
 |---|---|
 | `render.yaml` | Render Blueprint — defines the Express web service + free Postgres DB |
-| `.github/workflows/deploy-pages.yml` | Builds `client/` with `VITE_API_BASE_URL` baked in, deploys to GitHub Pages. Manual-trigger only until prereqs are met |
+| `.github/workflows/deploy-pages.yml` | Builds `client/` with `VITE_API_BASE_URL` baked in, deploys to GitHub Pages. Runs on push to `master` (client/shared paths) since #198; also runnable by hand |
 | `.github/workflows/deploy.yml` | Existing placeholder, updated comment to reference this doc |
 | `client/src/lib/apiBase.ts` | Tiny helper exporting `api(path)` that prepends `VITE_API_BASE_URL` (empty in dev) |
 | `client/**` (33 fetch sites + 8 img src sites) | All `/api/*` calls and image references now go through `api()` |
@@ -84,9 +84,9 @@ Open the deployed client URL. Smoke-test:
 
 If anything fails, see **Common issues** below.
 
-### Step 5 (optional) — Enable auto-deploy on push
+### Step 5 — Auto-deploy on push (enabled, #198)
 
-Once Step 4 is green and you trust the pipeline, uncomment the `push` block in `.github/workflows/deploy-pages.yml`:
+Done. The `push` trigger in `.github/workflows/deploy-pages.yml` has been live since #198. While it was manual, the live client sat two months behind `master` and broke the create flow against the newer server. The trigger is:
 
 ```yaml
 on:
