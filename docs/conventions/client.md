@@ -89,6 +89,47 @@ When in doubt, search for an existing component using the same surface (card, bu
 
 When a user logs in, the cart stays attached to the session ID (no per-user persistence today). Cart is cleared on checkout via `clearCart()`.
 
+## Commerce flag (`VITE_COMMERCE_ENABLED`)
+
+A Vite build-time switch for the commerce surface: book prices, the cart and checkout. It exists so the tester build on GitHub Pages can hide a demo checkout that is not under test.
+
+- **Default is on.** Commerce is off only for an explicit `false`, `0`, `off` or `no` (trimmed, case-insensitive). Unset, empty or anything unrecognised means on, so local dev and every existing test behave as before. Leave it unset in `client/.env.local`.
+- **`commerceEnabled()` from `client/src/lib/commerce.ts` is the only reader.** Never read `import.meta.env.VITE_COMMERCE_ENABLED` anywhere else. Call it **inside the component body, not at module scope** — a module-level constant is fixed at import time and cannot be stubbed per test.
+- **Where it is set:** the literal `'false'` in the "Build client" step of `.github/workflows/deploy-pages.yml`. Flipping it is a one-line PR, and merging that PR redeploys Pages.
+
+What it gates when off:
+
+| Surface | File | Off behaviour |
+|---|---|---|
+| Book card | `components/BookCard.tsx` | No price; "Add to Cart" becomes a "Read" `<Link>` to `/book/:id` (`aria-label="Read <title>"`) |
+| Quick-preview modal | `pages/Home.tsx` | No price |
+| Published book page | `pages/BookDetail.tsx` | No price, no "Add to Cart" |
+| Navbar | `components/Navbar.tsx` | No Cart link or count badge |
+| Routes | `App.tsx` | `/cart`, `/checkout`, `/order/:id` are not registered and fall through to `NotFound` |
+| Cart provider | `context/CartContext.tsx` | The mount-time `fetchCart()` is skipped |
+| Author copy | `components/PublishStateBar.tsx`, `pages/MyBooks.tsx` | Wording drops "buy" and the receipt sentence |
+
+**`CartProvider` and the session stay mounted with commerce off.** Only the mount fetch is gated. The provider still issues the `storybook-session` UUID, and `FeedbackDialog` reads `useCart().sessionId` for every feedback report. Do not unmount the provider or gate `getSessionId()` behind the flag — that is the session guardrail below.
+
+Not gated: AI generation cost labels ("Illustrate All (~$0.08)", "Regenerate ($0.04)") and the admin page's spend figures. Those are spend-meter numbers, not book prices.
+
+The flag is client-only. `/api/cart/*` and `/api/orders` stay reachable by direct API call.
+
+### Testing a gated surface
+
+Flag-off coverage is an **additive** `describe` block in the existing test file. Do not edit or remove a flag-on assertion.
+
+```ts
+describe('commerce off', () => {
+  beforeEach(() => vi.stubEnv('VITE_COMMERCE_ENABLED', 'false'));
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('renders no price', () => { /* ... */ });
+});
+```
+
+This works because `commerceEnabled()` reads the env at call time. The end-to-end counterpart is the `commerce-off` Playwright project — see `testing.md` §The `commerce-off` project.
+
 ## Auth (`AuthContext`)
 
 - On mount: calls `/api/auth/me` with the token from `localStorage` (key `storybook-auth`). If 401, clears the token.

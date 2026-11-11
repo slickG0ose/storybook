@@ -238,6 +238,8 @@ The `outDir` sits under `node_modules/` so git, eslint and `tsc` already ignore 
 **Depends on:** Tasks 2, 3, 4
 **Parallel-safe with:** 5
 
+**Status:** Done (2026-11-10) — the PR-body line is owed at ship time
+
 **Files to add or change (3):**
 - `.github/workflows/deploy-pages.yml` — in the "Build client" `env`, add `VITE_COMMERCE_ENABLED: 'false'` with a comment: tester phase, hides prices and the cart; delete the line (or set `'true'`) to bring commerce back; a literal rather than a repo variable so the flip is a reviewed PR that triggers its own deploy
 - `docs/conventions/client.md` — short "Commerce flag" section: the variable, `commerceEnabled()` as the only reader, default on, the surfaces it gates, the `vi.stubEnv` test pattern, and that `CartProvider`/session stay mounted

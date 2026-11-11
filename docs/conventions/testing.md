@@ -183,6 +183,19 @@ the worked example.
 - `fullyParallel: true` locally; 1 worker in CI.
 - HTML report; trace on first retry; screenshot only on failure.
 
+### The `commerce-off` project
+
+The client has a build-time flag, `VITE_COMMERCE_ENABLED`, that hides prices, the cart and checkout (see `client.md` §Commerce flag). Every other project runs with commerce **on**; `commerce-off` is the one project that runs with it off.
+
+- **Specs:** `e2e/tests/commerce-off/*.spec.ts`. The `chromium` project's `testIgnore` excludes that directory, so these specs run only here.
+- **Viewport:** mobile, matching `mobile-pixel` (393×851, touch). Specs reuse `forEachTheme`, `expectNoHorizontalOverflow` and `expectTapTargets` from `e2e/tests/mobile/_helpers.ts`, and claim the **correctness** half of Done criterion #2 (ADR-009).
+- **Port:** `COMMERCE_OFF_PORT` in `e2e/ports.ts`, default `4174`; `COMMERCE_OFF_BASE` is the project's `baseURL`. Override it alongside the other three ports when running against a second checkout.
+- **Build:** its own `webServer` entry runs `vite build` with `VITE_COMMERCE_ENABLED=false`, then `vite preview` on that port. It is a production build, like `pwa`, because the flag is statically replaced at build time and that artifact is what testers get. It builds into `client/node_modules/.cache/commerce-off-dist`, not `client/dist`, so it cannot race the `pwa` build's `emptyOutDir`. It costs one extra client build per e2e run.
+
+The two existing client `webServer` entries pin `VITE_COMMERCE_ENABLED: 'true'` in their `env`. Process env outranks `.env` files in Vite, so a `client/.env.local` with the flag off does not leak into the default projects.
+
+**One case is not covered: a client dev server you started by hand with the flag off.** Locally, `reuseExistingServer` makes Playwright drive whatever already owns `:5173`, and the pinned `env` applies only to servers Playwright spawns itself. The default projects then fail wherever a spec waits on the "Add to Cart" button, which many use as the Home-page readiness sentinel. Stop that server, or restart it with the flag unset, before running the suite.
+
 ### Retries and the flake gate
 
 CI sets `retries: 1` **and** `failOnFlakyTests: true`, so the two settings decide one thing together:
