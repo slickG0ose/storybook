@@ -75,7 +75,7 @@ Counts are a **snapshot, measured 2026-08-30** — they drift with every PR that
 | Client tests | Vitest + RTL, plus typecheck, lint, and build |
 | E2E | Playwright (uploads a report artifact on failure) |
 
-Other workflows: `codeql.yml` (security scanning), `deploy-pages.yml` (client → GitHub Pages, on push to `master` touching `client/**`, `shared/**` or the lockfile, plus manual `workflow_dispatch`), `deploy.yml` (placeholder).
+Other workflows: `codeql.yml` (security scanning), `deploy-pages.yml` (client → GitHub Pages, on push to `master` touching `client/**`, `shared/**` or the lockfile, plus manual `workflow_dispatch`), `deploy.yml` (placeholder), `keep-warm.yml` (pings the Render server's `/api/health` every 10 min so the free instance doesn't sleep; best-effort, see its header, #207).
 
 **All four jobs are required status checks** — a red PR cannot merge. `strict_required_status_checks_policy` is `false`, so a branch does **not** have to be rebased onto the latest `master` before merging.
 
