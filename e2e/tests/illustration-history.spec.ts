@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { API_BASE } from '../ports';
+import { STUB_IMAGE } from './_editPublished';
 
 // Illustration history + revert (T1.4) e2e — fully route-mocked.
 //
@@ -86,6 +87,18 @@ test.describe('Illustration history — revert prior version', () => {
     expect(res.ok()).toBeTruthy();
     user = (await res.json()) as RegisterResponse;
     createdEmails.push(email);
+
+    // The three version files do not exist on disk, so serve real image bytes for them.
+    // The client treats an illustration that fails to load as no illustration (the page
+    // falls back to its un-illustrated state, which has no History button), so a 404 here
+    // would exercise that fallback instead of the history flow this spec is about.
+    await page.route('**/uploads/illustrations/**', route =>
+      route.fulfill({
+        status: 200,
+        contentType: 'image/png',
+        body: Buffer.from(STUB_IMAGE.split(',')[1]!, 'base64'),
+      }),
+    );
 
     // Set up route mocks BEFORE navigating so the initial fetch hits them.
     await page.route(`**/api/books/${BOOK_ID}`, async route => {

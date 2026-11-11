@@ -10,6 +10,8 @@ import { resolveReaderTypography } from '../lib/typography'
 import { PER_IMAGE_COST_USD, fmtUsd, portraitStepCostNote } from '../lib/cost'
 import type { BookWithPages, BookVersion, FontFamily, IllustrationVersion, Page, TextSize } from '../types'
 import BookSpread from '../components/BookSpread'
+import FallbackImage from '../components/FallbackImage'
+import { useImageFallback } from '../hooks/useImageFallback'
 import PublishStateBar from '../components/PublishStateBar'
 
 // A character "requires" a portrait (for the approve-cast soft gate) when its
@@ -258,6 +260,10 @@ export default function BookDetail() {
 
     return () => { cancelled = true }
   }, [book, user])
+
+  // Reader view: a stored illustration URL whose file is gone (404) renders as a page
+  // with no illustration. Declared above the early returns because it is a hook.
+  const readerIllustration = useImageFallback(book?.pages?.[currentPage]?.illustration_url)
 
   if (loading) return <div className="text-center py-20 text-gray-400 text-lg">Loading...</div>
   if (!book) return <div className="text-center py-20 text-gray-400 text-lg">Book not found</div>
@@ -724,15 +730,12 @@ export default function BookDetail() {
             className="md:w-1/3 h-64 md:h-auto flex items-center justify-center text-8xl relative"
             style={{ backgroundColor: book.cover_color + '20' }}
           >
-            {book.cover_url ? (
-              <img
-                src={api(book.cover_url)}
-                alt={`Cover of ${book.title}`}
-                className="absolute inset-0 h-full w-full object-cover"
-              />
-            ) : (
-              <span className="drop-shadow-xl">{book.cover_emoji}</span>
-            )}
+            <FallbackImage
+              url={book.cover_url}
+              alt={`Cover of ${book.title}`}
+              className="absolute inset-0 h-full w-full object-cover"
+              fallback={<span className="drop-shadow-xl">{book.cover_emoji}</span>}
+            />
             {isOwner && (
               <span className={`absolute top-4 right-4 text-xs font-bold px-2.5 py-1 rounded-full ${
                 isDraft
@@ -1055,12 +1058,14 @@ export default function BookDetail() {
                 Page {currentPage + 1} of {pages.length}
               </div>
 
-              {page.illustration_url && (
+              {readerIllustration.src && (
                 <div className="mb-6">
                   <div className="rounded-xl overflow-hidden shadow-md">
                     <img
-                      src={api(page.illustration_url)}
+                      key={readerIllustration.src}
+                      src={api(readerIllustration.src)}
                       alt={page.illustration_description}
+                      onError={readerIllustration.onError}
                       className="w-full h-auto"
                     />
                   </div>
@@ -1162,7 +1167,7 @@ export default function BookDetail() {
 
               <p className={`${readerTextClass} mb-6`}>{page.text}</p>
 
-              {page.illustration_description && !page.illustration_url && (
+              {page.illustration_description && !readerIllustration.src && (
                 <div className="bg-white/60 dark:bg-gray-600/40 rounded-xl p-4 border border-amber-200 dark:border-gray-600 flex items-start gap-3">
                   <Image size={18} className="text-amber-500 mt-0.5 shrink-0" />
                   <div>

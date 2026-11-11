@@ -310,3 +310,38 @@ describe('Home — commerce off', () => {
     expect(screen.queryByRole('button', { name: 'Add to Cart' })).not.toBeInTheDocument()
   })
 })
+
+// The catalog surface from the 2026-11-11 audit: a card whose cover_url 404s showed an
+// empty box with a broken-image icon. It must show the emoji cover instead.
+describe('Home — a catalog cover fails to load', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('falls back to that book\'s cover emoji and leaves the other cards alone', async () => {
+    const books: Book[] = [
+      { ...mockBooks[0]!, is_featured: false, cover_url: '/illustrations/book-1/cover.png' },
+      { ...mockBooks[1]!, cover_url: '/illustrations/book-2/cover.png' },
+    ]
+    vi.spyOn(globalThis, 'fetch').mockImplementation(input => {
+      const url = String(input)
+      const body = url.includes('/themes') ? mockThemes : url.includes('/age-ranges') ? mockAgeRanges : books
+      return Promise.resolve(
+        new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } })
+      )
+    })
+
+    const { container } = renderHome()
+    await screen.findByText('Kindness Kingdom')
+    const dead = container.querySelector('img[src="/illustrations/book-1/cover.png"]')
+    expect(dead).toBeInTheDocument()
+    expect(screen.queryByText('🦊')).not.toBeInTheDocument()
+
+    fireEvent.error(dead!)
+
+    expect(container.querySelector('img[src="/illustrations/book-1/cover.png"]')).not.toBeInTheDocument()
+    expect(screen.getByText('🦊')).toBeInTheDocument()
+    expect(container.querySelector('img[src="/illustrations/book-2/cover.png"]')).toBeInTheDocument()
+    expect(screen.queryByText('👑')).not.toBeInTheDocument()
+  })
+})

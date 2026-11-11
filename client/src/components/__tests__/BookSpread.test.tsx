@@ -807,3 +807,47 @@ describe('BookSpread — typography picker visibility', () => {
     expect(screen.getByTestId('typography-saving')).toBeInTheDocument()
   })
 })
+
+/**
+ * A stored image URL can outlive its file (404 from storage). The reader must render
+ * what it renders for a book with no cover / a page with no illustration, never the
+ * browser's broken-image icon and alt text.
+ */
+describe('BookSpread — image fails to load', () => {
+  it('falls back to the cover emoji when the cover image errors', () => {
+    renderSpread({ book: { ...mockBook, cover_url: '/illustrations/book-1/cover.png' } })
+    const cover = screen.getByRole('img', { name: mockBook.title })
+    expect(screen.queryByText(mockBook.cover_emoji)).not.toBeInTheDocument()
+
+    fireEvent.error(cover)
+
+    expect(screen.queryByRole('img', { name: mockBook.title })).not.toBeInTheDocument()
+    expect(screen.getByText(mockBook.cover_emoji)).toBeInTheDocument()
+  })
+
+  it('renders the no-illustration panel when a page illustration errors', async () => {
+    renderSpread({ book: illustratedBook, isOwner: false, isDraft: false })
+    await goToFirstStoryPage()
+    const description = illustratedBook.pages[0]!.illustration_description
+    const img = screen.getByRole('img', { name: description })
+    expect(screen.queryByText('Illustration prompt')).not.toBeInTheDocument()
+
+    fireEvent.error(img)
+
+    expect(screen.queryByRole('img', { name: description })).not.toBeInTheDocument()
+    expect(screen.getByText('Illustration prompt')).toBeInTheDocument()
+    expect(screen.getByText(description)).toBeInTheDocument()
+  })
+
+  it('swaps the owner from re-roll controls to the no-illustration controls', async () => {
+    renderSpread({ book: illustratedBook, isOwner: true, isDraft: true })
+    await goToFirstStoryPage()
+    expect(screen.getByText('What to change on re-roll')).toBeInTheDocument()
+
+    fireEvent.error(screen.getByRole('img', { name: illustratedBook.pages[0]!.illustration_description }))
+
+    expect(screen.queryByText('What to change on re-roll')).not.toBeInTheDocument()
+    expect(screen.getByText('Illustration prompt')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /generate illustration/i })).toBeInTheDocument()
+  })
+})
