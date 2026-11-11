@@ -723,7 +723,15 @@ export default function BookDetail() {
             className="md:w-1/3 h-64 md:h-auto flex items-center justify-center text-8xl relative"
             style={{ backgroundColor: book.cover_color + '20' }}
           >
-            <span className="drop-shadow-xl">{book.cover_emoji}</span>
+            {book.cover_url ? (
+              <img
+                src={api(book.cover_url)}
+                alt={`Cover of ${book.title}`}
+                className="absolute inset-0 h-full w-full object-cover"
+              />
+            ) : (
+              <span className="drop-shadow-xl">{book.cover_emoji}</span>
+            )}
             {isOwner && (
               <span className={`absolute top-4 right-4 text-xs font-bold px-2.5 py-1 rounded-full ${
                 isDraft

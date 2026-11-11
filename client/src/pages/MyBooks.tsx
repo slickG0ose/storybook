@@ -165,7 +165,16 @@ export default function MyBooks() {
                 className="h-48 flex items-center justify-center text-7xl transition-transform duration-300 group-hover:scale-105 relative"
                 style={{ backgroundColor: book.cover_color + '20' }}
               >
-                <span className="drop-shadow-lg">{book.cover_emoji}</span>
+                {book.cover_url ? (
+                  <img
+                    src={api(book.cover_url)}
+                    alt=""
+                    loading="lazy"
+                    className="absolute inset-0 h-full w-full object-cover object-top"
+                  />
+                ) : (
+                  <span className="drop-shadow-lg">{book.cover_emoji}</span>
+                )}
                 <div className="absolute top-3 right-3 flex items-center gap-1.5">
                   {book.status === 'draft' && book.pages && book.pages.length > 0 && (() => {
                     const unillustrated = book.pages.filter(p => !p.illustration_url).length

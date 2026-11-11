@@ -105,6 +105,32 @@ describe('Home', () => {
     expect(screen.getByText('Magic')).toBeInTheDocument()
   })
 
+  it('shows an error with a retry when the catalog fails to load, then recovers', async () => {
+    // A 502 with an empty body is what the Vite proxy and Render both return while the
+    // API is down. Before this was handled, the skeleton grid stayed up forever.
+    let failing = true
+    vi.spyOn(globalThis, 'fetch').mockImplementation(input => {
+      if (failing) return Promise.resolve(new Response('', { status: 502 }))
+      const url = String(input)
+      const body = url.includes('/themes') ? mockThemes : url.includes('/age-ranges') ? mockAgeRanges : mockBooks
+      return Promise.resolve(
+        new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } })
+      )
+    })
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    renderHome()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent("We couldn't load the books just now.")
+    expect(screen.queryByLabelText('Loading books')).not.toBeInTheDocument()
+
+    failing = false
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+
+    expect(await screen.findByText('Kindness Kingdom')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
   it('renders book cards after fetching', async () => {
     let callCount = 0
     vi.spyOn(globalThis, 'fetch').mockImplementation(() => {

@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { useCart } from '../context/CartContext'
 import type { Book } from '../types'
+import { api } from '../lib/apiBase'
 
 interface BookCardProps {
   book: Book;
@@ -48,12 +49,21 @@ export default function BookCard({ book, variant = 'default' }: BookCardProps) {
       className={`no-underline shrink-0 ${wide ? 'w-full sm:w-2/5 md:w-1/3' : ''}`}
     >
       <div
-        className={`flex items-center justify-center transition-transform duration-500 ease-out group-hover:scale-[1.06] ${
+        className={`relative flex items-center justify-center transition-transform duration-500 ease-out group-hover:scale-[1.06] ${
           wide ? 'h-36 text-6xl sm:h-full sm:min-h-44 sm:text-8xl' : 'h-36 sm:h-48 text-6xl sm:text-7xl'
         }`}
         style={{ backgroundColor: book.cover_color + '20' }}
       >
-        <span className="drop-shadow-lg">{book.cover_emoji}</span>
+        {book.cover_url ? (
+          <img
+            src={api(book.cover_url)}
+            alt=""
+            loading="lazy"
+            className="absolute inset-0 h-full w-full object-cover object-top"
+          />
+        ) : (
+          <span className="drop-shadow-lg">{book.cover_emoji}</span>
+        )}
       </div>
     </Link>
   )
