@@ -189,6 +189,7 @@ export function buildPortraitPrompt(input: {
 **Zone:** server
 **Depends on:** Tasks 1 and 3
 **Parallel-safe with:** none (server zone)
+**Status:** Done (2026-11-11)
 
 **Files to add or change:**
 - `server/src/seed/seedArt.ts` (new) — the planner, the cost/cap logic, and the runner, with the generator and the converter injected.

@@ -1,11 +1,22 @@
 import type { PrismaClient } from '@prisma/client';
 import type { Character } from '@storybook/shared';
+import type { ImagePin } from '../services/imagePin';
 
 export const SEED_BOOK_IDS = [
   'luna-star-garden', 'captain-bear-submarine', 'robot-learns-to-hug',
   'dinosaur-bakery', 'cloud-painter', 'brave-little-seed',
 ] as const;
 export type SeedBookId = typeof SEED_BOOK_IDS[number];
+
+// Seed-book art: which model drew it, the committed format, and the web paths
+// it lives at. Consumed by the offline generator (seedArt.ts); the seed itself
+// starts writing these URLs in a later task, once the art is committed.
+export const SEED_ART_PIN = { provider: 'fal', model: 'fal-ai/flux-pro/v1.1' } as const satisfies ImagePin;
+export const SEED_ART_FORMAT = 'jpg' as const;
+export const seedCoverUrl = (id: SeedBookId) => `/illustrations/${id}/cover.${SEED_ART_FORMAT}`;
+export const seedPageUrl = (id: SeedBookId, n: number) => `/illustrations/${id}/page-${n}.${SEED_ART_FORMAT}`;
+export const seedPortraitUrl = (id: SeedBookId, characterIndex: number) =>
+  `/illustrations/${id}/portrait-${1000 + characterIndex}.${SEED_ART_FORMAT}`;
 
 export interface CanonicalBook {
   id: SeedBookId;

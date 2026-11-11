@@ -34,3 +34,6 @@ server/test-results/
 
 # Playwright MCP scratch (screenshots, snapshots, console logs)
 .playwright-mcp/
+
+# Raw PNG cache for the seed-book art generator (server/scripts/generate-seed-art.ts).
+server/.seed-art/
