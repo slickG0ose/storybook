@@ -14,6 +14,10 @@ import {
   resolveStyleAnchor,
   composeReferenceImages,
   MAX_REFERENCE_IMAGES,
+  DEFAULT_STYLE,
+  buildIllustrationPrompt,
+  buildCoverPrompt,
+  buildPortraitPrompt,
 } from '../illustrations';
 import { FalImageGenerator } from '../providers/fal';
 
@@ -1192,5 +1196,242 @@ describe('generateIllustration anchor-aware prompt shaping', () => {
     // vary the composition".
     expect(prompt.indexOf(PORTRAIT_CLAUSE)).toBeGreaterThan(prompt.indexOf(ANCHOR_CLAUSE));
     expect(prompt.indexOf(FRESH_CLAUSE)).toBeGreaterThan(prompt.indexOf(PORTRAIT_CLAUSE));
+  });
+});
+
+// Characterisation fence for the prompt builders (seed-book-illustrations
+// Task 3). These pin the EXACT string each public generator hands to the Fal
+// generator, with every expected value written out literally rather than built
+// from the code under test. They passed on the pre-extraction code and must
+// keep passing unedited: the offline seed-art script reuses the builders, and a
+// drifted prompt would silently change what users' books are drawn from.
+describe('prompt assembly characterisation (exact strings)', () => {
+  const BOOK_ID = 'illustration-test-book';
+  const BASE_DIR = join(import.meta.dirname, '../../../public/illustrations', BOOK_ID);
+  const ANCHOR = `/illustrations/${BOOK_ID}/page-4.png`;
+  const PORTRAIT_0 = `/illustrations/${BOOK_ID}/portrait-1000.png`;
+  const DEFAULT_STYLE_TEXT = 'Whimsical, colorful, warm, suitable for young children';
+  const STYLE = 'Soft watercolour, muted pastels';
+  const CAST: Parameters<typeof generateIllustration>[5] = [
+    { name: 'Luna', descriptor: 'a girl with a yellow ribbon', role: 'primary' },
+    { name: 'Moth', role: 'supporting' },
+  ];
+  const CAST_PREFIX =
+    'Cast (keep these characters visually consistent): Luna (a girl with a yellow ribbon); Moth. ';
+  const ANCHOR_CLAUSE =
+    ' Reference image 1 is an existing illustration from this same book:' +
+    ' match its art style, colour palette, linework, shading, and character designs exactly.';
+  const PORTRAIT_CLAUSE = ' The remaining reference images are canonical character portraits.';
+  const CHANGE_ONLY =
+    ' Change only what the revision instructions ask for; keep the art style,' +
+    ' palette and overall composition as in reference image 1.';
+  const FRESH =
+    ' Produce a fresh interpretation of this scene — a different composition,' +
+    ' pose and camera angle from reference image 1 — while keeping its art style,' +
+    ' palette and character designs identical.';
+
+  let originalFetch: typeof fetch;
+  let originalFalKey: string | undefined;
+  let originalProvider: string | undefined;
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  const sentPrompt = (): string => {
+    const [, init] = fetchMock.mock.calls[0] as [string, { body: string }];
+    return JSON.parse(init.body).prompt;
+  };
+
+  beforeEach(async () => {
+    await resetDatabase();
+    await createTestBook(BOOK_ID);
+    originalFetch = globalThis.fetch;
+    originalFalKey = process.env.FAL_KEY;
+    originalProvider = process.env.IMAGE_PROVIDER;
+    process.env.IMAGE_PROVIDER = 'fal';
+    process.env.FAL_KEY = 'fal-test';
+
+    await mkdir(BASE_DIR, { recursive: true });
+    for (const f of ['page-4.png', 'portrait-1000.png']) {
+      await writeFile(join(BASE_DIR, f), Buffer.from(FAKE_PNG_B64, 'base64'));
+    }
+
+    fetchMock = vi.fn(async (url: string | URL) => {
+      if (String(url).startsWith('https://fal.run/')) {
+        return new Response(JSON.stringify({ images: [{ url: 'https://fal.example/out.png' }] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return new Response(Buffer.from(FAKE_PNG_B64, 'base64'), { status: 200 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+  });
+
+  afterEach(async () => {
+    globalThis.fetch = originalFetch;
+    if (originalFalKey === undefined) delete process.env.FAL_KEY;
+    else process.env.FAL_KEY = originalFalKey;
+    if (originalProvider === undefined) delete process.env.IMAGE_PROVIDER;
+    else process.env.IMAGE_PROVIDER = originalProvider;
+    await rm(BASE_DIR, { recursive: true, force: true });
+  });
+
+  describe('generateIllustration', () => {
+    it('no style: uses the default style', async () => {
+      await generateIllustration(BOOK_ID, 1, 'A cat');
+      expect(sentPrompt()).toBe(
+        `Children's book illustration, A cat. ${DEFAULT_STYLE_TEXT}. No text or words in the image.`,
+      );
+    });
+
+    it('blank style falls back to the default style', async () => {
+      await generateIllustration(BOOK_ID, 1, 'A cat', undefined, '   ');
+      expect(sentPrompt()).toBe(
+        `Children's book illustration, A cat. ${DEFAULT_STYLE_TEXT}. No text or words in the image.`,
+      );
+    });
+
+    it('with a style descriptor', async () => {
+      await generateIllustration(BOOK_ID, 1, 'A cat', undefined, `  ${STYLE}  `);
+      expect(sentPrompt()).toBe(
+        `Children's book illustration, A cat. ${STYLE}. No text or words in the image.`,
+      );
+    });
+
+    it('with cast', async () => {
+      await generateIllustration(BOOK_ID, 1, 'A cat', undefined, STYLE, CAST);
+      expect(sentPrompt()).toBe(
+        `${CAST_PREFIX}Children's book illustration, A cat. ${STYLE}. No text or words in the image.`,
+      );
+    });
+
+    it('anchor, no feedback', async () => {
+      await generateIllustration(BOOK_ID, 1, 'A cat', undefined, STYLE, [], [ANCHOR], { styleAnchor: ANCHOR });
+      expect(sentPrompt()).toBe(
+        `Children's book illustration, A cat. ${STYLE}. No text or words in the image.` +
+          ANCHOR_CLAUSE + FRESH,
+      );
+    });
+
+    it('anchor and feedback', async () => {
+      await generateIllustration(BOOK_ID, 1, 'A cat', 'bigger moon', STYLE, [], [ANCHOR], { styleAnchor: ANCHOR });
+      expect(sentPrompt()).toBe(
+        `Children's book illustration, A cat. ${STYLE}. No text or words in the image.` +
+          ANCHOR_CLAUSE + ' Revision instructions: bigger moon' + CHANGE_ONLY,
+      );
+    });
+
+    it('anchor and portraits', async () => {
+      await generateIllustration(BOOK_ID, 1, 'A cat', undefined, STYLE, CAST, [ANCHOR, PORTRAIT_0], { styleAnchor: ANCHOR });
+      expect(sentPrompt()).toBe(
+        `${CAST_PREFIX}Children's book illustration, A cat. ${STYLE}. No text or words in the image.` +
+          ANCHOR_CLAUSE + PORTRAIT_CLAUSE + FRESH,
+      );
+    });
+  });
+
+  describe('generateCover', () => {
+    const COVER_TAIL =
+      'Composition suitable for a book cover (centered subject, room at top for title). No text or words in the image.';
+
+    it('no style: uses the default style', async () => {
+      await generateCover(BOOK_ID, 'The Cat', 'A cat on a hill');
+      expect(sentPrompt()).toBe(
+        `Children's book cover illustration for a story titled "The Cat". Scene: A cat on a hill. ${DEFAULT_STYLE_TEXT}. ${COVER_TAIL}`,
+      );
+    });
+
+    it('with style and cast', async () => {
+      await generateCover(BOOK_ID, 'The Cat', 'A cat on a hill', STYLE, CAST);
+      expect(sentPrompt()).toBe(
+        `${CAST_PREFIX}Children's book cover illustration for a story titled "The Cat". Scene: A cat on a hill. ${STYLE}. ${COVER_TAIL}`,
+      );
+    });
+  });
+
+  describe('generateCharacterPortrait', () => {
+    const PORTRAIT_TAIL =
+      'Single character, centered, clear view of the face and full character design, neutral ' +
+      'background — a canonical character reference sheet.';
+
+    it('name only, default style', async () => {
+      await generateCharacterPortrait(BOOK_ID, 0, 'Luna');
+      expect(sentPrompt()).toBe(
+        `Children's book character portrait of Luna. ${PORTRAIT_TAIL} ${DEFAULT_STYLE_TEXT}.`,
+      );
+    });
+
+    it('descriptor, style and feedback', async () => {
+      await generateCharacterPortrait(BOOK_ID, 0, 'Luna', ' a girl with a yellow ribbon ', 'older', STYLE);
+      expect(sentPrompt()).toBe(
+        `Children's book character portrait of Luna, a girl with a yellow ribbon. ${PORTRAIT_TAIL} ${STYLE}.` +
+          ' Revision instructions: older',
+      );
+    });
+  });
+});
+
+// Direct calls to the exported pure builders must give the same strings the
+// generators send (pinned literally in the characterisation block above).
+describe('exported prompt builders', () => {
+  const STYLE = 'Soft watercolour, muted pastels';
+  const CAST: Parameters<typeof buildIllustrationPrompt>[0]['characters'] = [
+    { name: 'Luna', descriptor: 'a girl with a yellow ribbon', role: 'primary' },
+    { name: 'Moth', role: 'supporting' },
+  ];
+  const CAST_PREFIX =
+    'Cast (keep these characters visually consistent): Luna (a girl with a yellow ribbon); Moth. ';
+  const ANCHOR = '/illustrations/b/page-4.png';
+
+  it('DEFAULT_STYLE is the documented default', () => {
+    expect(DEFAULT_STYLE).toBe('Whimsical, colorful, warm, suitable for young children');
+  });
+
+  it('buildIllustrationPrompt: default, style, cast', () => {
+    expect(buildIllustrationPrompt({ description: 'A cat' })).toBe(
+      "Children's book illustration, A cat. Whimsical, colorful, warm, suitable for young children. No text or words in the image.",
+    );
+    expect(buildIllustrationPrompt({ description: 'A cat', styleDescriptor: STYLE, characters: CAST })).toBe(
+      `${CAST_PREFIX}Children's book illustration, A cat. ${STYLE}. No text or words in the image.`,
+    );
+  });
+
+  it('buildIllustrationPrompt: anchor clauses are mutually exclusive and portraits are counted', () => {
+    const base = { description: 'A cat', styleAnchor: ANCHOR };
+    const bare = buildIllustrationPrompt({ ...base, referenceImages: [ANCHOR] });
+    expect(bare).toContain('Produce a fresh interpretation');
+    expect(bare).not.toContain('Change only what');
+    expect(bare).not.toContain('canonical character portraits');
+
+    const fb = buildIllustrationPrompt({ ...base, feedback: 'bigger moon', referenceImages: [ANCHOR] });
+    expect(fb).toContain(' Revision instructions: bigger moon Change only what');
+    expect(fb).not.toContain('Produce a fresh interpretation');
+
+    const withPortraits = buildIllustrationPrompt({ ...base, referenceImages: [ANCHOR, '/illustrations/b/portrait-1000.png'] });
+    expect(withPortraits).toContain('The remaining reference images are canonical character portraits.');
+  });
+
+  it('buildIllustrationPrompt ignores references when there is no anchor', () => {
+    expect(buildIllustrationPrompt({ description: 'A cat', referenceImages: ['/illustrations/b/portrait-1000.png'] })).toBe(
+      buildIllustrationPrompt({ description: 'A cat' }),
+    );
+  });
+
+  it('buildCoverPrompt', () => {
+    expect(buildCoverPrompt({ title: 'The Cat', description: 'A cat on a hill', styleDescriptor: STYLE, characters: CAST })).toBe(
+      `${CAST_PREFIX}Children's book cover illustration for a story titled "The Cat". Scene: A cat on a hill. ${STYLE}. ` +
+        'Composition suitable for a book cover (centered subject, room at top for title). No text or words in the image.',
+    );
+  });
+
+  it('buildPortraitPrompt', () => {
+    const tail =
+      'Single character, centered, clear view of the face and full character design, neutral ' +
+      'background — a canonical character reference sheet.';
+    expect(buildPortraitPrompt({ name: 'Luna' })).toBe(
+      `Children's book character portrait of Luna. ${tail} ${DEFAULT_STYLE}.`,
+    );
+    expect(buildPortraitPrompt({ name: 'Luna', descriptor: ' a girl ', feedback: 'older', styleDescriptor: STYLE })).toBe(
+      `Children's book character portrait of Luna, a girl. ${tail} ${STYLE}. Revision instructions: older`,
+    );
   });
 });

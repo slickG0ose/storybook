@@ -138,6 +138,7 @@ About 1 hour.
 **Zone:** server
 **Depends on:** none (order after Task 2 only because of the server zone)
 **Parallel-safe with:** none (server zone)
+**Status:** Done (2026-11-11)
 
 **Files to add or change:**
 - `server/src/services/__tests__/illustrations.test.ts` — **first**, add characterisation tests. They capture the exact prompt string that `generateIllustration`, `generateCover` and `generateCharacterPortrait` pass to a mocked generator, for these cases:
