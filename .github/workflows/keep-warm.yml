@@ -1,0 +1,56 @@
+name: Keep Render server warm
+
+# Render's free plan spins the server down after 15 minutes without traffic, and
+# the next request waits for a cold start, measured at ~51 s on 2026-11-09 (#207).
+# For alpha testers that is the first impression. This pings /api/health every
+# 10 minutes so the instance never idles long enough to sleep.
+#
+# Things to know before relying on it:
+# - Render free gives 750 instance-hours a month per workspace. One service kept
+#   up 24/7 uses 720-744, so this only fits while storybook-server is the only
+#   free service running in the workspace.
+# - GitHub cron is best-effort: runs can start late or be skipped when Actions is
+#   busy (worst at the top of the hour, hence the odd minutes below). A late run
+#   can let the server sleep for a while, so this lowers how often testers hit a
+#   cold start; it does not guarantee they never do. The guaranteed fix is a paid
+#   instance (plan: starter in render.yaml).
+# - GitHub disables scheduled workflows in a public repo after 60 days with no
+#   commits. Re-enable it from the Actions tab if that happens.
+# - /api/health does not touch the database, so Neon still scales to zero. The
+#   first DB query after idle pays Neon's sub-second resume, not Render's minute.
+#
+# To stop it: disable this workflow in the Actions tab, or delete the file.
+on:
+  schedule:
+    - cron: '7,17,27,37,47,57 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: keep-warm
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    name: Ping /api/health
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      # Overridable with a repo variable if the service URL ever changes.
+      HEALTH_URL: ${{ vars.KEEP_WARM_URL || 'https://storybook-server-t84f.onrender.com/api/health' }}
+    steps:
+      - name: Ping
+        # A failed ping is reported as a warning, not a failed run. A red run
+        # every 10 minutes during a Render outage would mean ~6 failure emails an
+        # hour, and the outage itself is visible elsewhere.
+        run: |
+          start=$(date +%s)
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 90 --retry 2 --retry-delay 5 "$HEALTH_URL" || true)
+          secs=$(( $(date +%s) - start ))
+          echo "HTTP ${code:-none} in ${secs}s from $HEALTH_URL"
+          if [ "$code" != "200" ]; then
+            echo "::warning title=Keep-warm ping failed::$HEALTH_URL answered ${code:-nothing} after ${secs}s"
+          elif [ "$secs" -gt 10 ]; then
+            echo "::notice title=Server was asleep::Cold start took ${secs}s. A previous run was likely delayed or skipped."
+          fi
