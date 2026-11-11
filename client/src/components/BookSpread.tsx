@@ -5,6 +5,8 @@ import { api } from '../lib/apiBase'
 import { resolveTypography } from '../lib/typography'
 import TypographyControls from './TypographyControls'
 import { useMediaQuery } from '../hooks/useMediaQuery'
+import { useImageFallback } from '../hooks/useImageFallback'
+import FallbackImage from './FallbackImage'
 import { useNarration } from '../hooks/useNarration'
 import NarrationPlayer from './NarrationPlayer'
 import type { NarrationChunk, NarrationPosition } from '../lib/narration/types'
@@ -668,15 +670,12 @@ function CoverArt({ book, className }: { book: BookWithPages; className: string 
       className={`flex flex-col items-center justify-center text-center ${className}`}
       style={{ backgroundColor: book.cover_color + '20' }}
     >
-      {book.cover_url ? (
-        <img
-          src={api(book.cover_url)}
-          alt={book.title}
-          className="max-h-48 md:max-h-64 rounded-xl shadow-md mb-4"
-        />
-      ) : (
-        <div className="text-7xl md:text-8xl mb-4 drop-shadow-xl">{book.cover_emoji}</div>
-      )}
+      <FallbackImage
+        url={book.cover_url}
+        alt={book.title}
+        className="max-h-48 md:max-h-64 rounded-xl shadow-md mb-4"
+        fallback={<div className="text-7xl md:text-8xl mb-4 drop-shadow-xl">{book.cover_emoji}</div>}
+      />
       <h2 className="text-2xl md:text-3xl font-bold text-gray-800 dark:text-gray-100 font-display mb-2">{book.title}</h2>
       <p className="text-sm text-gray-500 dark:text-gray-400">by {book.author}</p>
     </div>
@@ -844,7 +843,10 @@ function PageIllustration({
     if (promptDirty) await savePromptIfChanged();
     onRegenerate();
   };
-  if (page.illustration_url) {
+  // A stored URL whose file is gone (404) falls through to the no-illustration panel
+  // below — the prompt, plus the owner's Illustrate control — instead of a broken image.
+  const illustration = useImageFallback(page.illustration_url);
+  if (illustration.src) {
     return (
       <div className="flex-1 flex flex-col">
         <div className="flex-1 rounded-xl overflow-hidden shadow-md">
@@ -852,9 +854,10 @@ function PageIllustration({
               the old one, which would keep painting the previous page's picture until
               the new file arrived. */}
           <img
-            key={page.illustration_url}
-            src={api(page.illustration_url)}
+            key={illustration.src}
+            src={api(illustration.src)}
             alt={page.illustration_description}
+            onError={illustration.onError}
             className="w-full h-full object-cover"
           />
         </div>

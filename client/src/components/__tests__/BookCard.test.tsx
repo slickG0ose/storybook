@@ -141,3 +141,26 @@ describe('BookCard — commerce off', () => {
     expect(mockAddToCart).not.toHaveBeenCalled()
   })
 })
+
+// A stored cover_url can outlive its file (404 from storage). The card must then look
+// exactly like a book that never had a cover, not paint the browser's broken image.
+describe('BookCard — cover image fails to load', () => {
+  const withCover: Book = { ...mockBook, cover_url: '/illustrations/book-1/cover.png' }
+
+  it.each(['default', 'wide'] as const)('falls back to the cover emoji (%s variant)', variant => {
+    const { container } = render(
+      <MemoryRouter>
+        <BookCard book={withCover} variant={variant} />
+      </MemoryRouter>
+    )
+    const img = container.querySelector('img')
+    expect(img).toHaveAttribute('src', '/illustrations/book-1/cover.png')
+    expect(screen.queryByText('🦊')).not.toBeInTheDocument()
+
+    fireEvent.error(img!)
+
+    expect(container.querySelector('img')).not.toBeInTheDocument()
+    // Same node a cover-less book renders, dark-mode-neutral (an emoji on cover_color).
+    expect(screen.getByText('🦊')).toHaveClass('drop-shadow-lg')
+  })
+})

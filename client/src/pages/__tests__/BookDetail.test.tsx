@@ -1663,3 +1663,54 @@ describe('BookDetail — commerce off', () => {
     expect(await screen.findByRole('button', { name: 'Illustrate All (~$0.08)' })).toBeInTheDocument()
   })
 })
+
+/**
+ * A stored image URL can outlive its file (404 from storage) — the 2026-11-11 audit found
+ * a live book whose cover and page 1 both pointed at missing objects. The page must then
+ * render what it renders with no image at all, not the browser's broken-image state.
+ * (The spread's own images are fenced in BookSpread.test.tsx; it is mocked here.)
+ */
+describe('BookDetail — image fails to load', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('falls back to the cover emoji in the header when the cover image errors', async () => {
+    setupFetchMock({ book: { ...baseBook, cover_url: '/illustrations/book-1/cover.png' } })
+    renderBookDetail()
+
+    const cover = await screen.findByRole('img', { name: `Cover of ${baseBook.title}` })
+    expect(screen.queryByText(baseBook.cover_emoji)).not.toBeInTheDocument()
+
+    fireEvent.error(cover)
+
+    expect(screen.queryByRole('img', { name: `Cover of ${baseBook.title}` })).not.toBeInTheDocument()
+    expect(screen.getByText(baseBook.cover_emoji)).toHaveClass('drop-shadow-xl')
+  })
+
+  it('renders the reader-view page as un-illustrated when its illustration errors', async () => {
+    const pages = [
+      { ...baseBook.pages[0]!, illustration_url: '/illustrations/book-1/page-1.png' },
+      baseBook.pages[1]!,
+    ]
+    setupFetchMock({ book: { ...baseBook, pages } })
+    renderBookDetail()
+    fireEvent.click(await screen.findByRole('button', { name: /reader view/i }))
+
+    const img = screen.getByRole('img', { name: 'desc 1' })
+    // With art showing, the prompt is alt text only — and the owner gets Regenerate.
+    expect(screen.queryByText('desc 1')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /regenerate/i })).toBeInTheDocument()
+
+    fireEvent.error(img)
+
+    expect(screen.queryByRole('img', { name: 'desc 1' })).not.toBeInTheDocument()
+    expect(screen.getByText('desc 1')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /regenerate/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /generate illustration/i })).toBeInTheDocument()
+  })
+})

@@ -407,3 +407,30 @@ describe('MyBooks — commerce off', () => {
     expect(confirmMessage).not.toMatch(/buy|bought|receipt/i)
   })
 })
+
+// A stored cover_url can outlive its file (404 from storage). The tile must then look
+// like a book with no cover, not paint the browser's broken image.
+describe('MyBooks — cover image fails to load', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('falls back to the cover emoji', async () => {
+    setupFetchMock({ books: [{ ...publishedBook, cover_url: '/illustrations/book-1/cover.png' }] })
+    const { container } = renderMyBooks()
+    await screen.findByText(publishedBook.title)
+
+    const img = container.querySelector('img[src="/illustrations/book-1/cover.png"]')
+    expect(img).toBeInTheDocument()
+    expect(screen.queryByText(publishedBook.cover_emoji)).not.toBeInTheDocument()
+
+    fireEvent.error(img!)
+
+    expect(container.querySelector('img[src="/illustrations/book-1/cover.png"]')).not.toBeInTheDocument()
+    expect(screen.getByText(publishedBook.cover_emoji)).toHaveClass('drop-shadow-lg')
+  })
+})

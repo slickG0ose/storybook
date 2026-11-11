@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { api } from '../lib/apiBase'
 import { commerceEnabled } from '../lib/commerce'
+import FallbackImage from '../components/FallbackImage'
 import type { Book, BookWithPages } from '../types'
 
 type MyBook = Book & Partial<Pick<BookWithPages, 'pages'>>
@@ -169,16 +170,13 @@ export default function MyBooks() {
                 className="h-48 flex items-center justify-center text-7xl transition-transform duration-300 group-hover:scale-105 relative"
                 style={{ backgroundColor: book.cover_color + '20' }}
               >
-                {book.cover_url ? (
-                  <img
-                    src={api(book.cover_url)}
-                    alt=""
-                    loading="lazy"
-                    className="absolute inset-0 h-full w-full object-cover object-top"
-                  />
-                ) : (
-                  <span className="drop-shadow-lg">{book.cover_emoji}</span>
-                )}
+                <FallbackImage
+                  url={book.cover_url}
+                  alt=""
+                  loading="lazy"
+                  className="absolute inset-0 h-full w-full object-cover object-top"
+                  fallback={<span className="drop-shadow-lg">{book.cover_emoji}</span>}
+                />
                 <div className="absolute top-3 right-3 flex items-center gap-1.5">
                   {book.status === 'draft' && book.pages && book.pages.length > 0 && (() => {
                     const unillustrated = book.pages.filter(p => !p.illustration_url).length

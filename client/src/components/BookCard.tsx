@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { useCart } from '../context/CartContext'
 import type { Book } from '../types'
-import { api } from '../lib/apiBase'
+import FallbackImage from './FallbackImage'
 import { commerceEnabled } from '../lib/commerce'
 
 interface BookCardProps {
@@ -60,16 +60,13 @@ export default function BookCard({ book, variant = 'default' }: BookCardProps) {
         }`}
         style={{ backgroundColor: book.cover_color + '20' }}
       >
-        {book.cover_url ? (
-          <img
-            src={api(book.cover_url)}
-            alt=""
-            loading="lazy"
-            className="absolute inset-0 h-full w-full object-cover object-top"
-          />
-        ) : (
-          <span className="drop-shadow-lg">{book.cover_emoji}</span>
-        )}
+        <FallbackImage
+          url={book.cover_url}
+          alt=""
+          loading="lazy"
+          className="absolute inset-0 h-full w-full object-cover object-top"
+          fallback={<span className="drop-shadow-lg">{book.cover_emoji}</span>}
+        />
       </div>
     </Link>
   )
