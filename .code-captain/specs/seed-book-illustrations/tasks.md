@@ -1,7 +1,7 @@
 # Seed-book illustrations — task plan
 
 > Spec: [spec.md](spec.md)
-> Status: Draft
+> Status: Approved (owner, 2026-11-11 — all five Owner decisions)
 > Last updated: 2026-11-11
 
 ## Overview

@@ -1,6 +1,6 @@
 # Seed-book illustrations
 
-> Status: Draft
+> Status: Approved (owner, 2026-11-11 — all five Owner decisions)
 > Last updated: 2026-11-11
 > Backlog: none filed. Owner request after the 2026-11-11 live-site audit. Related: PR #223 — fall back to the emoji cover when a book image fails to load (https://github.com/slickG0ose/storybook/pull/223)
 
