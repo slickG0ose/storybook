@@ -340,7 +340,7 @@ const MAX_TOTAL_BYTES  = 15 * 1024 * 1024;
 **Zone:** multi-zone (docs and verification)
 **Depends on:** Task 6
 **Parallel-safe with:** none
-**Status:** Done (2026-11-11) for docs, comments and the three suites. PENDING with the orchestrator: the manual light/dark browser check.
+**Status:** Done (2026-11-11) for docs, comments and the three suites. Browser check done by the orchestrator on a local dev build (ports 3011/5183): home Featured covers in dark and light, `/book/luna-star-garden` in dark, Reader view of `robot-learns-to-hug` in light, 375px mobile with no horizontal overflow, and a PDF export of `robot-learns-to-hug` (200, 1.86 MB, 6 embedded JPEGs). Not checked: Reader view in dark, and character consistency beyond the pages sampled.
 
 **Files to add or change:**
 - `docs/conventions/data.md`:
@@ -373,6 +373,8 @@ const MAX_TOTAL_BYTES  = 15 * 1024 * 1024;
 ---
 
 ### Task 8 — Pre-merge follow-ups
+
+**Status:** Done (2026-11-11) — all three items recorded as ADR-037.
 
 **Zone:** docs (harness) · **Depends on:** none (run last)
 

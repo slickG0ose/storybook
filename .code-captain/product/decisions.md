@@ -4,6 +4,49 @@ Append-only log. Newest entries on top. Each entry should answer: *what was deci
 
 ---
 
+## ADR-037 — Seed-book art ships as committed JPEG fixtures owned by the seed; the one-off generator gates its own spend
+
+**Date:** 2026-11-11
+**Status:** Accepted. Nick Konecny approved all five Owner decisions in the spec on 2026-11-11 and, after reviewing the 43 images, ruled "Commit as is" the same day. Recorded at Task 8, before merge.
+**Scope:** `seed-book-illustrations` spec, Tasks 1–7. Files: `server/src/seed/{canonicalBooks,seedArt}.ts`, `server/src/seed/seed-art-manifest.json`, `server/scripts/generate-seed-art.ts`, `server/prisma/seed.ts`, `server/public/illustrations/{luna-star-garden,captain-bear-submarine,robot-learns-to-hug,dinosaur-bakery,cloud-painter,brave-little-seed}/`, `.gitignore`, `server/.gitignore`. Spec at [.code-captain/specs/seed-book-illustrations/spec.md](../specs/seed-book-illustrations/spec.md).
+
+### Decision
+
+1. **The art is committed, not uploaded.** 43 JPEGs (6 covers, 30 pages, 7 character portraits; 1024×1024, quality 82, 15.6 MB) live under `server/public/illustrations/<seed-id>/` and ship in the deploy bundle. `/illustrations/*` serves local disk first under both storage backends, so production needs no R2 write. Integrity tests pin the set: every seeded URL resolves to a JPEG on disk, ≤ 600 KB per file, ≤ 17 MB total, no stray files, and both `.gitignore` files re-include the six directories.
+2. **The seed owns the art and rewrites it on every run.** `seedCanonicalBooks()` always sets `cover_url`, `Page.illustration_url`, `style_descriptor`, `characters_json` (with portrait URLs) and the image pin, in both `create` and `update`. It writes no `IllustrationVersion` rows. Production gets the URLs from the deploy-time seed in `render.yaml`; merging is the prod write.
+3. **The one-off generator gates its own spend.** `generate-seed-art.ts` does not call `checkQuota`/`recordUsage`. It is a dry run by default, needs `--spend` to call a provider, stops at 60 images per run, refuses any `STORAGE_BACKEND` other than `local`, and caches each raw PNG in the gitignored `server/.seed-art/` so a re-run does not pay twice.
+
+### Why
+
+- **A fresh deploy and a re-seed must both produce illustrated books** with no manual step. Files in the bundle plus an upsert-only seed do that; an R2 upload would be a manual prod write and one more thing to lose.
+- **JPEG keeps the repo usable.** The same 43 images as PNG measure about 95 MB against a 32 MB repo pack.
+- **Always-set is safe only because seed books are unowned.** Every route that re-rolls art or lists versions checks `created_by === user.id`, and `created_by` is null on all six, so no user action can produce art the seed would then overwrite.
+- **The spend meter measures a database.** `UsageLog` rows written by a local script would land in a developer's `dev.db` and cap nothing in production.
+
+### Alternative considered: generate once and upload to R2
+
+Rejected: it needs a hand-run write to the production bucket, leaves local and CI environments without art, and breaks on a bucket change.
+
+### Alternative considered: commit PNG, as the Sunny fixture does
+
+Rejected on size alone. The Sunny fixture's 13 PNGs are 28.8 MB.
+
+### Alternative considered: set the art only on `create`
+
+It would protect hand edits to a seed book in production, but it would also leave the six existing prod rows art-less forever, which is the bug being fixed.
+
+### Consequences
+
+- **15.6 MB is in git history for good.** A redo adds its bytes again.
+- **Giving a seed book an owner breaks decision 2.** Anything that sets `created_by` on one of the six ids must revisit this ADR first, or the next deploy silently reverts that owner's re-rolls.
+- **These are the first non-PNG illustrations.** Code that assumes `.png` under `/illustrations/` is unreachable for seed books today for the same ownership reason.
+- **The pin and the manifest disagree on purpose.** Books are pinned to `fal-ai/flux-pro/v1.1`; the manifest records `fal-ai/flux-pro/kontext` for reference-conditioned covers and pages, the variant the pipeline picks when portraits are attached.
+- **Two images shipped with known flaws,** accepted by the owner: the Luna cover's painted title reads "STAR ARDEN", and `brave-little-seed/page-4.jpg` is off-brief. Fix with `--spend --redo <id>:<slot>` (4¢ each).
+- **Server tests must never write into a seed directory.** `testHygiene.test.ts` enforces it; `admin.test.ts` is allowlisted because it names a seed id for rows only.
+- **Offline spend is outside the monthly ceiling.** Decision 3 is a pattern for future one-off scripts, not an exemption for anything a route can reach.
+
+---
+
 ## ADR-036 — Commerce is hidden from the tester build by a build-time client flag, `VITE_COMMERCE_ENABLED`, set as a literal in the Pages workflow
 
 **Date:** 2026-11-11

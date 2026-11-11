@@ -214,6 +214,6 @@ The test budget is ≤ 500 KB per file and ≤ 15 MB total.
 
 ## ADR-worthy decisions
 
-- [ ] Seed-book art ships as committed JPEG fixtures in the deploy bundle (not R2, not PNG), served from local disk under both storage backends — write via /create-adr after spec approval
-- [ ] Seed-book art, style, cast and image pin are seed-owned and overwritten on every seed run (always-set). No `IllustrationVersion` rows. This holds only while seed books stay unowned — write via /create-adr after spec approval
-- [ ] Offline generation scripts do not call `checkQuota`/`recordUsage`. They gate with dry-run by default, an explicit `--spend`, a hard image ceiling, and local storage only — write via /create-adr after spec approval
+- [x] Seed-book art ships as committed JPEG fixtures in the deploy bundle (not R2, not PNG), served from local disk under both storage backends — recorded as ADR-037
+- [x] Seed-book art, style, cast and image pin are seed-owned and overwritten on every seed run (always-set). No `IllustrationVersion` rows. This holds only while seed books stay unowned — recorded as ADR-037
+- [x] Offline generation scripts do not call `checkQuota`/`recordUsage`. They gate with dry-run by default, an explicit `--spend`, a hard image ceiling, and local storage only — recorded as ADR-037
