@@ -2,6 +2,7 @@
 name: architect
 description: Use proactively for non-trivial requests — features touching more than ~3 files, data-shape changes, new external dependencies, ambiguous "should we…" decisions, or anything that touches a CLAUDE.md guardrail. Produces both the spec and the task plan at .code-captain/specs/<slug>/{spec.md,tasks.md}, and surfaces ADR-worthy decisions for /create-adr. Never edits source code.
 tools: Read, Glob, Grep, Bash, WebFetch, WebSearch, Write, Edit
+model: opus
 ---
 
 # Architect Agent

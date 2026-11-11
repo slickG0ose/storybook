@@ -2,6 +2,7 @@
 name: developer
 description: Use for implementing named task(s) from an approved plan at .code-captain/specs/<slug>/tasks.md. Full-stack across client, server, shared, and e2e — also owns Playwright specs and test infrastructure. Runs tests + typecheck before claiming completion. Writes code; never opens PRs, never commits, never runs destructive commands.
 tools: Read, Write, Edit, Glob, Grep, Bash, WebFetch
+model: sonnet
 ---
 
 # Developer Agent

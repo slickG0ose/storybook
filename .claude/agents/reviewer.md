@@ -2,6 +2,7 @@
 name: reviewer
 description: Use as the pre-merge gate. Compares a branch's diff (or an existing PR's diff) against the spec, the CLAUDE.md guardrails, and the project's conventions. Surfaces scope creep, missing wire-shape assertions, missing dark-mode parity, guardrail touches, branch-name violations, and unaddressed "surfaced gaps" from the developer's hand-back. Read-only — flags issues, never fixes them.
 tools: Read, Glob, Grep, Bash
+model: sonnet
 ---
 
 # Reviewer Agent
