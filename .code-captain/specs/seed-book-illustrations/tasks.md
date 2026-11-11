@@ -340,6 +340,7 @@ const MAX_TOTAL_BYTES  = 15 * 1024 * 1024;
 **Zone:** multi-zone (docs and verification)
 **Depends on:** Task 6
 **Parallel-safe with:** none
+**Status:** Done (2026-11-11) for docs, comments and the three suites. PENDING with the orchestrator: the manual light/dark browser check.
 
 **Files to add or change:**
 - `docs/conventions/data.md`:

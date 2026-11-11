@@ -8,8 +8,8 @@
 #   - Web service spins down after 15 min idle. Cold-start ~30s on wake.
 #   - Web service filesystem is ephemeral. Runtime-generated illustration
 #     PNGs are LOST on next deploy or restart. Committed demo-seed PNGs
-#     in server/public/illustrations/ ship inside the deploy bundle and
-#     survive. Long-term fix: blob storage (R2/S3/Cloudinary).
+#     and the committed seed-book JPEGs in server/public/illustrations/
+#     ship inside the deploy bundle and survive. Long-term fix: blob storage (R2/S3/Cloudinary).
 #   - Postgres is NOT a Render service any more. The free instance was
 #     retired ahead of its 2026-09-14 deletion date and the database now
 #     lives on Neon's free tier, so DATABASE_URL is set by hand in the
@@ -48,7 +48,9 @@ services:
     #   books keyed by slug ids and is idempotent, so it re-runs harmlessly on
     #   every deploy. It does NOT touch user-created books (uuid ids). NOTE:
     #   because it upserts, a manual edit to one of these 6 demo books in prod
-    #   would be overwritten on the next deploy.
+    #   (including its cover and page art URLs) would be overwritten on the
+    #   next deploy, and the committed art files in the bundle replace any
+    #   changed copies.
     buildCommand: |
       npm ci --include=dev
       cd server && npx prisma generate --schema=prisma/postgres/schema.prisma && npx prisma migrate deploy --schema=prisma/postgres/schema.prisma && npx tsx prisma/seed.ts
