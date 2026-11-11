@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import BookCard from '../BookCard'
 import type { Book } from '../../types'
@@ -101,5 +101,43 @@ describe('BookCard', () => {
     const links = screen.getAllByRole('link')
     const bookLinks = links.filter(link => link.getAttribute('href') === '/book/book-1')
     expect(bookLinks.length).toBeGreaterThan(0)
+  })
+})
+
+describe('BookCard — commerce off', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.stubEnv('VITE_COMMERCE_ENABLED', 'false')
+  })
+
+  afterEach(() => vi.unstubAllEnvs())
+
+  it('hides the price and the Add to Cart button', () => {
+    renderBookCard()
+    expect(screen.queryByText(/\$\d/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add to Cart' })).not.toBeInTheDocument()
+    // The chips the price used to sit beside are still there.
+    expect(screen.getByText('Ages 3-5')).toBeInTheDocument()
+  })
+
+  it('offers a "Read <title>" link to the book in place of the button', () => {
+    renderBookCard()
+    const read = screen.getByRole('link', { name: 'Read The Brave Little Fox' })
+    expect(read).toHaveAttribute('href', '/book/book-1')
+    expect(read).toHaveTextContent('Read')
+
+    fireEvent.click(read)
+    expect(mockAddToCart).not.toHaveBeenCalled()
+  })
+
+  it('offers the same link on the wide variant', () => {
+    render(
+      <MemoryRouter>
+        <BookCard book={mockBook} variant="wide" />
+      </MemoryRouter>
+    )
+    expect(screen.getByRole('link', { name: 'Read The Brave Little Fox' })).toHaveAttribute('href', '/book/book-1')
+    expect(screen.queryByText(/\$\d/)).not.toBeInTheDocument()
+    expect(mockAddToCart).not.toHaveBeenCalled()
   })
 })

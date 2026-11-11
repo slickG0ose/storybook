@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { useCart } from '../context/CartContext'
 import type { Book } from '../types'
 import { api } from '../lib/apiBase'
+import { commerceEnabled } from '../lib/commerce'
 
 interface BookCardProps {
   book: Book;
@@ -30,6 +31,11 @@ function Chips({ book }: { book: Book }) {
 export default function BookCard({ book, variant = 'default' }: BookCardProps) {
   const { addToCart } = useCart()
   const wide = variant === 'wide'
+  const commerce = commerceEnabled()
+  // Shared by the "Add to Cart" button and the commerce-off "Read" link that takes its slot.
+  const ctaVariant = wide
+    ? 'w-full sm:w-auto sm:px-8 sm:self-start bg-purple-500 hover:bg-purple-600 text-white'
+    : 'w-full bg-purple-100 text-purple-700 hover:bg-purple-500 hover:text-white dark:bg-purple-800/60 dark:text-purple-100 dark:hover:bg-purple-500 dark:hover:text-white'
 
   /*
    * Motion lives on `transform`, not on `box-shadow` alone: the shadow still grows, but
@@ -96,21 +102,29 @@ export default function BookCard({ book, variant = 'default' }: BookCardProps) {
         <div className="mt-auto flex flex-col">
           <div className="flex items-end justify-between gap-3 mb-3">
             <Chips book={book} />
-            <span className="font-bold text-gray-800 dark:text-gray-100 tnum shrink-0">
-              ${book.price.toFixed(2)}
-            </span>
+            {commerce && (
+              <span className="font-bold text-gray-800 dark:text-gray-100 tnum shrink-0">
+                ${book.price.toFixed(2)}
+              </span>
+            )}
           </div>
 
-          <button
-            onClick={(e: React.MouseEvent<HTMLButtonElement>) => { e.preventDefault(); void addToCart(book.id) }}
-            className={`py-3 rounded-xl font-semibold text-sm cursor-pointer transition-[background-color,color,transform] duration-150 active:scale-[0.98] ${
-              wide
-                ? 'w-full sm:w-auto sm:px-8 sm:self-start bg-purple-500 hover:bg-purple-600 text-white'
-                : 'w-full bg-purple-100 text-purple-700 hover:bg-purple-500 hover:text-white dark:bg-purple-800/60 dark:text-purple-100 dark:hover:bg-purple-500 dark:hover:text-white'
-            }`}
-          >
-            Add to Cart
-          </button>
+          {commerce ? (
+            <button
+              onClick={(e: React.MouseEvent<HTMLButtonElement>) => { e.preventDefault(); void addToCart(book.id) }}
+              className={`py-3 rounded-xl font-semibold text-sm cursor-pointer transition-[background-color,color,transform] duration-150 active:scale-[0.98] ${ctaVariant}`}
+            >
+              Add to Cart
+            </button>
+          ) : (
+            <Link
+              to={`/book/${book.id}`}
+              aria-label={`Read ${book.title}`}
+              className={`no-underline text-center min-h-11 inline-flex items-center justify-center py-3 rounded-xl font-semibold text-sm transition-[background-color,color,transform] duration-150 active:scale-[0.98] ${ctaVariant}`}
+            >
+              Read
+            </Link>
+          )}
         </div>
       </div>
     </article>

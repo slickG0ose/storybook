@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useCallback, type React
 import type { CartItem } from '../types'
 import { api } from '../lib/apiBase'
 import { readCartSnapshot, writeCartSnapshot, clearCartSnapshot, type CartSnapshot } from '../lib/cartCache'
+import { commerceEnabled } from '../lib/commerce'
 
 /**
  * Exported so the hand-written `vi.mock('../../context/CartContext')` factories across
@@ -74,6 +75,8 @@ export function CartProvider({ children }: CartProviderProps) {
   }, [sessionId])
 
   useEffect(() => {
+    // Commerce off: no cart request on load. The session id above is still issued.
+    if (!commerceEnabled()) return
     void fetchCart()
   }, [fetchCart])
 

@@ -61,6 +61,7 @@ export function commerceEnabled(): boolean
 **Depends on:** Task 1
 **Parallel-safe with:** 3, 4
 
+**Status:** Done (2026-11-10)
 **Files to add or change (4):**
 - `client/src/components/BookCard.tsx` — when off: omit the price `<span>`; replace the "Add to Cart" `<button>` with a `<Link>`
 - `client/src/pages/Home.tsx` — `BookPreviewModal` footer: when off omit the price `<span>` and use `justify-end` instead of `justify-between`
@@ -101,6 +102,7 @@ The chips row keeps its wrapper and `mb-3`; only the price span is conditional. 
 **Depends on:** Task 1
 **Parallel-safe with:** 2, 4
 
+**Status:** Done (2026-11-10)
 **Files to add or change (6):**
 - `client/src/pages/BookDetail.tsx` — the `{!isDraft && (<>…price…Add to Cart…</>)}` block (~line 820) becomes `{!isDraft && commerceEnabled() && (…)}`. Nothing replaces it. Do not touch the "Illustrate All (~$…)" cost labels.
 - `client/src/components/PublishStateBar.tsx` — two strings, off variants below
@@ -137,6 +139,7 @@ The chips row keeps its wrapper and `mb-3`; only the price span is conditional. 
 **Depends on:** Task 1
 **Parallel-safe with:** 2, 3
 
+**Status:** Done (2026-11-10)
 **Files to add or change (6):**
 - `client/src/components/Navbar.tsx` — render the Cart `<Link>` (and badge) only when `commerceEnabled()`
 - `client/src/App.tsx` — register `/cart`, `/checkout`, `/order/:id` only when `commerceEnabled()`, so they fall through to `path="*"` → `NotFound`

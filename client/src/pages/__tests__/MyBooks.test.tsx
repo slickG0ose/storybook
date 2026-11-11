@@ -373,3 +373,37 @@ describe('MyBooks — Unillustrated badge', () => {
     expect(screen.queryByText(/unillustrated/i)).not.toBeInTheDocument()
   })
 })
+
+// Tester build (spec: `.code-captain/specs/tester-commerce-off/spec.md`): nothing is for
+// sale, so the withdraw warning must not promise buyers or receipts.
+describe('MyBooks — commerce off', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    vi.stubEnv('VITE_COMMERCE_ENABLED', 'false')
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.restoreAllMocks()
+  })
+
+  it('warns about leaving the catalog without the purchase wording', async () => {
+    setupFetchMock({})
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+
+    renderMyBooks()
+
+    await waitFor(() => {
+      expect(screen.getByText('Published')).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /edit this book/i }))
+
+    expect(confirmSpy).toHaveBeenCalledTimes(1)
+    const confirmMessage = confirmSpy.mock.calls[0]?.[0] as string
+    expect(confirmMessage).toContain('Published Adventure')
+    expect(confirmMessage).toMatch(/out of the catalog/i)
+    expect(confirmMessage).toMatch(/find it until you publish again/i)
+    expect(confirmMessage).not.toMatch(/buy|bought|receipt/i)
+  })
+})
