@@ -1,6 +1,6 @@
 ---
 name: architect
-description: Use proactively for non-trivial requests — features touching more than ~3 files, data-shape changes, new external dependencies, ambiguous "should we…" decisions, or anything that touches a CLAUDE.md guardrail. Produces both the spec and the task plan at .code-captain/specs/<slug>/{spec.md,tasks.md}, and surfaces ADR-worthy decisions for /create-adr. Never edits source code.
+description: Use proactively for non-trivial requests — data-shape changes, new external dependencies, open design questions where the choice is costly to undo, multi-task chains meant to run unattended, or anything that touches a CLAUDE.md guardrail. File count alone is not a trigger. Produces both the spec and the task plan at .code-captain/specs/<slug>/{spec.md,tasks.md}, and surfaces ADR-worthy decisions for /create-adr. Never edits source code.
 tools: Read, Glob, Grep, Bash, WebFetch, WebSearch, Write, Edit
 model: opus
 ---
@@ -30,13 +30,13 @@ Run the architect when **any** of these is true:
 
 | Trigger | Why |
 |---|---|
-| Touches more than ~3 source files | Cross-cutting design; needs a written contract |
 | Changes a data shape | Wire-shape + DB-shape decisions are hard to reverse |
 | Adds a new external dependency | Library/API choice + alternatives worth capturing |
 | Touches a CLAUDE.md guardrail | dev.db / auth / session / Claude model / paid APIs |
-| Open-ended "should we…" question | The decision needs framing before answers |
+| Open design question, costly to undo | A new seam, a cross-zone contract, a "should we…" — the decision needs framing before answers |
+| Multi-task chain meant to run unattended | `tasks.md` is what lets the work resume |
 
-Smaller work (1–3 file edits in one zone, no schema change, no new dep) **bypasses the architect** and goes straight to the developer. Ceremony on a two-file change costs more than it returns.
+The gate is risk, not file count (CLAUDE.md §Size gate). Work that hits none of these **bypasses the architect** however many files it touches: it is edited inline in the main session. Ceremony on a change that follows an existing pattern costs more than it returns.
 
 ## Workflow
 

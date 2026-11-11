@@ -158,20 +158,23 @@ The architect owns both design and decomposition — they draw on the same conte
 
 ### Size gate — when the chain is required
 
+The gate is **risk, not file count**. A file count measured how much a model could hold in its head; what the chain actually buys is a written decision before something hard to reverse. A ten-file change that follows an existing pattern needs no spec; a one-line schema change does.
+
 You **must** route through the architect → developer chain when **any** of these are true:
 
-- **>3 files** likely to change (envelope estimate, not exact)
 - **Data shape change** — Prisma schema, Zod wire shapes in `@storybook/shared`, seed data shape
 - **New dependency** — any new entry in any `package.json`
 - **Touches a guardrail** (see Guardrails section below)
+- **Open design question** — more than one reasonable approach and the choice is costly to undo (a new seam, a new cross-zone contract, a "should we…" decision). If you can state the approach in two sentences and nobody would argue, it is not open.
+- **Work that will outlive the session** — a multi-task chain dispatched to run unattended. The `tasks.md` is what lets it resume.
 
-You **may bypass** the chain for:
+Everything else is **edited inline in the main session**, whatever the file count and whether or not it crosses zones:
 
-- **1–2 file edits** in a single zone → edit inline in main session
-- **Trivial cross-zone change** (rename, move, single import update) → edit inline
-- **Single-task feature, single zone, no schema/deps** → dispatch `@developer` directly with a freehand prompt; skip the spec
+- State the plan in a few lines before editing, so the approach is visible before the diff is.
+- Dispatch `@developer` with a freehand prompt only to run pieces in parallel or to keep a long job out of the main context — not because the change is "big".
+- The Done criteria and `/ship`'s reviewer still apply in full. Skipping the spec never skips the review.
 
-When in doubt, lean toward the chain. The overhead is one architect dispatch, and the audit trail is preserved.
+If the work turns out to hit one of the triggers partway through (a "small" fix needs a schema field), stop and route it through the chain from there.
 
 ### Reviewer agent and mechanical-check skills
 

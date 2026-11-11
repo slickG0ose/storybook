@@ -52,18 +52,18 @@ Kick off a new task following the project's branching convention in `CLAUDE.md`.
 
 7. **Apply the size gate, then route per the hybrid harness** (see `CLAUDE.md` "How work flows"). Inspect the task and decide which entry point the user should take next.
 
-   First, classify the task as **trivial** or **non-trivial**. Non-trivial means **any** of:
-   - Will likely touch >3 files
+   First, classify the task as **trivial** or **non-trivial**. The gate is risk, not file count. Non-trivial means **any** of:
    - Changes a data shape (Prisma schema, Zod wire shape, seed)
    - Adds a new dependency to any `package.json`
    - Touches a guardrail (see CLAUDE.md Guardrails)
+   - Has an open design question whose answer is costly to undo
+   - Is a multi-task chain meant to run unattended
 
    Then route:
 
    | Task shape | Spec state | Recommend |
    |---|---|---|
-   | **Trivial** (1–2 files, single zone, no schema/deps) | n/a | Edit inline in main, OR dispatch `@developer` directly with a freehand prompt |
-   | **Trivial cross-zone** (rename, move) | n/a | Edit inline in main |
+   | **Trivial** (none of the above, any file count, any zones) | n/a | State a short plan, then edit inline in main. Dispatch `@developer` with a freehand prompt only for parallelism or to keep a long job out of the main context |
    | **Non-trivial** | No `.code-captain/specs/<slug>/spec.md` | Dispatch `@architect` (Agent tool, `subagent_type: architect`) to draft the spec **and** task plan |
    | **Non-trivial** | Spec exists, no `tasks.md` | Re-dispatch `@architect` to decompose the existing spec into `tasks.md` |
    | **Non-trivial** | Spec + `tasks.md` exist | Suggest `/execute-task <slug> <task-number>` for the first incomplete task |

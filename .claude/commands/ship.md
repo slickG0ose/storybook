@@ -71,8 +71,8 @@ Get the current branch ready to ship. Follow the project's done criteria in `CLA
           - Spec:  `.code-captain/specs/<slug>/spec.md`
           - Tasks: `.code-captain/specs/<slug>/tasks.md` (Task N of M)
         If the work bypassed the chain (per CLAUDE.md size gate), say so
-        explicitly: "Bypassed chain — trivial per size gate (1-2 files,
-        single zone, no schema/deps)".
+        explicitly: "Bypassed chain — no size-gate trigger (no schema,
+        deps, guardrail, or open design question)".
 
      2. AGENT OWNERSHIP — which agent did which slice. Be honest:
           - architect: <spec + task decomposition> (if applicable)

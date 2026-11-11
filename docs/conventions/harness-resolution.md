@@ -23,7 +23,7 @@ Highest precedence first:
 
 | Name | Tier | Description |
 |------|------|-------------|
-| architect | project | Use proactively for non-trivial requests — features touching more than ~3 files, data-shape changes, new external dependencies, ambiguous "should we…" decisions, or anything that touches a CLAUDE.md guardrail. Produces both the spec and the task plan at .code-captain/specs/<slug>/{spec.md,tasks.md}, and surfaces ADR-worthy decisions for /create-adr. Never edits source code. |
+| architect | project | Use proactively for non-trivial requests — data-shape changes, new external dependencies, open design questions where the choice is costly to undo, multi-task chains meant to run unattended, or anything that touches a CLAUDE.md guardrail. File count alone is not a trigger. Produces both the spec and the task plan at .code-captain/specs/<slug>/{spec.md,tasks.md}, and surfaces ADR-worthy decisions for /create-adr. Never edits source code. |
 | developer | project | Use for implementing named task(s) from an approved plan at .code-captain/specs/<slug>/tasks.md. Full-stack across client, server, shared, and e2e — also owns Playwright specs and test infrastructure. Runs tests + typecheck before claiming completion. Writes code; never opens PRs, never commits, never runs destructive commands. |
 | reviewer | project | Use as the pre-merge gate. Compares a branch's diff (or an existing PR's diff) against the spec, the CLAUDE.md guardrails, and the project's conventions. Surfaces scope creep, missing wire-shape assertions, missing dark-mode parity, guardrail touches, branch-name violations, and unaddressed "surfaced gaps" from the developer's hand-back. Read-only — flags issues, never fixes them. |
 
