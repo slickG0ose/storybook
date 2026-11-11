@@ -186,6 +186,8 @@ useEffect(() => {
 **Depends on:** Tasks 2, 3, 4
 **Parallel-safe with:** 6
 
+**Status:** Done (2026-11-11) — 187 e2e tests passed in one run, 6 of them in `commerce-off`
+
 **Files to add or change (3):**
 - `e2e/ports.ts` — add `COMMERCE_OFF_PORT` (default `'4174'`) and `COMMERCE_OFF_BASE`, same pattern as `PREVIEW_PORT`
 - `e2e/playwright.config.ts` — (a) add `VITE_COMMERCE_ENABLED: 'true'` to the `env` of the two existing client `webServer` entries; (b) add a fourth `webServer`; (c) add a `commerce-off` project; (d) widen the `chromium` project's `testIgnore` to `/tests\/(mobile|pwa|commerce-off)\//`
@@ -257,6 +259,8 @@ Do not edit `CLAUDE.md`; mention in the hand-back that the owner may want a one-
 ### Task 7 — Pre-merge follow-ups
 
 **Zone:** docs (harness) · **Depends on:** none (run last)
+
+**Status:** Done (2026-11-11) — ADR-036 written; follow-up filed as #216
 
 For each ADR-worthy item in spec.md, ensure exactly one tracking action exists:
 
