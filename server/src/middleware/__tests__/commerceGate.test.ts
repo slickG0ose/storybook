@@ -11,7 +11,6 @@ import { commerceEnabled } from '../commerceGate';
 const GATE_BODY = { error: expect.any(String), code: 'COMMERCE_DISABLED' };
 
 const COMMERCE_ROUTES: Array<[string, 'get' | 'post' | 'put' | 'delete', string]> = [
-  ['GET cart', 'get', '/api/cart/s1'],
   ['POST cart item', 'post', '/api/cart/s1/items'],
   ['PUT cart item', 'put', '/api/cart/s1/items/luna-star-garden'],
   ['DELETE cart item', 'delete', '/api/cart/s1/items/luna-star-garden'],
@@ -43,6 +42,23 @@ describe('commerce kill switch (COMMERCE_ENABLED)', () => {
       const res = await request(app)[method](path).send({});
       expect(res.status).toBe(503);
       expect(res.body).toMatchObject(GATE_BODY);
+    });
+
+    // Not a 503: a pre-flag client build fetches the cart on load, ignores the
+    // status, and crashes on a body with no `items`. See routes/cart.ts.
+    it('GET cart returns an empty cart, hiding stored items without deleting them', async () => {
+      process.env.COMMERCE_ENABLED = 'true';
+      const add = await request(app).post('/api/cart/s1/items').send({ bookId: 'luna-star-garden' });
+      expect(add.status).toBeLessThan(300);
+      process.env.COMMERCE_ENABLED = 'false';
+
+      const off = await request(app).get('/api/cart/s1');
+      expect(off.status).toBe(200);
+      expect(off.body).toEqual({ items: [], total: 0 });
+
+      process.env.COMMERCE_ENABLED = 'true';
+      const on = await request(app).get('/api/cart/s1');
+      expect(on.body.items).toHaveLength(1);
     });
 
     it('does not gate a non-commerce route', async () => {

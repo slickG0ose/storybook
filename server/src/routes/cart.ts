@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import prisma from '../db/prisma';
-import type { Request, Response } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import {
   CartAddItemRequestSchema,
   CartAddItemResponseSchema,
@@ -13,10 +13,26 @@ import {
   type CartUpdateItemRequest,
 } from '@storybook/shared';
 import { validate } from '../middleware/validate';
-import { commerceGate } from '../middleware/commerceGate';
+import { commerceGate, commerceEnabled } from '../middleware/commerceGate';
 import { AVAILABLE_BOOK_WHERE } from '../lib/availability';
 
 const router = Router();
+
+// Commerce off: the cart READ answers an empty cart (200), not the gate's 503.
+// A client build from before the tester flag still fetches the cart on load,
+// does not check `res.ok`, and crashes the whole app on a body with no `items`
+// (blank page). Its service worker keeps serving that build, and the update
+// prompt lives inside the crashed tree, so the reader can never get past it.
+// An empty cart is schema-valid for every client ever shipped. Stored cart rows
+// are untouched and reappear when commerce is switched back on. Every mutation
+// below still gets the 503.
+router.get('/:sessionId', (_req: Request, res: Response, next: NextFunction) => {
+  if (commerceEnabled()) {
+    next();
+    return;
+  }
+  res.json({ items: [], total: 0 });
+});
 
 router.use(commerceGate);
 
