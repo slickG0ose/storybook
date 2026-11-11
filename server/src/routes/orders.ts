@@ -8,9 +8,12 @@ import {
 } from '@storybook/shared';
 import prisma from '../db/prisma';
 import { validate } from '../middleware/validate';
+import { commerceGate } from '../middleware/commerceGate';
 import { AVAILABLE_BOOK_WHERE } from '../lib/availability';
 
 const router = Router();
+
+router.use(commerceGate);
 
 router.post(
   '/',
