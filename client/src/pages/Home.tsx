@@ -148,6 +148,8 @@ export default function Home() {
   const [activeAge, setActiveAge] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
+  const [loadAttempt, setLoadAttempt] = useState(0)
   const [previewBook, setPreviewBook] = useState<Book | null>(null)
 
   useEffect(() => {
@@ -159,17 +161,40 @@ export default function Home() {
   }, [location.hash, location.key, loading])
 
   useEffect(() => {
+    let cancelled = false
+    // A non-2xx (a 502 while the API is waking, say) has no JSON body, so check `ok`
+    // before parsing — otherwise the failure surfaces as a SyntaxError, not a status.
+    const getJson = <T,>(path: string): Promise<T> =>
+      fetch(api(path)).then(r => {
+        if (!r.ok) throw new Error(`${path} responded ${r.status}`)
+        return r.json() as Promise<T>
+      })
+
     Promise.all([
-      fetch(api('/api/books')).then(r => r.json()) as Promise<Book[]>,
-      fetch(api('/api/books/themes')).then(r => r.json()) as Promise<string[]>,
-      fetch(api('/api/books/age-ranges')).then(r => r.json()) as Promise<string[]>,
-    ]).then(([booksData, themesData, ageData]) => {
-      setBooks(booksData)
-      setThemes(themesData)
-      setAgeRanges(ageData)
-      setLoading(false)
-    })
-  }, [])
+      getJson<Book[]>('/api/books'),
+      getJson<string[]>('/api/books/themes'),
+      getJson<string[]>('/api/books/age-ranges'),
+    ])
+      .then(([booksData, themesData, ageData]) => {
+        if (cancelled) return
+        setBooks(booksData)
+        setThemes(themesData)
+        setAgeRanges(ageData)
+        setLoadError(false)
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        console.error('Failed to load the catalog', err)
+        setLoadError(true)
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [loadAttempt])
 
   const featured = useMemo(() => books.filter(b => b.is_featured && !b.is_user_created), [books])
   const community = useMemo(() => books.filter(b => b.is_user_created), [books])
@@ -382,6 +407,21 @@ export default function Home() {
           {loading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6" aria-busy="true" aria-label="Loading books">
               {Array.from({ length: 6 }, (_, i) => <BookCardSkeleton key={i} />)}
+            </div>
+          ) : loadError ? (
+            <div className="text-center py-16" role="alert">
+              <p className="text-gray-700 dark:text-gray-200 text-lg font-semibold">
+                We couldn't load the books just now.
+              </p>
+              <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">
+                The library may be waking up. Give it a moment and try again.
+              </p>
+              <button
+                onClick={() => { setLoading(true); setLoadAttempt(n => n + 1) }}
+                className="mt-4 min-h-11 px-5 rounded-full bg-purple-600 hover:bg-purple-700 dark:bg-purple-500 dark:hover:bg-purple-400 text-white font-semibold cursor-pointer"
+              >
+                Try again
+              </button>
             </div>
           ) : catalog.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">

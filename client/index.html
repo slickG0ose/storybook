@@ -48,6 +48,22 @@
     -->
     <meta property="og:image" content="/icons/og-image.jpg" />
     <meta name="twitter:card" content="summary_large_image" />
+
+    <!--
+      Applies the saved (or OS) theme before first paint. ThemeContext sets the same
+      class from a useEffect, which runs after the first frame — so without this a
+      dark-mode visitor gets a cream page that then fades to dark on every hard load.
+      Keep the key and the fallback in step with client/src/context/ThemeContext.tsx.
+    -->
+    <script>
+      try {
+        var saved = localStorage.getItem('storybook-theme')
+        var dark = saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches
+        if (dark) document.documentElement.classList.add('dark')
+      } catch (e) {
+        /* storage blocked: ThemeContext decides after mount */
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
