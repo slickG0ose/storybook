@@ -20,7 +20,25 @@ import { FalImageGenerator } from '../providers/fal';
 // generateIllustration writes a real file to public/illustrations/<bookId>/
 // during the test. We clean that directory up afterwards so we don't pollute
 // the dev server's filesystem. The DB row is what we actually assert on.
-const TEST_BOOK_ID = 'luna-star-garden';
+const TEST_BOOK_ID = 'illustration-test-book';
+
+// Test-only book row. Never a seed-book id: seed-book directories hold committed
+// art fixtures, and these suites rm -rf the directory they write into.
+async function createTestBook(id: string): Promise<void> {
+  await prisma.book.create({
+    data: {
+      id,
+      title: 'Illustration Test Book',
+      author: 'Test',
+      description: 'Fixture for illustration service tests.',
+      theme: 'fantasy',
+      age_range: '4-7',
+      cover_emoji: '\u{1F31F}',
+      cover_color: '#7c3aed',
+      price: 1,
+    },
+  });
+}
 const ILLUSTRATIONS_DIR = join(import.meta.dirname, '../../../public/illustrations', TEST_BOOK_ID);
 
 // A 1x1 transparent PNG, base64-encoded — minimal valid image bytes to
@@ -35,6 +53,7 @@ describe('generateIllustration service', () => {
 
   beforeEach(async () => {
     await resetDatabase();
+    await createTestBook(TEST_BOOK_ID);
     originalFetch = globalThis.fetch;
     originalApiKey = process.env.OPENAI_API_KEY;
     originalProvider = process.env.IMAGE_PROVIDER;
@@ -83,7 +102,7 @@ describe('generateIllustration service', () => {
       [],
     );
 
-    expect(url).toMatch(/^\/illustrations\/luna-star-garden\/page-1(-v\d+)?\.png$/);
+    expect(url).toMatch(/^\/illustrations\/illustration-test-book\/page-1(-v\d+)?\.png$/);
 
     const rows = await prisma.illustrationVersion.findMany({
       where: { book_id: TEST_BOOK_ID, page_number: 1 },
@@ -109,6 +128,7 @@ describe('generateIllustration service (Fal provider)', () => {
 
   beforeEach(async () => {
     await resetDatabase();
+    await createTestBook(TEST_BOOK_ID);
     originalFetch = globalThis.fetch;
     originalFalKey = process.env.FAL_KEY;
     originalProvider = process.env.IMAGE_PROVIDER;
@@ -159,7 +179,7 @@ describe('generateIllustration service (Fal provider)', () => {
       [],
     );
 
-    expect(url).toMatch(/^\/illustrations\/luna-star-garden\/page-1(-v\d+)?\.png$/);
+    expect(url).toMatch(/^\/illustrations\/illustration-test-book\/page-1(-v\d+)?\.png$/);
 
     const rows = await prisma.illustrationVersion.findMany({
       where: { book_id: TEST_BOOK_ID, page_number: 1 },
@@ -387,7 +407,7 @@ describe('isImageGenConfigured with placeholder keys', () => {
 // cutover must keep re-rolling on gpt-image-1 even though the environment now
 // defaults to Fal — that silent provider swap is the reported bug.
 describe('pin-aware provider selection', () => {
-  const BOOK_ID = 'luna-star-garden';
+  const BOOK_ID = 'illustration-test-book';
   const BASE_DIR = join(import.meta.dirname, '../../../public/illustrations', BOOK_ID);
   const ENV_KEYS = [
     'IMAGE_PROVIDER',
@@ -403,6 +423,7 @@ describe('pin-aware provider selection', () => {
 
   beforeEach(async () => {
     await resetDatabase();
+    await createTestBook(BOOK_ID);
     originalFetch = globalThis.fetch;
     originalEnv = Object.fromEntries(ENV_KEYS.map(k => [k, process.env[k]]));
     for (const k of ENV_KEYS) delete process.env[k];
@@ -464,7 +485,7 @@ describe('pin-aware provider selection', () => {
       { pin: { provider: 'openai', model: 'gpt-image-1' } },
     );
 
-    expect(url).toMatch(/^\/illustrations\/luna-star-garden\/page-1(-v\d+)?\.png$/);
+    expect(url).toMatch(/^\/illustrations\/illustration-test-book\/page-1(-v\d+)?\.png$/);
 
     const [requestUrl, init] = fetchMock.mock.calls[0];
     expect(requestUrl).toBe('https://api.openai.com/v1/images/generations');
@@ -690,10 +711,10 @@ describe('FalImageGenerator Kontext reference path', () => {
 // since the portrait IS the reference). It writes portrait-<slot>.png and an
 // IllustrationVersion row keyed on the sentinel portrait slot
 // (PORTRAIT_SLOT_BASE + characterIndex = 1000 + index), giving free per-
-// character version numbering off the existing @@unique constraint. Uses the
-// seeded book so the IllustrationVersion FK is satisfied.
+// character version numbering off the existing @@unique constraint. Uses a
+// test book so the IllustrationVersion FK is satisfied.
 describe('generateCharacterPortrait service', () => {
-  const BOOK_ID = 'luna-star-garden';
+  const BOOK_ID = 'illustration-test-book';
   const BASE_DIR = join(import.meta.dirname, '../../../public/illustrations', BOOK_ID);
   // characterIndex 0 -> slot 1000; characterIndex 1 -> slot 1001.
   const SLOT_0 = 1000;
@@ -706,6 +727,7 @@ describe('generateCharacterPortrait service', () => {
 
   beforeEach(async () => {
     await resetDatabase();
+    await createTestBook(BOOK_ID);
     originalFetch = globalThis.fetch;
     originalFalKey = process.env.FAL_KEY;
     originalProvider = process.env.IMAGE_PROVIDER;
@@ -839,10 +861,10 @@ describe('generateCharacterPortrait service', () => {
 // Exercised through generateIllustration with IMAGE_PROVIDER=openai so the
 // provider switch + reference plumbing are covered together.
 describe('OpenAIImageGenerator image-input reference path', () => {
-  // Reuse the seeded book so the IllustrationVersion FK is satisfied — this
+  // Create a test book so the IllustrationVersion FK is satisfied — this
   // test asserts the request shape (edit endpoint + multipart), and the DB
   // write rides along through generateIllustration.
-  const BOOK_ID = 'luna-star-garden';
+  const BOOK_ID = 'illustration-test-book';
   const BASE_DIR = join(import.meta.dirname, '../../../public/illustrations', BOOK_ID);
   const PORTRAIT = `/illustrations/${BOOK_ID}/portrait-1000.png`;
 
@@ -853,6 +875,7 @@ describe('OpenAIImageGenerator image-input reference path', () => {
 
   beforeEach(async () => {
     await resetDatabase();
+    await createTestBook(BOOK_ID);
     originalFetch = globalThis.fetch;
     originalApiKey = process.env.OPENAI_API_KEY;
     originalProvider = process.env.IMAGE_PROVIDER;
@@ -1027,7 +1050,7 @@ describe('composeReferenceImages', () => {
 // model returning a near-copy is perceptual and cannot be asserted here — that
 // is the manual step in Task 8.
 describe('generateIllustration anchor-aware prompt shaping', () => {
-  const BOOK_ID = 'luna-star-garden';
+  const BOOK_ID = 'illustration-test-book';
   const BASE_DIR = join(import.meta.dirname, '../../../public/illustrations', BOOK_ID);
   const ANCHOR = `/illustrations/${BOOK_ID}/page-4.png`;
   const PORTRAIT_0 = `/illustrations/${BOOK_ID}/portrait-1000.png`;
@@ -1079,6 +1102,7 @@ describe('generateIllustration anchor-aware prompt shaping', () => {
 
   beforeEach(async () => {
     await resetDatabase();
+    await createTestBook(BOOK_ID);
     originalFetch = globalThis.fetch;
     originalFalKey = process.env.FAL_KEY;
     originalProvider = process.env.IMAGE_PROVIDER;

@@ -432,6 +432,22 @@ describe('Admin API routes', () => {
     // even if assertions fail mid-test.
     const createdDirs: string[] = [];
 
+    async function createLiveTestBook(id: string): Promise<void> {
+      await prisma.book.create({
+        data: {
+          id,
+          title: 'Orphan Test Book',
+          author: 'Test',
+          description: 'Fixture for orphan-directory tests.',
+          theme: 'fantasy',
+          age_range: '4-7',
+          cover_emoji: '\u{1F31F}',
+          cover_color: '#7c3aed',
+          price: 1,
+        },
+      });
+    }
+
     async function trackOrphanDir(name: string): Promise<string> {
       const dir = await createOrphanDir(name);
       createdDirs.push(dir);
@@ -501,10 +517,12 @@ describe('Admin API routes', () => {
 
     it('deletes a directory for a soft-deleted book (orphan-of-orphan)', async () => {
       const { token: adminToken } = await createUserAndGetToken(app, 'admin@example.com', 'admin');
-      // Use a seeded book id so a real row exists, then tombstone it. The
-      // listing endpoint surfaces this as { soft_deleted: true } — deletion
-      // should still be allowed.
-      const orphanName = 'luna-star-garden';
+      // Use a test-only book id (never a seed-book id: seed directories hold
+      // committed art) so a real row exists, then tombstone it. The listing
+      // endpoint surfaces this as { soft_deleted: true } — deletion should still
+      // be allowed.
+      const orphanName = 'test-soft-deleted-book';
+      await createLiveTestBook(orphanName);
       await trackOrphanDir(orphanName);
       await prisma.book.update({
         where: { id: orphanName },
@@ -520,11 +538,13 @@ describe('Admin API routes', () => {
 
     it('returns 409 when the directory belongs to a live book', async () => {
       const { token: adminToken } = await createUserAndGetToken(app, 'admin@example.com', 'admin');
-      // luna-star-garden is seeded live; even if its directory exists on disk,
-      // the route should refuse to delete it. (This is defense-in-depth — the
-      // listing endpoint already filters live books out, so this 409 should
-      // never fire under normal admin UI flow.)
-      const orphanName = 'luna-star-garden';
+      // A live book; even if its directory exists on disk, the route should
+      // refuse to delete it. (This is defense-in-depth — the listing endpoint
+      // already filters live books out, so this 409 should never fire under
+      // normal admin UI flow.) Test-only id: seed-book directories hold
+      // committed art and must never be created or removed by a test.
+      const orphanName = 'test-live-book';
+      await createLiveTestBook(orphanName);
       const dir = await trackOrphanDir(orphanName);
 
       const res = await request(app)

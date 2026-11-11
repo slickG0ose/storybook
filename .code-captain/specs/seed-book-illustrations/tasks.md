@@ -98,6 +98,7 @@ In this task, `characters` entries carry **no** `portrait_url`. The book row get
 **Zone:** server
 **Depends on:** Task 1 (imports `SEED_BOOK_IDS`)
 **Parallel-safe with:** none (server zone)
+**Status:** Done (2026-11-11)
 
 **Files to add or change:**
 - `server/src/services/__tests__/illustrations.test.ts`:
