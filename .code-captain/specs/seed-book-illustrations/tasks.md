@@ -292,6 +292,8 @@ export async function runSeedArt(jobs: SeedArtJob[], deps: {
 
 ### Task 6 — Wire committed art into the seed, with integrity tests
 
+**Status:** Done (2026-11-11)
+
 **Zone:** server
 **Depends on:** Task 5
 **Parallel-safe with:** none (server zone)

@@ -3,7 +3,10 @@ import { z } from 'zod';
 import { CharacterSchema } from '@storybook/shared';
 import prisma from '../../db/prisma';
 import { resetDatabase } from '../../__tests__/setup';
-import { CANONICAL_BOOKS, SEED_BOOK_IDS, seedCanonicalBooks } from '../canonicalBooks';
+import { resolveImagePin } from '../../services/imagePin';
+import {
+  CANONICAL_BOOKS, SEED_BOOK_IDS, SEED_ART_PIN, seedCanonicalBooks, seedCoverUrl, seedPageUrl,
+} from '../canonicalBooks';
 
 describe('CANONICAL_BOOKS data', () => {
   it('has exactly the 6 seed ids, 5 pages each, and no created_by', () => {
@@ -18,8 +21,11 @@ describe('CANONICAL_BOOKS data', () => {
     for (const book of CANONICAL_BOOKS) {
       const parsed = z.array(CharacterSchema).parse(book.characters);
       expect(parsed.some((c) => c.role === 'primary')).toBe(true);
-      // Art arrives in a later task; no portrait yet.
-      for (const c of parsed) expect(c.portrait_url).toBeUndefined();
+      // Primary characters carry a committed portrait; the rest carry none.
+      for (const c of parsed) {
+        if (c.role === 'primary') expect(c.portrait_url).toMatch(/^\/illustrations\/[^/]+\/portrait-\d+\.jpg$/);
+        else expect(c.portrait_url).toBeUndefined();
+      }
     }
   });
 });
@@ -45,7 +51,7 @@ describe('seedCanonicalBooks', () => {
     expect(JSON.stringify(luna)).not.toContain('star-flowers in silver');
   });
 
-  it('writes rows matching CANONICAL_BOOKS, with no art fields', async () => {
+  it('writes rows matching CANONICAL_BOOKS, with the committed art wired in', async () => {
     const result = await seedCanonicalBooks(prisma);
     expect(result).toEqual({ books: 6, pages: 30 });
     for (const book of CANONICAL_BOOKS) {
@@ -54,10 +60,24 @@ describe('seedCanonicalBooks', () => {
       expect(row.style_descriptor).toBe(book.style_descriptor);
       expect(JSON.parse(row.characters_json!)).toEqual(book.characters);
       expect(row.created_by).toBeNull();
-      expect(row.cover_url).toBeNull();
-      expect(row.image_provider).toBeNull();
+      expect(row.cover_url).toBe(seedCoverUrl(book.id));
+      expect(row.image_provider).toBe('fal');
+      expect(row.image_model).toBe(SEED_ART_PIN.model);
     }
-    expect(await prisma.page.count({ where: { illustration_url: { not: null } } })).toBe(0);
+    expect(await prisma.book.count({ where: { cover_url: null } })).toBe(0);
+    expect(await prisma.page.count({ where: { illustration_url: null } })).toBe(0);
+    const p3 = await prisma.page.findUniqueOrThrow({
+      where: { book_id_page_number: { book_id: 'cloud-painter', page_number: 3 } },
+    });
+    expect(p3.illustration_url).toBe(seedPageUrl('cloud-painter', 3));
+  });
+
+  it('gives every seed book an explicit pin that resolveImagePin returns as-is', async () => {
+    await seedCanonicalBooks(prisma);
+    for (const id of SEED_BOOK_IDS) {
+      const row = await prisma.book.findUniqueOrThrow({ where: { id } });
+      expect(await resolveImagePin(row)).toEqual(SEED_ART_PIN);
+    }
   });
 
   it('is idempotent: identical rows on a second run, page count stays 30', async () => {

@@ -205,6 +205,10 @@ const pages: Record<SeedBookId, { text: string; illustration_description: string
 
 export const CANONICAL_BOOKS: readonly CanonicalBook[] = books.map((b) => ({
   ...b,
+  // Primary characters carry the committed portrait; the index matches seedPortraitUrl / seedArt.
+  characters: b.characters.map((c, i) =>
+    c.role === 'primary' ? { ...c, portrait_url: seedPortraitUrl(b.id, i) } : c,
+  ),
   pages: pages[b.id],
 }));
 
@@ -220,7 +224,13 @@ export async function seedCanonicalBooks(
   for (const book of CANONICAL_BOOKS) {
     const { id, characters, coverScene: _coverScene, pages: bookPages, ...rest } = book;
     // `update` omits id, created_by, deleted_at and created_at by construction.
-    const data = { ...rest, characters_json: JSON.stringify(characters) };
+    const data = {
+      ...rest,
+      characters_json: JSON.stringify(characters),
+      cover_url: seedCoverUrl(id),
+      image_provider: SEED_ART_PIN.provider,
+      image_model: SEED_ART_PIN.model,
+    };
     await prisma.book.upsert({
       where: { id },
       update: data,
@@ -231,6 +241,7 @@ export async function seedCanonicalBooks(
       const pageData = {
         text: bookPages[i].text,
         illustration_description: bookPages[i].illustration_description,
+        illustration_url: seedPageUrl(id, i + 1),
       };
       await prisma.page.upsert({
         where: { book_id_page_number: { book_id: id, page_number: i + 1 } },
