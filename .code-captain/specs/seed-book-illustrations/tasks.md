@@ -273,6 +273,8 @@ export async function runSeedArt(jobs: SeedArtJob[], deps: {
 
 > **Do not start without the owner's explicit yes to spec §Owner decisions 1, 4 and 5.** An agent may run the dry run and stop there. The `--spend` run is the owner's, or an agent's only with a written owner instruction in the session. Agent or developer messages do not count as consent.
 
+**Status:** Done (2026-11-11) — 43 images generated, $1.72 spent, 0 redos. 43 JPEGs, all 1024×1024, 15,645,515 bytes total, largest 576,011 bytes (`cloud-painter/page-4.jpg`); 10 files exceed 500 KB. Owner reviewed the contact sheet and said "Commit as is", accepting two flagged images (`luna-star-garden:cover` title reads "STAR ARDEN"; `brave-little-seed:page-4` is off-brief) and painted title text on some covers. Task 6 budgets: ≤ 600 KB per file, ≤ 17 MB total.
+
 **Zone:** ops (owner machine) · **Depends on:** Task 4 · **Parallel-safe with:** none
 
 **Steps:**
