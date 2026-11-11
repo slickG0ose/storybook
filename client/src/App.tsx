@@ -1,5 +1,6 @@
-import { Routes, Route, Link } from 'react-router-dom'
+import { Routes, Route, Link, useLocation } from 'react-router-dom'
 import Navbar from './components/Navbar'
+import ErrorBoundary from './components/ErrorBoundary'
 import Home from './pages/Home'
 import BookDetail from './pages/BookDetail'
 import CreateBook from './pages/CreateBook'
@@ -17,6 +18,8 @@ const FOOTER_LINK =
   'inline-flex items-center py-2 -my-2 text-gray-500 dark:text-gray-400 hover:text-purple-600 dark:hover:text-purple-300 no-underline transition-colors'
 
 function App() {
+  const { pathname } = useLocation()
+
   return (
     // min-h-dvh, not min-h-screen: 100vh on mobile Safari includes the collapsing
     // toolbar, so a 100vh shell jumps by ~60px the first time the page is scrolled.
@@ -35,19 +38,23 @@ function App() {
       <Navbar />
 
       <main id="main" className="flex-1">
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/book/:id" element={<BookDetail />} />
-          <Route path="/create" element={<CreateBook />} />
-          <Route path="/cart" element={<Cart />} />
-          <Route path="/checkout" element={<Checkout />} />
-          <Route path="/order/:id" element={<OrderConfirmation />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/my-books" element={<MyBooks />} />
-          <Route path="/admin" element={<Admin />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+        {/* Around the routes only, so a page that throws keeps the navbar and footer.
+            Keyed on pathname: navigating away from a broken page clears it (#209). */}
+        <ErrorBoundary resetKey={pathname}>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/book/:id" element={<BookDetail />} />
+            <Route path="/create" element={<CreateBook />} />
+            <Route path="/cart" element={<Cart />} />
+            <Route path="/checkout" element={<Checkout />} />
+            <Route path="/order/:id" element={<OrderConfirmation />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/my-books" element={<MyBooks />} />
+            <Route path="/admin" element={<Admin />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </ErrorBoundary>
       </main>
 
       <footer className="border-t border-gray-200/70 dark:border-gray-800 mt-16">
