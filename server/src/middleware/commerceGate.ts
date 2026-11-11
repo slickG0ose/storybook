@@ -18,6 +18,10 @@ export function commerceEnabled(): boolean {
  * Mount on the cart and orders routers. When commerce is off every route under
  * them answers 503 (not 404: the routes exist, the feature is paused) with a
  * stable `code` the client can key on.
+ *
+ * One exception, handled in routes/cart.ts ahead of this gate: `GET
+ * /api/cart/:sessionId` answers an empty cart (200) so a stale cached client
+ * that still fetches the cart on load does not crash on the 503 body.
  */
 export function commerceGate(_req: Request, res: Response, next: NextFunction): void {
   if (commerceEnabled()) {
