@@ -44,6 +44,8 @@ import { buildCorsPolicy } from './lib/cors';
 import { assertSingleInstanceAssumption } from './middleware/rateLimit';
 import { resolveTrustProxyHops } from './middleware/authRateLimit';
 import { illustrationRedirect } from './middleware/illustrationRedirect';
+import { securityHeaders } from './middleware/securityHeaders';
+import { jsonBody, errorHandler } from './middleware/jsonBody';
 import { getStorage, resolveBackendName } from './services/storage';
 
 import type { Request, Response, NextFunction } from 'express';
@@ -69,6 +71,8 @@ if (resolveBackendName() === 'r2') {
 // A hop count, never `true`: `true` reads the left-most X-Forwarded-For entry, which
 // the client controls. See resolveTrustProxyHops() and ADR-030.
 app.set('trust proxy', resolveTrustProxyHops());
+// Don't advertise the framework (#208). The headers: middleware/securityHeaders.ts.
+app.disable('x-powered-by');
 
 const corsPolicy = buildCorsPolicy();
 if (corsPolicy.warning) {
@@ -76,8 +80,9 @@ if (corsPolicy.warning) {
 } else if (corsPolicy.allowed.length > 0) {
   console.log(`[cors] restricted to: ${corsPolicy.allowed.join(', ')}`);
 }
+app.use(securityHeaders);
 app.use(cors(corsPolicy.options));
-app.use(express.json({ limit: '10mb' }));
+app.use(jsonBody);
 // Disk first; on a miss, illustrationRedirect 302s to R2_PUBLIC_BASE_URL under the
 // r2 backend and falls through to the default 404 under local (ADR-026).
 app.use(
@@ -128,14 +133,10 @@ app.get('/api/health', (_req: Request, res: Response) => {
 //
 // We deliberately do NOT leak err.message or err.stack to the client —
 // callers get a generic envelope, the full detail is in the server log.
-app.use((err: unknown, _req: Request, res: Response, next: NextFunction): void => {
-  console.error('[express:error]', err);
-  if (res.headersSent) {
-    next(err);
-    return;
-  }
-  res.status(500).json({ error: 'Internal server error' });
-});
+//
+// Lives in middleware/jsonBody.ts so it is testable; it also maps an over-limit
+// JSON body to a 413 envelope (#211).
+app.use(errorHandler);
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
