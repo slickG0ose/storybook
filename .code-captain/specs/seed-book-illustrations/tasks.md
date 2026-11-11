@@ -41,6 +41,7 @@ Tasks 1–4 can merge, or sit green on the branch, whether or not Task 5 has run
 **Zone:** server
 **Depends on:** none
 **Parallel-safe with:** none (server zone)
+**Status:** Done (2026-11-11)
 
 **Files to add or change:**
 - `server/src/seed/canonicalBooks.ts` (new) — move `books` and `pages` out of `seed.ts` verbatim. Add `style_descriptor` and `characters` per book, copied from spec §Style and cast. Add `seedCanonicalBooks()`. It lives under `src/` so the server `tsconfig` (`rootDir: ./src`) typechecks it.

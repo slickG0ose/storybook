@@ -18,13 +18,13 @@ import { AGE_RANGES } from '@storybook/shared';
  */
 function seedAgeRangeLiterals(): string[] {
   const seed = readFileSync(
-    fileURLToPath(new URL('../../../prisma/seed.ts', import.meta.url)),
+    fileURLToPath(new URL('../../seed/canonicalBooks.ts', import.meta.url)),
     'utf8',
   );
   return [...seed.matchAll(/age_range:\s*'([^']*)'/g)].map(m => m[1]);
 }
 
-describe('age-range vocabulary vs server/prisma/seed.ts', () => {
+describe('age-range vocabulary vs server/src/seed/canonicalBooks.ts', () => {
   it('finds age_range literals in the seed at all', () => {
     // Guard the regex itself: a seed refactor to double quotes or a computed
     // value would otherwise make every assertion below vacuously pass.
