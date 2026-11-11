@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import PublishStateBar, { type PublishStateBarProps } from '../PublishStateBar'
 
 const onWithdraw = vi.fn().mockResolvedValue(undefined)
@@ -156,6 +156,38 @@ describe('PublishStateBar', () => {
       expect(screen.getByRole('alert')).toHaveTextContent(
         "Couldn't take that book out of the catalog. Try again.",
       )
+    })
+  })
+
+  // Tester build (spec: `.code-captain/specs/tester-commerce-off/spec.md`): nothing is for
+  // sale, so the author copy must not promise buyers or receipts.
+  describe('commerce off', () => {
+    beforeEach(() => {
+      vi.stubEnv('VITE_COMMERCE_ENABLED', 'false')
+    })
+
+    afterEach(() => {
+      vi.unstubAllEnvs()
+    })
+
+    it('describes the catalog state without mentioning buying', () => {
+      renderBar()
+
+      const bar = screen.getByTestId('publish-state-bar')
+      expect(bar).toHaveTextContent('Readers can find and read this book. Editing it means taking it out first.')
+      expect(bar).not.toHaveTextContent(/buy/i)
+    })
+
+    it('drops the purchase and receipt wording from the withdraw confirm', async () => {
+      renderBar()
+
+      await userEvent.click(screen.getByRole('button', { name: /Edit this book/ }))
+
+      const confirm = screen.getByTestId('withdraw-confirm')
+      expect(confirm).toHaveTextContent(
+        'Editing takes The Brave Little Toaster out of the catalog while you work. Readers won’t be able to find it until you publish again.',
+      )
+      expect(confirm).not.toHaveTextContent(/buy|bought|receipt/i)
     })
   })
 })

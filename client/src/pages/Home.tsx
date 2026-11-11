@@ -4,11 +4,13 @@ import { Sparkles, Search, X, BookOpen, Eye } from 'lucide-react'
 import BookCard from '../components/BookCard'
 import HeroArt from '../components/HeroArt'
 import { api } from '../lib/apiBase'
+import { commerceEnabled } from '../lib/commerce'
 import type { Book, Page } from '../types'
 
 function BookPreviewModal({ book, onClose }: { book: Book; onClose: () => void }) {
   const [firstPage, setFirstPage] = useState<Page | null>(null)
   const [loading, setLoading] = useState(true)
+  const commerce = commerceEnabled()
 
   useEffect(() => {
     fetch(api(`/api/books/${book.id}`))
@@ -68,8 +70,10 @@ function BookPreviewModal({ book, onClose }: { book: Book; onClose: () => void }
             </div>
           ) : null}
 
-          <div className="flex items-center justify-between pt-2">
-            <span className="text-2xl font-bold text-gray-800 dark:text-gray-100 tnum">${book.price.toFixed(2)}</span>
+          <div className={`flex items-center pt-2 ${commerce ? 'justify-between' : 'justify-end'}`}>
+            {commerce && (
+              <span className="text-2xl font-bold text-gray-800 dark:text-gray-100 tnum">${book.price.toFixed(2)}</span>
+            )}
             <Link
               to={`/book/${book.id}`}
               className="inline-flex items-center gap-2 bg-purple-500 hover:bg-purple-600 text-white px-5 py-2.5 rounded-xl font-semibold no-underline transition-[background-color,transform] duration-150 active:scale-[0.97]"

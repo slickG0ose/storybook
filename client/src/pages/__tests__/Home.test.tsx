@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import Home from '../Home'
 import type { Book } from '../../types'
@@ -268,5 +268,45 @@ describe('Home hero art', () => {
     // image actually lays out at on a 1440 viewport — it only biases toward the larger
     // candidate, which a 2x display picks anyway. Retune this line if the grid changes.
     expect(art).toHaveAttribute('sizes', '(min-width: 1024px) 440px, 300px')
+  })
+})
+
+describe('Home — commerce off', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    vi.stubEnv('VITE_COMMERCE_ENABLED', 'false')
+    vi.spyOn(globalThis, 'fetch').mockImplementation(input => {
+      const url = String(input)
+      const body = url.includes('/themes')
+        ? mockThemes
+        : url.includes('/age-ranges')
+          ? mockAgeRanges
+          : url.includes('/api/books/')
+            ? { ...mockBooks[1], pages: [] }
+            : mockBooks
+      return Promise.resolve(
+        new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } })
+      )
+    })
+  })
+
+  afterEach(() => vi.unstubAllEnvs())
+
+  it('shows no price in the quick preview, and keeps "View Full Book"', async () => {
+    renderHome()
+
+    // Kindness Kingdom is not featured, so it has exactly one card and one preview button.
+    fireEvent.click(await screen.findByRole('button', { name: 'Quick preview of Kindness Kingdom' }))
+
+    const viewFull = await screen.findByRole('link', { name: /View Full Book/ })
+    expect(viewFull).toHaveAttribute('href', '/book/book-2')
+    // The footer row holds only the link now, pushed to the right edge.
+    expect(viewFull.parentElement).toHaveClass('justify-end')
+    expect(viewFull.parentElement).not.toHaveClass('justify-between')
+    await waitFor(() => expect(screen.queryByText('Loading preview...')).not.toBeInTheDocument())
+
+    // Whole document: neither the modal nor the cards behind it show a price.
+    expect(screen.queryByText(/\$\d/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add to Cart' })).not.toBeInTheDocument()
   })
 })

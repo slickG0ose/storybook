@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { AlertTriangle, PencilLine, Send } from 'lucide-react'
+import { commerceEnabled } from '../lib/commerce'
 
 /**
  * The author-facing publish-state surface for `/book/:id`.
@@ -77,6 +78,8 @@ export default function PublishStateBar({
 
   if (!isDraft) {
     const confirmOpen = openConfirm === 'withdraw'
+    // Commerce off (tester build): the same two messages without the purchase vocabulary.
+    const commerce = commerceEnabled()
 
     return (
       <section
@@ -88,7 +91,9 @@ export default function PublishStateBar({
           <div className="min-w-0">
             <p className="font-display font-bold text-gray-800 dark:text-gray-100">In the catalog</p>
             <p className="mt-0.5 text-sm text-gray-600 dark:text-gray-300">
-              Readers can find and buy this book. Editing it means taking it out first.
+              {commerce
+                ? 'Readers can find and buy this book. Editing it means taking it out first.'
+                : 'Readers can find and read this book. Editing it means taking it out first.'}
             </p>
           </div>
           <button
@@ -112,8 +117,10 @@ export default function PublishStateBar({
           >
             <p className="text-sm text-amber-900 dark:text-amber-200">
               Editing takes <strong className="font-bold text-amber-900 dark:text-amber-100">{title}</strong> out of the
-              catalog while you work. Readers won&rsquo;t be able to find or buy it until you publish again. Anyone who
-              already bought it keeps their receipt.
+              catalog while you work.{' '}
+              {commerce
+                ? 'Readers won’t be able to find or buy it until you publish again. Anyone who already bought it keeps their receipt.'
+                : 'Readers won’t be able to find it until you publish again.'}
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <button

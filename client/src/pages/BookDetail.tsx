@@ -5,6 +5,7 @@ import { useCart } from '../context/CartContext'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { api } from '../lib/apiBase'
+import { commerceEnabled } from '../lib/commerce'
 import { resolveReaderTypography } from '../lib/typography'
 import { PER_IMAGE_COST_USD, fmtUsd, portraitStepCostNote } from '../lib/cost'
 import type { BookWithPages, BookVersion, FontFamily, IllustrationVersion, Page, TextSize } from '../types'
@@ -817,7 +818,7 @@ export default function BookDetail() {
                   </button>
                 </div>
               )}
-              {!isDraft && (
+              {!isDraft && commerceEnabled() && (
                 <>
                   <span className="text-3xl font-bold text-gray-800 dark:text-gray-100">${book.price.toFixed(2)}</span>
                   <button

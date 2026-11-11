@@ -5,6 +5,7 @@ import { useCart } from '../context/CartContext'
 import { useTheme } from '../context/ThemeContext'
 import { useAuth } from '../context/AuthContext'
 import FeedbackDialog from './FeedbackDialog'
+import { commerceEnabled } from '../lib/commerce'
 
 /**
  * Mobile sizing note: every responsive class here puts the compact treatment in the
@@ -38,6 +39,8 @@ export default function Navbar() {
   const showAdminLink = !authLoading && user?.role === 'admin'
   const showFeedback = !authLoading && !!user
   const [feedbackOpen, setFeedbackOpen] = useState(false)
+  // Tester build: no cart link or badge. The row is gap-spaced flex, so it just closes up.
+  const showCart = commerceEnabled()
 
   return (
     <>
@@ -93,22 +96,24 @@ export default function Navbar() {
             >
               {dark ? <Sun size={20} /> : <Moon size={20} />}
             </button>
-            <Link
-              to="/cart"
-              aria-label="Cart"
-              className="text-amber-800 dark:text-amber-300 hover:text-amber-600 dark:hover:text-amber-200 no-underline flex items-center p-2 sm:p-0 rounded-full hover:bg-amber-100/60 dark:hover:bg-gray-700/60 sm:hover:bg-transparent sm:dark:hover:bg-transparent transition-colors"
-            >
-              {/* The badge anchors to this inner span, not the link, so the mobile-only
-                  padding cannot push it away from the icon. */}
-              <span className="relative flex">
-                <ShoppingCart size={22} />
-                {count > 0 && (
-                  <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold">
-                    {count}
-                  </span>
-                )}
-              </span>
-            </Link>
+            {showCart && (
+              <Link
+                to="/cart"
+                aria-label="Cart"
+                className="text-amber-800 dark:text-amber-300 hover:text-amber-600 dark:hover:text-amber-200 no-underline flex items-center p-2 sm:p-0 rounded-full hover:bg-amber-100/60 dark:hover:bg-gray-700/60 sm:hover:bg-transparent sm:dark:hover:bg-transparent transition-colors"
+              >
+                {/* The badge anchors to this inner span, not the link, so the mobile-only
+                    padding cannot push it away from the icon. */}
+                <span className="relative flex">
+                  <ShoppingCart size={22} />
+                  {count > 0 && (
+                    <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold">
+                      {count}
+                    </span>
+                  )}
+                </span>
+              </Link>
+            )}
             {user ? (
               <button
                 onClick={logout}

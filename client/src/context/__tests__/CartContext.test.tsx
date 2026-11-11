@@ -1,4 +1,4 @@
-import { render, screen, waitFor, fireEvent } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react'
 import { useState } from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { CartItem } from '@storybook/shared'
@@ -201,5 +201,47 @@ describe('CartContext offline behaviour', () => {
 
     await waitFor(() => expect(screen.getByTestId('add-result')).toHaveTextContent('true'))
     expect(screen.getByTestId('offline')).toHaveTextContent('online')
+  })
+})
+
+describe('CartContext with commerce off', () => {
+  function SessionProbe() {
+    const { sessionId } = useCart()
+    return <span data-testid="session">{sessionId}</span>
+  }
+
+  beforeEach(() => {
+    localStorage.clear()
+    vi.stubEnv('VITE_COMMERCE_ENABLED', 'false')
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
+  })
+
+  // Guardrail: FeedbackDialog reads useCart().sessionId on every report, so the UUID
+  // must still be issued when the cart itself is never fetched.
+  it('issues the session id but makes no cart request on mount', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse({ items: [], total: 0 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(
+      <CartProvider>
+        <SessionProbe />
+      </CartProvider>,
+    )
+
+    // Let any mount effect (and a fetch it might have started) flush.
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    const stored = localStorage.getItem(SESSION_KEY)
+    expect(stored).toEqual(expect.any(String))
+    expect(stored).not.toBe('')
+    expect(screen.getByTestId('session')).toHaveTextContent(stored as string)
+    expect(screen.getByTestId('session').textContent).toBe(stored)
   })
 })

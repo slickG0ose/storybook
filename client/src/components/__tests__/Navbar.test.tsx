@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import Navbar from '../Navbar'
 import type { CartContextValue } from '../../context/CartContext'
@@ -145,6 +145,24 @@ describe('Navbar', () => {
       expect(screen.queryByRole('dialog', { name: 'Send feedback' })).not.toBeInTheDocument()
       fireEvent.click(screen.getByRole('button', { name: 'Send feedback' }))
       expect(screen.getByRole('dialog', { name: 'Send feedback' })).toBeInTheDocument()
+    })
+  })
+
+  describe('commerce off', () => {
+    beforeEach(() => {
+      vi.stubEnv('VITE_COMMERCE_ENABLED', 'false')
+    })
+
+    afterEach(() => vi.unstubAllEnvs())
+
+    it('renders no cart link or badge, and keeps the rest of the row', () => {
+      renderNavbar()
+      expect(screen.queryByRole('link', { name: 'Cart' })).not.toBeInTheDocument()
+      // The mocked cart holds 5 items; the badge goes with the link.
+      expect(screen.queryByText('5')).not.toBeInTheDocument()
+      expect(screen.getByRole('link', { name: 'Create a Book' })).toBeInTheDocument()
+      expect(screen.getByRole('link', { name: 'Browse' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Toggle dark mode' })).toBeInTheDocument()
     })
   })
 })

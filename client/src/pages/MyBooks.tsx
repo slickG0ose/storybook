@@ -4,6 +4,7 @@ import { BookOpen, Sparkles, Send, Trash2, PencilLine } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { api } from '../lib/apiBase'
+import { commerceEnabled } from '../lib/commerce'
 import type { Book, BookWithPages } from '../types'
 
 type MyBook = Book & Partial<Pick<BookWithPages, 'pages'>>
@@ -50,8 +51,11 @@ export default function MyBooks() {
    */
   const unpublishBook = async (bookId: string, title: string) => {
     if (!user) return
+    // Commerce off (tester build): the same warning without the purchase vocabulary.
     const ok = window.confirm(
-      `Editing takes "${title}" out of the catalog while you work. Readers won't be able to find or buy it until you publish again. Anyone who already bought it keeps their receipt.`
+      commerceEnabled()
+        ? `Editing takes "${title}" out of the catalog while you work. Readers won't be able to find or buy it until you publish again. Anyone who already bought it keeps their receipt.`
+        : `Editing takes "${title}" out of the catalog while you work. Readers won't be able to find it until you publish again.`
     )
     if (!ok) return
     setUnpublishingId(bookId)

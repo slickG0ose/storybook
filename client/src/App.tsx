@@ -12,6 +12,7 @@ import Register from './pages/Register'
 import MyBooks from './pages/MyBooks'
 import Admin from './pages/Admin'
 import NotFound from './pages/NotFound'
+import { commerceEnabled } from './lib/commerce'
 
 /** `py-2 -my-2` clears the 24px WCAG tap-target floor without adding footer height. */
 const FOOTER_LINK =
@@ -45,9 +46,14 @@ function App() {
             <Route path="/" element={<Home />} />
             <Route path="/book/:id" element={<BookDetail />} />
             <Route path="/create" element={<CreateBook />} />
-            <Route path="/cart" element={<Cart />} />
-            <Route path="/checkout" element={<Checkout />} />
-            <Route path="/order/:id" element={<OrderConfirmation />} />
+            {/* Commerce off (tester build): not registered, so they fall through to NotFound. */}
+            {commerceEnabled() && (
+              <>
+                <Route path="/cart" element={<Cart />} />
+                <Route path="/checkout" element={<Checkout />} />
+                <Route path="/order/:id" element={<OrderConfirmation />} />
+              </>
+            )}
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/my-books" element={<MyBooks />} />

@@ -1627,3 +1627,39 @@ describe('BookDetail — typography', () => {
     expect(readerParagraph().className).not.toContain('font-display')
   })
 })
+
+// Tester build (spec: `.code-captain/specs/tester-commerce-off/spec.md`). The published
+// book page loses its price and "Add to Cart"; nothing replaces them. AI generation cost
+// labels are spend-meter figures, not book prices, and deliberately stay.
+describe('BookDetail — commerce off', () => {
+  const publishedBook: BookWithPages = { ...baseBook, status: 'published' }
+
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    vi.stubEnv('VITE_COMMERCE_ENABLED', 'false')
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
+    vi.restoreAllMocks()
+  })
+
+  it('renders no price and no "Add to Cart" on a published book, and keeps Download PDF', async () => {
+    setupFetchMock({ book: publishedBook })
+    renderBookDetail()
+
+    // The signed-in reader's remaining action — also the "page has loaded" sentinel.
+    expect(await screen.findByRole('button', { name: 'Download PDF' })).toBeEnabled()
+
+    expect(screen.queryByRole('button', { name: /add to cart/i })).not.toBeInTheDocument()
+    expect(screen.queryByText(/\$\d/)).not.toBeInTheDocument()
+  })
+
+  it('still shows the "Illustrate All" cost label on an owner\'s draft', async () => {
+    setupFetchMock({})
+    renderBookDetail()
+
+    // baseBook is the signed-in user's draft with two unillustrated pages: 2 x $0.04.
+    expect(await screen.findByRole('button', { name: 'Illustrate All (~$0.08)' })).toBeInTheDocument()
+  })
+})

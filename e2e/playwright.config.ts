@@ -1,5 +1,19 @@
 import { defineConfig } from '@playwright/test';
-import { API_BASE, API_PORT, CLIENT_BASE, CLIENT_PORT, PREVIEW_BASE, PREVIEW_PORT } from './ports';
+import {
+  API_BASE,
+  API_PORT,
+  CLIENT_BASE,
+  CLIENT_PORT,
+  COMMERCE_OFF_BASE,
+  COMMERCE_OFF_PORT,
+  PREVIEW_BASE,
+  PREVIEW_PORT,
+} from './ports';
+
+// Where the flag-off build lands. Under node_modules/ so git, eslint, tsc and Tailwind's
+// source scan already ignore it, and away from `dist/` so it cannot race the pwa build's
+// emptyOutDir. Relative to ../client, the cwd of the webServer entry that uses it.
+const COMMERCE_OFF_DIST = 'node_modules/.cache/commerce-off-dist';
 
 export default defineConfig({
   testDir: './tests',
@@ -51,7 +65,9 @@ export default defineConfig({
       // The desktop suite is unchanged. Scoping it away from tests/mobile (and the
       // future tests/pwa) keeps the mobile specs from being run a third time at the
       // default desktop viewport, where their assertions would be meaningless.
-      testIgnore: /tests\/(mobile|pwa)\//,
+      // tests/commerce-off is excluded for a different reason: it asserts the cart is
+      // absent, which is false on the flag-on dev server this project drives.
+      testIgnore: /tests\/(mobile|pwa|commerce-off)\//,
     },
     // testMatch must end in .spec.ts, not just match tests/mobile/: a bare directory
     // regex replaces Playwright's default file filter and pulls _helpers.ts in as a test
@@ -91,6 +107,22 @@ export default defineConfig({
       use: { browserName: 'chromium', baseURL: `${PREVIEW_BASE}/` },
       testMatch: /tests\/pwa\/.*\.spec\.ts$/,
     },
+    // The tester build: a production bundle compiled with VITE_COMMERCE_ENABLED=false,
+    // served by its own `vite preview`. The flag is inlined at build time, so no other
+    // project can reach this state by toggling something at run time. Same viewport as
+    // mobile-pixel, so the spec's overflow and tap-target assertions mean the same thing.
+    {
+      name: 'commerce-off',
+      use: {
+        browserName: 'chromium',
+        baseURL: `${COMMERCE_OFF_BASE}/`,
+        viewport: { width: 393, height: 851 },
+        deviceScaleFactor: 3,
+        isMobile: true,
+        hasTouch: true,
+      },
+      testMatch: /tests\/commerce-off\/.*\.spec\.ts$/,
+    },
   ],
 
   webServer: [
@@ -113,7 +145,10 @@ export default defineConfig({
       command: 'npx vite --host',
       cwd: '../client',
       // Vite's config reads these three names; see client/vite.config.ts.
-      env: { API_PORT, CLIENT_PORT, PREVIEW_PORT },
+      // The flag is pinned on because process env outranks .env files in Vite: a local
+      // client/.env.local with commerce off would otherwise hide the "Add to Cart" button
+      // most specs wait on. It cannot reach a dev server you started yourself.
+      env: { API_PORT, CLIENT_PORT, PREVIEW_PORT, VITE_COMMERCE_ENABLED: 'true' },
       url: CLIENT_BASE,
       reuseExistingServer: !process.env.CI,
       timeout: 15_000,
@@ -124,8 +159,21 @@ export default defineConfig({
     {
       command: `npm run build && npx vite preview --port ${PREVIEW_PORT} --strictPort`,
       cwd: '../client',
-      env: { API_PORT, CLIENT_PORT, PREVIEW_PORT },
+      env: { API_PORT, CLIENT_PORT, PREVIEW_PORT, VITE_COMMERCE_ENABLED: 'true' },
       url: `${PREVIEW_BASE}/`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 180_000,
+    },
+    // The flag-off build + preview, for the `commerce-off` project only. `vite build`
+    // directly rather than `npm run build` so `--outDir` can be passed; `preview` needs
+    // the same flag or it would serve the pwa entry's `dist/`.
+    {
+      command:
+        `npx vite build --outDir ${COMMERCE_OFF_DIST} && ` +
+        `npx vite preview --outDir ${COMMERCE_OFF_DIST} --port ${COMMERCE_OFF_PORT} --strictPort`,
+      cwd: '../client',
+      env: { API_PORT, CLIENT_PORT, PREVIEW_PORT, VITE_COMMERCE_ENABLED: 'false' },
+      url: `${COMMERCE_OFF_BASE}/`,
       reuseExistingServer: !process.env.CI,
       timeout: 180_000,
     },

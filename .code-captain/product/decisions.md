@@ -4,6 +4,51 @@ Append-only log. Newest entries on top. Each entry should answer: *what was deci
 
 ---
 
+## ADR-036 — Commerce is hidden from the tester build by a build-time client flag, `VITE_COMMERCE_ENABLED`, set as a literal in the Pages workflow
+
+**Date:** 2026-11-11
+**Status:** Accepted. Nick Konecny ruled "hide pricing and cart for testers" on 2026-11-10 and accepted the spec with all four recommended defaults the same day. Recorded at Task 7, before merge.
+**Scope:** `tester-commerce-off` spec, Tasks 1–6. Files: `client/src/lib/commerce.ts`, `client/src/{App,components/Navbar,components/BookCard,components/PublishStateBar,context/CartContext,pages/BookDetail,pages/Home,pages/MyBooks}.tsx`, `.github/workflows/deploy-pages.yml`, `e2e/playwright.config.ts`, `e2e/tests/commerce-off/`. Spec at [.code-captain/specs/tester-commerce-off/spec.md](../specs/tester-commerce-off/spec.md).
+
+### Decision
+
+1. **One flag, read in one place.** `commerceEnabled()` in `client/src/lib/commerce.ts` is the only reader of `VITE_COMMERCE_ENABLED`. It is off only for an explicit `false`, `0`, `off` or `no` (trimmed, case-insensitive). Unset, empty or anything else means **on**. It is a function called in the component body, not a module constant, so a test can flip it with `vi.stubEnv`.
+2. **Default on.** Local dev and the existing test projects never set it, so the cart and checkout code keeps its full coverage. No existing assertion was edited.
+3. **Off is set as a literal in `deploy-pages.yml`**, not as a repository variable. Bringing commerce back is a one-line PR to that file, and merging it redeploys Pages.
+4. **What off does.** Cards drop the price and swap "Add to Cart" for a "Read" link. The quick-preview modal and the book page drop the price and the button. The navbar drops the cart link. Publish and withdraw copy says "read" instead of "buy" or "receipt". `CartContext` skips its mount-time cart fetch but still issues the session id, because `FeedbackDialog` reads `useCart().sessionId`.
+5. **`/cart`, `/checkout` and `/order/:id` are not registered when off.** They fall through to the existing NotFound page. No redirect and no new markup.
+6. **A fifth Playwright project, `commerce-off`, covers the off build.** A fourth `webServer` runs `vite build` into `client/node_modules/.cache/commerce-off-dist` and serves it with `vite preview` on port 4174. The two existing client servers pin the flag to `'true'`. The spec runs both themes at 393px and claims the correctness half of Done criterion #2 (ADR-009).
+
+### Why
+
+- **Checkout is a demo.** Every generated book is priced at a hardcoded $24.99 and the cart leads nowhere real. Left visible, it pulls tester feedback onto a surface that is not under test and invites "am I being charged?".
+- **Client-only keeps it off every guardrail.** No Prisma change, no wire-shape change, no dependency, no auth or session change.
+- **Default-on protects the existing suite.** 22 e2e files reference the cart, and many use the "Add to Cart" button as the Home readiness sentinel.
+- **A literal leaves a trace.** A repository variable would flip without a commit, and deleting it would silently re-expose the cart because unset means on.
+
+### Alternative considered: a runtime config endpoint
+
+The server would report whether commerce is on, so one build could serve both modes. It was rejected because it needs a new route and wire shape, and the client would paint prices before the answer arrived unless every surface waited on it. Revisit if commerce ever needs to differ per user or flip without a deploy.
+
+### Alternative considered: hide commerce by role
+
+Testers would see no cart while admins still did. It was rejected because signed-out visitors are the main audience for the catalog, and they have no role to key on.
+
+### Alternative considered: redirect commerce URLs home
+
+A redirect is a three-line change in `App.tsx`. NotFound was chosen because only a hand-typed URL can reach those paths with the flag off, and the page is already themed and tested.
+
+### Consequences
+
+- **Merging is the release.** The PR touches `client/**` and `deploy-pages.yml`, so the push to `master` redeploys Pages with commerce hidden. There is no separate switch-on step.
+- **The server is unchanged.** `/api/cart/*` and `/api/orders` stay reachable by direct call. Neither spends money, so the exposure is what it was before the flag. A server-side kill switch is tracked in [#216](https://github.com/slickG0ose/storybook/issues/216) and becomes required before any payment integration.
+- **The off branch is hidden, not removed.** The flag-off bundle still contains the string "Add to Cart", because `commerceEnabled()` does a Set lookup the bundler cannot fold away. Nothing renders it.
+- **AI generation cost labels stay visible** ("Illustrate All (~$0.08)", "Regenerate ($0.04)"). They are spend-meter figures, not book prices, and they explain the daily quota a tester will hit.
+- **Every e2e run now does one extra client build.** Measured locally at about 2 seconds. All four `webServer` entries start whichever project is selected, so `--project=chromium` still builds the flag-off bundle.
+- **What CI cannot prove: how the price-less card looks.** The spec asserts overflow, tap targets and absence of prices. The aesthetic half of Done criterion #2 still needs a human look.
+
+---
+
 ## ADR-035 — Generated narration is a second `NarrationProvider` selected by the `generated:` voice URI; segmentation moves to `@storybook/shared`; device TTS is the per-page fallback
 
 **Date:** 2026-11-08
