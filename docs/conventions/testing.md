@@ -177,9 +177,9 @@ the worked example.
 
 `e2e/playwright.config.ts`:
 
-- **Auto-starts both servers** via `webServer[]`: spawns server (`:3001`) and client (`:5173`) before the test run.
+- **Auto-starts four servers** via `webServer[]` before the test run: the API (`:3001`), the dev client (`:5173`), the `pwa` production preview (`:4173`) and the `commerce-off` production preview (`:4174`). All four start whichever project you select.
 - **`reuseExistingServer: !process.env.CI`** — if you're running `npm run dev` already, Playwright uses your running servers (faster). In CI it always spins up fresh.
-- 1 Chromium project. No Firefox/Webkit today.
+- Five projects, all Chromium: `chromium`, `mobile-pixel`, `mobile-small`, `pwa`, `commerce-off`. No Firefox/Webkit today.
 - `fullyParallel: true` locally; 1 worker in CI.
 - HTML report; trace on first retry; screenshot only on failure.
 
