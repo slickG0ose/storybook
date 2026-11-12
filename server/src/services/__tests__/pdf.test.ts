@@ -1,10 +1,12 @@
-import { describe, it, expect, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { rm, mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
 import prisma from '../../db/prisma';
 import { renderBookPdf, watermarkFor, sanitizeForPdf, type PdfBook } from '../pdf';
 
-const TEST_BOOK_ID = 'luna-star-garden';
+// Test-only id, never a seed-book id: afterAll removes this directory, and seed-book
+// directories hold committed art fixtures.
+const TEST_BOOK_ID = 'pdf-test-book';
 const ILLUSTRATIONS_DIR = join(import.meta.dirname, '../../../public/illustrations', TEST_BOOK_ID);
 
 // A 1x1 transparent PNG — the smallest bytes that survive format sniffing and
@@ -20,8 +22,9 @@ async function collect(stream: NodeJS.ReadableStream): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
-// The seeded book, read straight from the DB so the fixture tracks the real
-// row shape rather than a hand-written stand-in that can drift.
+// The test book, read straight from the DB so the fixture tracks the real
+// row shape rather than a hand-written stand-in that can drift. It is created in
+// beforeAll under a test-only id, so the suite never depends on a seed book.
 async function seededBook(): Promise<PdfBook> {
   const book = await prisma.book.findFirstOrThrow({
     where: { id: TEST_BOOK_ID },
@@ -31,7 +34,32 @@ async function seededBook(): Promise<PdfBook> {
 }
 
 describe('pdf renderer service', () => {
+  beforeAll(async () => {
+    await prisma.book.deleteMany({ where: { id: TEST_BOOK_ID } });
+    await prisma.book.create({
+      data: {
+        id: TEST_BOOK_ID,
+        title: 'PDF Test Book',
+        author: 'Test',
+        description: 'Fixture for pdf renderer tests.',
+        theme: 'fantasy',
+        age_range: '4-7',
+        cover_emoji: '\u{1F31F}',
+        cover_color: '#7c3aed',
+        price: 1,
+        pages: {
+          create: [1, 2, 3, 4, 5].map(n => ({
+            page_number: n,
+            text: `Page ${n} text`,
+            illustration_description: `Illustration ${n}`,
+          })),
+        },
+      },
+    });
+  });
+
   afterAll(async () => {
+    await prisma.book.deleteMany({ where: { id: TEST_BOOK_ID } });
     await rm(ILLUSTRATIONS_DIR, { recursive: true, force: true });
   });
 

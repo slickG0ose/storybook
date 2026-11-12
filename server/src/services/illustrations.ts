@@ -372,31 +372,33 @@ export function isImageGenConfigured(provider?: ImageProvider): boolean {
   return isUsableApiKey(process.env.FAL_KEY);
 }
 
-export async function generateIllustration(
-  bookId: string,
-  pageNumber: number,
-  description: string,
-  feedback?: string,
-  styleDescriptor?: string | null,
-  characters?: Character[],
-  referenceImages?: string[],
-  opts?: GenerationPin,
-): Promise<string | null> {
-  // Gate on the PINNED provider when there is one: a book pinned to a provider
-  // this server has no key for must return null rather than quietly generating
-  // on the wrong model — that silent fallback is the reported bug.
-  if (!isImageGenConfigured(opts?.pin?.provider)) return null;
+export const DEFAULT_STYLE = 'Whimsical, colorful, warm, suitable for young children';
 
-  const style = styleDescriptor?.trim() || 'Whimsical, colorful, warm, suitable for young children';
+function resolveStyle(styleDescriptor?: string | null): string {
+  return styleDescriptor?.trim() || DEFAULT_STYLE;
+}
+
+// Pure prompt assembly, exported so the offline seed-art script builds the same
+// strings the app does. No I/O, no provider: string in, string out.
+export function buildIllustrationPrompt(input: {
+  description: string;
+  feedback?: string;
+  styleDescriptor?: string | null;
+  characters?: Character[];
+  referenceImages?: string[];
+  styleAnchor?: string | null;
+}): string {
+  const { description, feedback, characters, referenceImages } = input;
+  const style = resolveStyle(input.styleDescriptor);
   const castPrefix = formatCastPrefix(characters);
   let prompt = `${castPrefix}Children's book illustration, ${description}. ${style}. No text or words in the image.`;
 
   // Mitigation B (ADR-013): shape the prompt around the page's own existing
-  // illustration when the route passes one as the style anchor. EVERY clause
+  // illustration when the caller passes one as the style anchor. EVERY clause
   // below is gated on `styleAnchor`, so a call without one produces a prompt
   // byte-identical to today's — that is the regression boundary from ADR-006
   // dec 3 / ADR-007 dec 3, not a nicety.
-  const styleAnchor = opts?.styleAnchor ?? null;
+  const styleAnchor = input.styleAnchor ?? null;
   // How many of the references are character portraits, derived from what the
   // caller actually passed rather than by re-deriving cast state here:
   // composeReferenceImages() puts the anchor at slot 0 and the required
@@ -429,6 +431,59 @@ export async function generateIllustration(
             + ` pose and camera angle from reference image 1 — while keeping its art style,`
             + ` palette and character designs identical.`;
   }
+  return prompt;
+}
+
+export function buildCoverPrompt(input: {
+  title: string;
+  description: string;
+  styleDescriptor?: string | null;
+  characters?: Character[];
+}): string {
+  const style = resolveStyle(input.styleDescriptor);
+  const castPrefix = formatCastPrefix(input.characters);
+  return `${castPrefix}Children's book cover illustration for a story titled "${input.title}". Scene: ${input.description}. ${style}. Composition suitable for a book cover (centered subject, room at top for title). No text or words in the image.`;
+}
+
+export function buildPortraitPrompt(input: {
+  name: string;
+  descriptor?: string;
+  feedback?: string;
+  styleDescriptor?: string | null;
+}): string {
+  let prompt = formatPortraitPrompt(input.name, input.descriptor, resolveStyle(input.styleDescriptor));
+  if (input.feedback) {
+    prompt += ` Revision instructions: ${input.feedback}`;
+  }
+  return prompt;
+}
+
+export async function generateIllustration(
+  bookId: string,
+  pageNumber: number,
+  description: string,
+  feedback?: string,
+  styleDescriptor?: string | null,
+  characters?: Character[],
+  referenceImages?: string[],
+  opts?: GenerationPin,
+): Promise<string | null> {
+  // Gate on the PINNED provider when there is one: a book pinned to a provider
+  // this server has no key for must return null rather than quietly generating
+  // on the wrong model — that silent fallback is the reported bug.
+  if (!isImageGenConfigured(opts?.pin?.provider)) return null;
+
+  // Mitigation B (ADR-013): the anchor-aware clauses live in buildIllustrationPrompt,
+  // every one gated on `styleAnchor`, so a call without one is byte-identical to
+  // today's (the regression boundary from ADR-006 dec 3 / ADR-007 dec 3).
+  const prompt = buildIllustrationPrompt({
+    description,
+    feedback,
+    styleDescriptor,
+    characters,
+    referenceImages,
+    styleAnchor: opts?.styleAnchor ?? null,
+  });
 
   // Forward referenceImages only when present, so callers that pass nothing
   // get the byte-identical no-reference path (regression-safe). The provider
@@ -597,11 +652,7 @@ export async function generateCharacterPortrait(
   // See generateIllustration: the pinned provider gates, not the env default.
   if (!isImageGenConfigured(opts?.pin?.provider)) return null;
 
-  const style = styleDescriptor?.trim() || 'Whimsical, colorful, warm, suitable for young children';
-  let prompt = formatPortraitPrompt(name, descriptor, style);
-  if (feedback) {
-    prompt += ` Revision instructions: ${feedback}`;
-  }
+  const prompt = buildPortraitPrompt({ name, descriptor, feedback, styleDescriptor });
 
   // Prompt-only on purpose — no referenceImages passed (regression-safe path).
   const buffer = await getImageGenerator(opts?.pin).generate(prompt);
@@ -661,9 +712,7 @@ export async function generateCover(
   // See generateIllustration: the pinned provider gates, not the env default.
   if (!isImageGenConfigured(opts?.pin?.provider)) return null;
 
-  const style = styleDescriptor?.trim() || 'Whimsical, colorful, warm, suitable for young children';
-  const castPrefix = formatCastPrefix(characters);
-  const prompt = `${castPrefix}Children's book cover illustration for a story titled "${title}". Scene: ${description}. ${style}. Composition suitable for a book cover (centered subject, room at top for title). No text or words in the image.`;
+  const prompt = buildCoverPrompt({ title, description, styleDescriptor, characters });
 
   // See generateIllustration: forward references only when present; absent/empty
   // keeps the no-reference path byte-identical.

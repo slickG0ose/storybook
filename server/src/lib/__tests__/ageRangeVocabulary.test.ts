@@ -8,7 +8,7 @@ import { AGE_RANGES } from '@storybook/shared';
  *
  * The seed catalog IS the canonical list — user ruling, 2026-09-09 — so the two
  * are the same set by definition. Nothing in the type system connects a string
- * literal in `seed.ts` to `AGE_RANGES`, and that gap is exactly how the repo
+ * literal in `canonicalBooks.ts` to `AGE_RANGES`, and that gap is exactly how the repo
  * once ended up with two conflicting age lists in the first place. Read the seed as
  * text so a new book with an off-list age range, or a widened enum with no book
  * behind it, fails here instead of shipping.
@@ -18,13 +18,13 @@ import { AGE_RANGES } from '@storybook/shared';
  */
 function seedAgeRangeLiterals(): string[] {
   const seed = readFileSync(
-    fileURLToPath(new URL('../../../prisma/seed.ts', import.meta.url)),
+    fileURLToPath(new URL('../../seed/canonicalBooks.ts', import.meta.url)),
     'utf8',
   );
   return [...seed.matchAll(/age_range:\s*'([^']*)'/g)].map(m => m[1]);
 }
 
-describe('age-range vocabulary vs server/prisma/seed.ts', () => {
+describe('age-range vocabulary vs server/src/seed/canonicalBooks.ts', () => {
   it('finds age_range literals in the seed at all', () => {
     // Guard the regex itself: a seed refactor to double quotes or a computed
     // value would otherwise make every assertion below vacuously pass.

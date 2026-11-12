@@ -8,7 +8,7 @@ Database layer: Prisma over SQLite. Migrations, seeds, snapshots, restore. The d
 - **Database file:** `server/prisma/dev.db` (SQLite, gitignored under `*.db`).
 - **Migrations:** `server/prisma/migrations/<timestamp>_<name>/` — auto-generated, committed.
 - **Seeds:**
-  - `server/prisma/seed.ts` — canonical Prisma-based seed (6 books with pages).
+  - `server/prisma/seed.ts` — canonical Prisma-based seed (6 illustrated books with pages, art committed under `server/public/illustrations/<id>/`).
   - `server/prisma/demo-seed.ts` — extra demo content layered on top.
 - **Tests:** `server/test.db` (gitignored, recreated per test run via vitest globalSetup).
 - **Snapshots:** `server/.backups/dev-<timestamp>.db` — auto-created on dev-server boot, 7-day retention.
@@ -160,9 +160,19 @@ Under `r2`, all five `R2_*` vars are required. If any is missing or blank the se
 | `R2_SECRET_ACCESS_KEY` | R2 API token secret (secret) |
 | `R2_PUBLIC_BASE_URL` | Public read URL of the bucket, e.g. `https://pub-<hash>.r2.dev`. Trailing slashes are stripped. |
 
+### Seed-book art
+
+The six canonical books (`server/src/seed/canonicalBooks.ts`) ship with committed art: a cover plus five pages each, under `server/public/illustrations/<seed-book-id>/`.
+
+- **Format:** 1024x1024 JPEG, quality 82 (about 9-10 MB total, versus about 95 MB as PNG). These are the only illustrations in the repo that are not `.png`. That is safe because seed books are unowned, so no re-roll, version-history or portrait code path can reach them.
+- **Always-set on re-seed:** `seedCanonicalBooks()` writes the cover and page URLs on every run (`db:seed`, and the Render build). A fresh checkout has the bytes; nothing is uploaded to R2 and nothing is written to the prod DB by hand.
+- **Regenerate** (paid, offline, owner's machine): `cd server && npx tsx scripts/generate-seed-art.ts`. It is a dry run unless you pass `--spend`. Useful flags: `--max-images N`, `--only <id>` (repeatable), `--redo <id>:<slot>` (regenerate one slot, e.g. `luna-star-garden:page-3`), and `--compress-only` (re-encode the cached PNGs to JPEG with no generation calls).
+- **Raw cache:** the generated PNGs are kept in `server/.seed-art/` (gitignored) so a re-compress or a rerun never pays twice.
+- **Never write into a seed-book directory from a test.** Those files are committed fixtures; a test that generates or deletes art there dirties the working tree. Tests use a temp directory or a non-seed book id.
+
 ### Local-disk fallback under `r2`
 
-Under `r2`, `get` and `head` **fall back to local disk on an R2 miss**, and `list` merges both sources (deduped by key, R2 wins). The reason is the fixture book `b2fa23cf-3156-4b89-83e7-82d98c32c8b7`: its 13 PNGs are committed under `server/public/illustrations/`, ship inside the deploy bundle, and are never uploaded. Without the fallback the demo book's art would 404 the moment the switch flipped. `remove` deletes from both sources, so an admin-deleted orphan doesn't reappear from disk.
+Under `r2`, `get` and `head` **fall back to local disk on an R2 miss**, and `list` merges both sources (deduped by key, R2 wins). The reason is the fixture books: the Sunny demo book `b2fa23cf-3156-4b89-83e7-82d98c32c8b7` (13 PNGs under `server/public/illustrations/b2fa23cf-…/`) and the six seed books (JPEGs under `server/public/illustrations/<seed-book-id>/`, see [Seed-book art](#seed-book-art)). All of it is committed, ships inside the deploy bundle, and is never uploaded. Without the fallback their art would 404 the moment the switch flipped. `remove` deletes from both sources, so an admin-deleted orphan doesn't reappear from disk.
 
 New writes under `r2` go **only** to R2.
 
