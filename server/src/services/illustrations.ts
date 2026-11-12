@@ -434,6 +434,11 @@ export function buildIllustrationPrompt(input: {
   return prompt;
 }
 
+// The title is deliberately NOT in the prompt. Quoting it ("a story titled
+// "...") made the image model letter it onto the cover despite the "no text"
+// clause, and misspell it ("Luna and the Star ARDEN"). The title is rendered by
+// the UI/PDF from the book record instead. `title` stays in the input so callers
+// don't change.
 export function buildCoverPrompt(input: {
   title: string;
   description: string;
@@ -442,7 +447,7 @@ export function buildCoverPrompt(input: {
 }): string {
   const style = resolveStyle(input.styleDescriptor);
   const castPrefix = formatCastPrefix(input.characters);
-  return `${castPrefix}Children's book cover illustration for a story titled "${input.title}". Scene: ${input.description}. ${style}. Composition suitable for a book cover (centered subject, room at top for title). No text or words in the image.`;
+  return `${castPrefix}Children's book cover illustration. Scene: ${input.description}. ${style}. Composition suitable for a book cover (centered subject, uncluttered space at the top). No text, letters or words anywhere in the image.`;
 }
 
 export function buildPortraitPrompt(input: {
