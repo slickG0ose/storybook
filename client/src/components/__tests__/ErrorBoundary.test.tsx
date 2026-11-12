@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryRouter, Routes, Route, Link, useLocation } from 'react-router-dom'
-import ErrorBoundary from '../ErrorBoundary'
+import ErrorBoundary, { reloadIntoLatestBuild } from '../ErrorBoundary'
 import { getRecentErrors, resetRecentErrors } from '../../lib/recentErrors'
 
 /**
@@ -89,5 +89,84 @@ describe('ErrorBoundary', () => {
     await userEvent.click(screen.getByRole('button', { name: /reload the page/i }))
     expect(reload).toHaveBeenCalledOnce()
     vi.unstubAllGlobals()
+  })
+
+  it('drops the shell-dependent hint and link in the root (fullPage) fallback', () => {
+    render(
+      <MemoryRouter>
+        <ErrorBoundary fullPage>
+          <Boom />
+        </ErrorBoundary>
+      </MemoryRouter>,
+    )
+    expect(screen.getByRole('alert')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /reload the page/i })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /back to the bookshop/i })).not.toBeInTheDocument()
+    expect(screen.queryByText(/Feedback button/)).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * 2026-11-11: a plain reload keeps the tab on the old worker, so a crashed build
+ * reloaded into itself forever while the fix sat in `waiting`.
+ */
+describe('reloadIntoLatestBuild', () => {
+  let reload: ReturnType<typeof vi.fn>
+  let listeners: Record<string, () => void>
+
+  function stubServiceWorker(waiting: { postMessage: (m: unknown) => void } | null) {
+    listeners = {}
+    vi.stubGlobal('navigator', {
+      ...window.navigator,
+      serviceWorker: {
+        getRegistration: vi.fn().mockResolvedValue({ waiting }),
+        addEventListener: vi.fn((type: string, fn: () => void) => { listeners[type] = fn }),
+      },
+    })
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    reload = vi.fn()
+    vi.stubGlobal('location', { ...window.location, reload })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  it('activates a waiting worker and reloads once it takes control', async () => {
+    const postMessage = vi.fn()
+    stubServiceWorker({ postMessage })
+
+    await reloadIntoLatestBuild()
+
+    expect(postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' })
+    expect(reload).not.toHaveBeenCalled()
+    expect(listeners.controllerchange).toBeTypeOf('function')
+    listeners.controllerchange!()
+    expect(reload).toHaveBeenCalledOnce()
+  })
+
+  it('reloads anyway if the waiting worker never takes control', async () => {
+    stubServiceWorker({ postMessage: vi.fn() })
+
+    await reloadIntoLatestBuild()
+    expect(reload).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(3000)
+    expect(reload).toHaveBeenCalledOnce()
+  })
+
+  it('just reloads when no update is waiting', async () => {
+    stubServiceWorker(null)
+    await reloadIntoLatestBuild()
+    expect(reload).toHaveBeenCalledOnce()
+  })
+
+  it('just reloads when the browser has no service worker support', async () => {
+    vi.stubGlobal('navigator', { ...window.navigator, serviceWorker: undefined })
+    await reloadIntoLatestBuild()
+    expect(reload).toHaveBeenCalledOnce()
   })
 })

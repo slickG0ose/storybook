@@ -245,3 +245,89 @@ describe('CartContext with commerce off', () => {
     expect(screen.getByTestId('session').textContent).toBe(stored)
   })
 })
+
+/**
+ * 2026-11-11 incident: a 503 `{ error, code: 'COMMERCE_DISABLED' }` reached
+ * `setItems(undefined)` and Navbar's `items.reduce` blanked the whole site. A response
+ * that is not a cart must leave the cart the user can see exactly as it was.
+ */
+describe('CartContext on a response that is not a cart', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    localStorage.setItem(SESSION_KEY, SESSION_ID)
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  it('keeps the hydrated cart on a non-2xx and does not claim to be offline', async () => {
+    seedSnapshot()
+    const json = vi.fn().mockResolvedValue({ error: 'Commerce is disabled', code: 'COMMERCE_DISABLED' })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 503, json }))
+
+    renderCart()
+
+    await waitFor(() =>
+      expect(console.error).toHaveBeenCalledWith('Failed to fetch cart', 'HTTP 503'),
+    )
+    expect(screen.getAllByTestId('item')).toHaveLength(1)
+    expect(screen.getByTestId('total')).toHaveTextContent('25.98')
+    // The server is reachable, so the "You're offline" banner would be a lie.
+    expect(screen.getByTestId('offline')).toHaveTextContent('online')
+    // Not a sync: the timestamp still names the snapshot.
+    expect(screen.getByTestId('last-synced')).toHaveTextContent('2026-08-16T09:00:00.000Z')
+    // An error body is never parsed as a cart, and the snapshot is not overwritten.
+    expect(json).not.toHaveBeenCalled()
+    expect(readCartSnapshot(SESSION_ID)?.items).toEqual([CACHED_ITEM])
+  })
+
+  it('keeps an empty cart an array on a non-2xx with nothing hydrated', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500, json: () => Promise.resolve({}) }))
+
+    renderCart()
+
+    await waitFor(() =>
+      expect(console.error).toHaveBeenCalledWith('Failed to fetch cart', 'HTTP 500'),
+    )
+    // CartConsumer maps over items: a non-array would have thrown during render.
+    expect(screen.queryAllByTestId('item')).toHaveLength(0)
+    expect(screen.getByTestId('total')).toHaveTextContent('0.00')
+  })
+
+  it.each([
+    ['items missing', { total: 3 }],
+    ['items not an array', { items: null, total: 0 }],
+    ['an item missing price', { items: [{ ...CACHED_ITEM, price: undefined }], total: 1 }],
+    ['not an object', 'oops'],
+  ])('keeps the current cart on a 200 with a malformed body (%s)', async (_label, body) => {
+    seedSnapshot()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(body) }))
+
+    renderCart()
+
+    await waitFor(() =>
+      expect(console.error).toHaveBeenCalledWith('Failed to fetch cart', 'malformed body', expect.any(Array)),
+    )
+    expect(screen.getAllByTestId('item')).toHaveLength(1)
+    expect(screen.getByTestId('total')).toHaveTextContent('25.98')
+    expect(screen.getByTestId('offline')).toHaveTextContent('online')
+    expect(readCartSnapshot(SESSION_ID)?.items).toEqual([CACHED_ITEM])
+  })
+
+  it('still raises offline when the body cannot be read at all', async () => {
+    seedSnapshot()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () => Promise.reject(new SyntaxError('Unexpected end of JSON input')),
+    }))
+
+    renderCart()
+
+    await waitFor(() => expect(screen.getByTestId('offline')).toHaveTextContent('offline'))
+    expect(screen.getAllByTestId('item')).toHaveLength(1)
+  })
+})

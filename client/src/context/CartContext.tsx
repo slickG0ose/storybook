@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
 import type { CartItem } from '../types'
 import { api } from '../lib/apiBase'
+import { CartGetResponseSchema } from '@storybook/shared'
 import { readCartSnapshot, writeCartSnapshot, clearCartSnapshot, type CartSnapshot } from '../lib/cartCache'
 import { commerceEnabled } from '../lib/commerce'
 
@@ -58,20 +59,45 @@ export function CartProvider({ children }: CartProviderProps) {
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(hydrated?.cachedAt ?? null)
 
   const fetchCart = useCallback(async () => {
+    let res: Response
+    let body: unknown
     try {
-      const res = await fetch(api(`/api/cart/${sessionId}`))
-      const data = await res.json() as { items: CartItem[]; total: number }
-      setItems(data.items)
-      setTotal(data.total)
-      const cachedAt = new Date().toISOString()
-      writeCartSnapshot({ sessionId, items: data.items, total: data.total, cachedAt })
-      setOffline(false)
-      setLastSyncedAt(cachedAt)
+      res = await fetch(api(`/api/cart/${sessionId}`))
+      body = res.ok ? await res.json() : null
     } catch (err) {
       // Keep whatever is on screen (live values or the hydrated snapshot) and say so.
       console.error('Failed to fetch cart', err)
       setOffline(true)
+      return
     }
+
+    // The server answered, but not with a cart: a non-2xx (503 COMMERCE_DISABLED on
+    // the 2026-11-11 build) or a body that fails the shared wire schema. Before this
+    // check `setItems(undefined)` reached Navbar's `items.reduce` and blanked the whole
+    // site. Keep the items the user can already see and change nothing else.
+    //
+    // Deliberately NOT `offline`: that flag means "the network is gone" and drives the
+    // "You're offline" banner, which would be false here — the server is reachable.
+    // No separate error state either: nothing renders one, and an unused flag on the
+    // context would only widen every `vi.mock` factory. lastSyncedAt stays put, so the
+    // cart is honestly reported as last synced whenever it last was.
+    if (!res.ok) {
+      console.error('Failed to fetch cart', `HTTP ${res.status}`)
+      return
+    }
+    const parsed = CartGetResponseSchema.safeParse(body)
+    if (!parsed.success) {
+      console.error('Failed to fetch cart', 'malformed body', parsed.error.issues)
+      return
+    }
+
+    const { items: nextItems, total: nextTotal } = parsed.data
+    setItems(nextItems)
+    setTotal(nextTotal)
+    const cachedAt = new Date().toISOString()
+    writeCartSnapshot({ sessionId, items: nextItems, total: nextTotal, cachedAt })
+    setOffline(false)
+    setLastSyncedAt(cachedAt)
   }, [sessionId])
 
   useEffect(() => {
