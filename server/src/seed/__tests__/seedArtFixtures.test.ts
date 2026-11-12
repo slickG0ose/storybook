@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { existsSync, readFileSync, readdirSync, statSync, openSync, readSync, closeSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, openSync, readSync, closeSync } from 'node:fs';
 import { join } from 'node:path';
 import { ILLUSTRATIONS_DIR } from '../../services/storage';
 import {
@@ -35,12 +35,20 @@ describe('committed seed-book art', () => {
   it('the seed references 43 files, each present and starting with JPEG magic bytes', () => {
     expect(urls).toHaveLength(43);
     for (const url of urls) {
-      const path = toPath(url);
-      expect(existsSync(path), url).toBe(true);
-      const fd = openSync(path, 'r');
+      // Open directly rather than existsSync-then-open: the open itself is the
+      // presence check, so there is no check-then-use window (CodeQL js/file-system-race).
+      let fd: number;
+      try {
+        fd = openSync(toPath(url), 'r');
+      } catch (err) {
+        throw new Error(`${url} is missing or unreadable: ${(err as Error).message}`);
+      }
       const head = Buffer.alloc(3);
-      readSync(fd, head, 0, 3, 0);
-      closeSync(fd);
+      try {
+        readSync(fd, head, 0, 3, 0);
+      } finally {
+        closeSync(fd);
+      }
       expect([...head], url).toEqual([0xff, 0xd8, 0xff]);
     }
   });
