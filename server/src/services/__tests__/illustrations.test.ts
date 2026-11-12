@@ -1331,19 +1331,19 @@ describe('prompt assembly characterisation (exact strings)', () => {
 
   describe('generateCover', () => {
     const COVER_TAIL =
-      'Composition suitable for a book cover (centered subject, room at top for title). No text or words in the image.';
+      'Composition suitable for a book cover (centered subject, uncluttered space at the top). No text, letters or words anywhere in the image.';
 
     it('no style: uses the default style', async () => {
       await generateCover(BOOK_ID, 'The Cat', 'A cat on a hill');
       expect(sentPrompt()).toBe(
-        `Children's book cover illustration for a story titled "The Cat". Scene: A cat on a hill. ${DEFAULT_STYLE_TEXT}. ${COVER_TAIL}`,
+        `Children's book cover illustration. Scene: A cat on a hill. ${DEFAULT_STYLE_TEXT}. ${COVER_TAIL}`,
       );
     });
 
     it('with style and cast', async () => {
       await generateCover(BOOK_ID, 'The Cat', 'A cat on a hill', STYLE, CAST);
       expect(sentPrompt()).toBe(
-        `${CAST_PREFIX}Children's book cover illustration for a story titled "The Cat". Scene: A cat on a hill. ${STYLE}. ${COVER_TAIL}`,
+        `${CAST_PREFIX}Children's book cover illustration. Scene: A cat on a hill. ${STYLE}. ${COVER_TAIL}`,
       );
     });
   });
@@ -1416,10 +1416,16 @@ describe('exported prompt builders', () => {
     );
   });
 
+  it('buildCoverPrompt never puts the title in the prompt (the model letters it, misspelled)', () => {
+    const prompt = buildCoverPrompt({ title: 'Luna and the Star Garden', description: 'A girl under the stars' });
+    expect(prompt).not.toContain('Luna and the Star Garden');
+    expect(prompt).not.toMatch(/titled|room at top for title/i);
+  });
+
   it('buildCoverPrompt', () => {
     expect(buildCoverPrompt({ title: 'The Cat', description: 'A cat on a hill', styleDescriptor: STYLE, characters: CAST })).toBe(
-      `${CAST_PREFIX}Children's book cover illustration for a story titled "The Cat". Scene: A cat on a hill. ${STYLE}. ` +
-        'Composition suitable for a book cover (centered subject, room at top for title). No text or words in the image.',
+      `${CAST_PREFIX}Children's book cover illustration. Scene: A cat on a hill. ${STYLE}. ` +
+        'Composition suitable for a book cover (centered subject, uncluttered space at the top). No text, letters or words anywhere in the image.',
     );
   });
 
