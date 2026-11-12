@@ -12,6 +12,11 @@ interface ErrorBoundaryProps {
    * without a full reload (#209).
    */
   resetKey?: string
+  /**
+   * The root boundary in main.tsx sets this. It replaces the whole app shell (navbar,
+   * footer, background), so its fallback has to paint its own page surface.
+   */
+  fullPage?: boolean
 }
 
 interface ErrorBoundaryState {
@@ -51,11 +56,53 @@ export default class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBo
 
   render(): ReactNode {
     if (!this.state.hasError) return this.props.children
-    return <ErrorFallback />
+    if (!this.props.fullPage) return <ErrorFallback />
+    return (
+      <div className="min-h-dvh bg-cream dark:bg-gray-900 transition-colors">
+        <ErrorFallback fullPage />
+      </div>
+    )
   }
 }
 
-function ErrorFallback() {
+/**
+ * Reloads into a newer build when one is waiting, otherwise just reloads.
+ *
+ * A plain `location.reload()` does NOT activate a waiting service worker: the reloading
+ * tab stays a client of the old worker, so under `registerType: 'prompt'` a crashed build
+ * reloads into the same crashed build forever. The generated Workbox worker listens for
+ * `{ type: 'SKIP_WAITING' }` (the same message UpdateToast's `updateServiceWorker(true)`
+ * sends), so posting it and reloading once the new worker takes control is exactly what
+ * the update prompt would have done. The user tapped a button that says "reload" and
+ * the page they were on has already crashed, so nothing is lost that was not already.
+ *
+ * Exported for the unit test.
+ */
+export async function reloadIntoLatestBuild(): Promise<void> {
+  const reload = () => window.location.reload()
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration()
+    const waiting = reg?.waiting
+    if (!waiting) {
+      reload()
+      return
+    }
+    navigator.serviceWorker.addEventListener('controllerchange', reload, { once: true })
+    // If the new worker never takes control (it was made redundant, or the browser is
+    // slow), reload anyway rather than leave the button looking dead.
+    window.setTimeout(reload, 3000)
+    waiting.postMessage({ type: 'SKIP_WAITING' })
+  } catch {
+    reload()
+  }
+}
+
+/**
+ * `fullPage` drops the two things that point at the shell, because the root boundary
+ * has replaced it: the Feedback-button hint (no navbar) and the in-app link home (a
+ * client-side navigation would not clear a boundary that has no resetKey).
+ */
+function ErrorFallback({ fullPage = false }: { fullPage?: boolean }) {
   return (
     <div role="alert" className="max-w-xl mx-auto px-4 py-20 sm:py-28 text-center">
       <div className="inline-flex items-center justify-center w-20 h-20 rounded-3xl bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-300 mb-6">
@@ -65,30 +112,34 @@ function ErrorFallback() {
       <h1 className="text-4xl sm:text-5xl font-bold text-gray-800 dark:text-gray-100 font-display mb-3">
         This page hit a snag
       </h1>
-      <p className="text-gray-600 dark:text-gray-300 mb-2">
+      <p className={`text-gray-600 dark:text-gray-300 ${fullPage ? 'mb-9' : 'mb-2'}`}>
         Something went wrong while showing it. Reloading usually fixes it.
       </p>
-      <p className="text-gray-500 dark:text-gray-400 text-sm mb-9">
-        If you&rsquo;re signed in, the Feedback button at the top sends us a note, and the error
-        details are attached for you.
-      </p>
+      {!fullPage && (
+        <p className="text-gray-500 dark:text-gray-400 text-sm mb-9">
+          If you&rsquo;re signed in, the Feedback button at the top sends us a note, and the error
+          details are attached for you.
+        </p>
+      )}
 
       <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
         <button
           type="button"
-          onClick={() => window.location.reload()}
+          onClick={() => { void reloadIntoLatestBuild() }}
           className="inline-flex items-center gap-2 bg-purple-500 hover:bg-purple-600 dark:bg-purple-500 dark:hover:bg-purple-400 text-white px-6 py-3 rounded-full font-bold border-none cursor-pointer shadow-accent hover:shadow-none transition-[background-color,box-shadow,transform] duration-200 active:scale-[0.97]"
         >
           <RotateCcw size={18} />
           Reload the page
         </button>
-        <Link
-          to="/"
-          className="inline-flex items-center gap-2 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 font-semibold px-4 py-3 rounded-full no-underline transition-colors"
-        >
-          <BookOpen size={18} />
-          Back to the bookshop
-        </Link>
+        {!fullPage && (
+          <Link
+            to="/"
+            className="inline-flex items-center gap-2 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 font-semibold px-4 py-3 rounded-full no-underline transition-colors"
+          >
+            <BookOpen size={18} />
+            Back to the bookshop
+          </Link>
+        )}
       </div>
     </div>
   )
