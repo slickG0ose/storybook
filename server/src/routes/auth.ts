@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import prisma from '../db/prisma';
-import { hashPassword, verifyPassword, isLegacyHash } from '../lib/password';
+import { hashPassword, verifyPassword } from '../lib/password';
 import { isEmailAllowed, normalizeEmail } from '../services/allowlist';
 import { authRateLimit } from '../middleware/authRateLimit';
 import type { Request, Response } from 'express';
@@ -11,7 +11,7 @@ const router = Router();
 // Password hashing lives in ../lib/password so the Prisma seed scripts can
 // share it without importing an Express router. Re-exported for existing
 // importers.
-export { hashPassword, verifyPassword, isLegacyHash };
+export { hashPassword, verifyPassword };
 
 export async function getAuthUser(req: Request) {
   const header = req.headers.authorization;
@@ -112,16 +112,7 @@ router.post('/login', authRateLimit('login'), async (req: Request, res: Response
 
   const token = uuidv4();
 
-  // Transparently upgrade legacy sha256 hashes now that we've verified the
-  // plaintext. This is the only moment we hold it, so it's the only chance to
-  // re-hash without forcing a reset. Written in the same update as the token
-  // so a successful login is one round-trip either way.
-  const data: { token: string; password_hash?: string } = { token };
-  if (isLegacyHash(user.password_hash)) {
-    data.password_hash = hashPassword(password);
-  }
-
-  await prisma.user.update({ where: { id: user.id }, data });
+  await prisma.user.update({ where: { id: user.id }, data: { token } });
 
   res.json({ id: user.id, email: user.email, name: user.name, role: user.role, token });
 });

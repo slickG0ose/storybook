@@ -87,9 +87,9 @@ Note the E2E job declares `needs: [server-tests, client-tests]`. When either dep
 
 One thing it deliberately does **not** enforce: **approving reviews** (`required_approving_review_count: 0`). GitHub forbids approving your own PR, so on a solo repo any non-zero value deadlocks every merge. Copilot review is the practical substitute.
 
-**Drift watch (re-audited 2026-09-02, [#36](https://github.com/slickG0ose/storybook/issues/36)):** both claims below are still live, and the window has widened.
+**Drift watch (re-audited 2026-11-13, [#227](https://github.com/slickG0ose/storybook/issues/227), carried over from the closed #36):** both claims below are still live, and the window has widened.
 
-- **Copilot review is configured but not firing.** The ruleset carries `copilot_code_review` with `review_on_push: true`, yet no PR since #65 (2026-06-11) has drawn one — every PR from #66 through #177 merged with zero reviews. The stated substitute for approvals is not operating, so `required_approving_review_count: 0` currently means *no review gate at all*. This is a delivery failure, not a config gap: flipping settings will not fix it.
+- **Copilot review is configured but not firing.** The ruleset carries `copilot_code_review` with `review_on_push: true`, yet no PR since #65 (2026-06-11) has drawn one — none of the last 30 merged PRs (through #226) drew one — the only reviews are CodeQL's `github-advanced-security`. The stated substitute for approvals is not operating, so `required_approving_review_count: 0` currently means *no review gate at all*. This is a delivery failure, not a config gap: flipping settings will not fix it.
 - **`allowed_merge_methods` is still `["merge", "squash", "rebase"]`.** Squash-only remains convention here, not enforcement, though nothing has landed as a merge commit since #54.
 
 Correcting an earlier note: **reading the ruleset does not need admin.** `gh api repos/slickG0ose/storybook/rulesets` and `.../rulesets/16755005` both return in full with an ordinary token — only *writing* it does. Re-audit freely; the write is the part that waits on the owner.
