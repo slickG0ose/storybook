@@ -4,9 +4,12 @@ import request from 'supertest';
 import type { Express } from 'express';
 import { createTestApp, resetDatabase, allowEmail } from '../../__tests__/setup';
 import prisma from '../../db/prisma';
-import { hashPassword, verifyPassword, isLegacyHash } from '../auth';
+import { hashPassword, verifyPassword } from '../auth';
 
-/** Reproduces the pre-scrypt format so we can prove old rows still work. */
+/**
+ * Reproduces the retired pre-scrypt format (#68) so we can prove it no longer
+ * authenticates — a leaked old-format hash must not be a working credential.
+ */
 function legacyHash(password: string): string {
   const salt = randomBytes(16).toString('hex');
   const hash = createHash('sha256').update(salt + password).digest('hex');
@@ -17,7 +20,6 @@ describe('password hashing', () => {
   it('produces a scrypt-prefixed hash', () => {
     const stored = hashPassword('correct-horse');
     expect(stored.startsWith('scrypt:')).toBe(true);
-    expect(isLegacyHash(stored)).toBe(false);
   });
 
   it('salts — the same password hashes differently each time', () => {
@@ -30,21 +32,20 @@ describe('password hashing', () => {
     expect(verifyPassword('wrong-horse', stored)).toBe(false);
   });
 
-  it('still verifies legacy sha256 hashes', () => {
-    // Nobody gets locked out by the format change.
+  it('rejects a legacy sha256 hash even with the right password', () => {
     const stored = legacyHash('old-password');
-    expect(isLegacyHash(stored)).toBe(true);
-    expect(verifyPassword('old-password', stored)).toBe(true);
+    expect(verifyPassword('old-password', stored)).toBe(false);
     expect(verifyPassword('not-it', stored)).toBe(false);
   });
 
   it('rejects a malformed stored hash instead of throwing', () => {
     expect(verifyPassword('anything', 'garbage')).toBe(false);
     expect(verifyPassword('anything', 'scrypt:only-one-part')).toBe(false);
+    expect(verifyPassword('anything', 'scrypt:abcd:not-hex')).toBe(false);
   });
 });
 
-describe('POST /api/auth — registration + legacy upgrade', () => {
+describe('POST /api/auth — registration + login hashing', () => {
   let app: Express;
 
   beforeEach(async () => {
@@ -72,48 +73,36 @@ describe('POST /api/auth — registration + legacy upgrade', () => {
     expect(res.body.error).toContain('at least 8 characters');
   });
 
-  it('lets a legacy-hashed user log in, and upgrades their hash in place', async () => {
-    // Seed a user the old way, as an existing production row would look.
+  it('logs in a scrypt-hashed user without rewriting the hash', async () => {
+    const stored = hashPassword('pw-test-1234');
     await prisma.user.create({
-      data: {
-        email: 'legacy@example.com',
-        name: 'Legacy',
-        password_hash: legacyHash('old-password'),
-        token: 'legacy-token',
-      },
+      data: { email: 'scrypt@example.com', name: 'Scrypt', password_hash: stored, token: 'old-token' },
     });
 
-    const before = await prisma.user.findFirst({ where: { email: 'legacy@example.com' } });
-    expect(isLegacyHash(before!.password_hash)).toBe(true);
+    const res = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'scrypt@example.com', password: 'pw-test-1234' });
+
+    expect(res.status).toBe(200);
+    const after = await prisma.user.findFirst({ where: { email: 'scrypt@example.com' } });
+    expect(after!.password_hash).toBe(stored);
+    expect(after!.token).toBe(res.body.token);
+  });
+
+  it('refuses a legacy-hashed user with 401 and leaves the row untouched', async () => {
+    const stored = legacyHash('old-password');
+    await prisma.user.create({
+      data: { email: 'legacy@example.com', name: 'Legacy', password_hash: stored, token: 'legacy-token' },
+    });
 
     const res = await request(app)
       .post('/api/auth/login')
       .send({ email: 'legacy@example.com', password: 'old-password' });
 
-    expect(res.status).toBe(200);
-
-    const after = await prisma.user.findFirst({ where: { email: 'legacy@example.com' } });
-    expect(after!.password_hash.startsWith('scrypt:')).toBe(true);
-    expect(verifyPassword('old-password', after!.password_hash)).toBe(true);
-  });
-
-  it('does not upgrade the hash on a FAILED login', async () => {
-    await prisma.user.create({
-      data: {
-        email: 'legacy2@example.com',
-        name: 'Legacy2',
-        password_hash: legacyHash('old-password'),
-        token: 'legacy-token-2',
-      },
-    });
-
-    const res = await request(app)
-      .post('/api/auth/login')
-      .send({ email: 'legacy2@example.com', password: 'wrong' });
-
     expect(res.status).toBe(401);
-
-    const after = await prisma.user.findFirst({ where: { email: 'legacy2@example.com' } });
-    expect(isLegacyHash(after!.password_hash)).toBe(true);
+    expect(res.body).toMatchObject({ error: 'Invalid email or password' });
+    const after = await prisma.user.findFirst({ where: { email: 'legacy@example.com' } });
+    expect(after!.password_hash).toBe(stored);
+    expect(after!.token).toBe('legacy-token');
   });
 });
