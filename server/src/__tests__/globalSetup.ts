@@ -36,9 +36,15 @@ export async function setup() {
   // NODE_TLS_REJECT_UNAUTHORIZED=0 mirrors what server/src/index.ts does — Prisma
   // downloads its query engine binary over HTTPS and the corporate proxy uses a
   // self-signed cert.
+  //
+  // Bounded (#97): this is the one step of a test run with no clock on it.
+  // vitest's testTimeout/hookTimeout do not cover globalSetup, so if the
+  // migrate ever stalls, the run sits silent until CI's job timeout cancels it
+  // and throws the log away. A timeout here turns that into a named error.
   execSync('npx prisma migrate deploy', {
     cwd: serverDir,
     stdio: 'pipe',
+    timeout: 120_000,
     env: {
       ...process.env,
       DATABASE_URL: TEST_DATABASE_URL,
