@@ -51,8 +51,13 @@ jobs:
         working-directory: server
       - run: npx prisma migrate deploy
         working-directory: server
+      # Step timeout well under the job's (#97). A job-level timeout ends as
+      # "cancelled", which Auto-fix ignores and whose log can be discarded; a
+      # step timeout ends as a FAILURE with the log kept. A healthy run takes
+      # ~30s, so 6 minutes only ever trips on a hang.
       - run: npm test
         working-directory: server
+        timeout-minutes: 6
       # server/ and shared/ have tsconfigs but neither was ever typechecked in
       # CI — only client/ was, so a type error in either could reach master
       # unnoticed. Both run here rather than in a new job because renaming or

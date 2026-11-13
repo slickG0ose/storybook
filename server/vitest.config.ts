@@ -36,6 +36,10 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/__tests__/**/*.test.ts'],
     testTimeout: 10000,
+    // In CI, add the hanging-process reporter (#97): if the run finishes its
+    // tests but the process will not exit, it prints the handles keeping it
+    // alive instead of hanging silently until the job timeout.
+    reporters: process.env.CI ? ['default', 'hanging-process'] : ['default'],
     maxWorkers: 1,
     minWorkers: 1,
     fileParallelism: false,
