@@ -50,10 +50,40 @@ async function stageWaitingWorker(page: Page): Promise<void> {
     .toBe('installed');
 }
 
+/**
+ * Deterministic crash trigger: a storage fault the app does not guard.
+ *
+ * Until #210 this seeded a corrupt `storybook-auth` blob, but AuthContext now drops a
+ * malformed blob on purpose, so that no longer crashes anything. Instead, an init script makes
+ * `localStorage.getItem('storybook-auth')` throw, as real browsers do when storage is blocked
+ * (a SecurityError). AuthProvider reads that key in a mount effect OUTSIDE its try/catch
+ * (only the JSON.parse is guarded), and AuthProvider sits inside the root ErrorBoundary,
+ * so the throw lands on the boundary. No test hook exists in app code.
+ *
+ * The fault is armed by a localStorage flag (read through the original getItem) so a test can
+ * disarm it with `disarmCrash` and reload into a clean boot; the init script itself runs on
+ * every navigation for the life of the page.
+ */
+const CRASH_FLAG = 'e2e-crash-auth-read';
+
 async function crashAndReload(page: Page): Promise<void> {
-  await page.evaluate(() => localStorage.setItem('storybook-auth', '{not json'));
+  await page.addInitScript((flag) => {
+    const original = Storage.prototype.getItem;
+    Storage.prototype.getItem = function (this: Storage, key: string) {
+      if (key === 'storybook-auth' && original.call(this, flag) === '1') {
+        throw new DOMException('The operation is insecure.', 'SecurityError');
+      }
+      return original.call(this, key);
+    };
+  }, CRASH_FLAG);
+  await page.evaluate((flag) => localStorage.setItem(flag, '1'), CRASH_FLAG);
   await page.reload();
   await expect(page.getByRole('alert')).toContainText('This page hit a snag');
+}
+
+/** Clears the crash trigger so the next load boots cleanly. */
+async function disarmCrash(page: Page): Promise<void> {
+  await page.evaluate((flag) => localStorage.removeItem(flag), CRASH_FLAG);
 }
 
 /**
@@ -95,7 +125,7 @@ test.describe('Recovering from a crashed build', () => {
     await expect(toast, 'the crash took the update prompt down with it').toBeVisible();
 
     // Clear the crash trigger so the next build boots cleanly, then take the update.
-    await page.evaluate(() => localStorage.removeItem('storybook-auth'));
+    await disarmCrash(page);
     await toast.getByRole('button', { name: 'Reload' }).click();
 
     await expectUpdated(page);
@@ -111,7 +141,7 @@ test.describe('Recovering from a crashed build', () => {
     await page.getByTestId('update-toast').getByRole('button', { name: 'Later' }).click();
     await expect(page.getByTestId('update-toast')).toHaveCount(0);
 
-    await page.evaluate(() => localStorage.removeItem('storybook-auth'));
+    await disarmCrash(page);
     await page.getByRole('button', { name: 'Reload the page' }).click();
 
     await expectUpdated(page);

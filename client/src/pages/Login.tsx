@@ -1,11 +1,14 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { LogIn, Loader2 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import type { LoginLocationState } from '../lib/authFetch'
 
 export default function Login() {
   const { login } = useAuth()
   const navigate = useNavigate()
+  const state = useLocation().state as LoginLocationState | null
+  const expired = state?.reason === 'expired'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -20,7 +23,8 @@ export default function Login() {
     if (err) {
       setError(err)
     } else {
-      navigate('/my-books')
+      const from = state?.from
+      navigate(typeof from === 'string' && from.startsWith('/') && !from.startsWith('//') ? from : '/my-books')
     }
   }
 
@@ -32,6 +36,15 @@ export default function Login() {
           <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100 font-display">Welcome Back</h1>
           <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">Sign in to see your created books</p>
         </div>
+
+        {expired && (
+          <div
+            role="status"
+            className="bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 px-4 py-2 rounded-lg text-sm mb-4"
+          >
+            Your session ended. Sign in to pick up where you left off.
+          </div>
+        )}
 
         {error && (
           <div className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 px-4 py-2 rounded-lg text-sm mb-4">

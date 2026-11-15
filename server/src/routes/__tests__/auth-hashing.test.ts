@@ -5,6 +5,7 @@ import type { Express } from 'express';
 import { createTestApp, resetDatabase, allowEmail } from '../../__tests__/setup';
 import prisma from '../../db/prisma';
 import { hashPassword, verifyPassword } from '../auth';
+import { hashToken } from '../../lib/authToken';
 
 /**
  * Reproduces the retired pre-scrypt format (#68) so we can prove it no longer
@@ -86,7 +87,8 @@ describe('POST /api/auth — registration + login hashing', () => {
     expect(res.status).toBe(200);
     const after = await prisma.user.findFirst({ where: { email: 'scrypt@example.com' } });
     expect(after!.password_hash).toBe(stored);
-    expect(after!.token).toBe(res.body.token);
+    // Stored as sha256 of the returned token, never the token itself (#210).
+    expect(after!.token).toBe(hashToken(res.body.token));
   });
 
   it('refuses a legacy-hashed user with 401 and leaves the row untouched', async () => {

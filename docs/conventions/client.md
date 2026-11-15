@@ -132,9 +132,13 @@ This works because `commerceEnabled()` reads the env at call time. The end-to-en
 
 ## Auth (`AuthContext`)
 
-- On mount: calls `/api/auth/me` with the token from `localStorage` (key `storybook-auth`). If 401, clears the token.
+- On mount: calls `/api/auth/me` with the token from `localStorage` (key `storybook-auth`). **Only a 401 clears it**; offline, a cold server or a 5xx keep the stored session.
 - `login`, `register`, `logout` methods call the matching `/api/auth/*` endpoint, then sync local state.
-- Token is included as `Authorization: Bearer <token>` on every authed fetch.
+- **Pages make authed calls through `authFetch(token, api('/api/...'), init)`** (`client/src/lib/authFetch.ts`), not hand-rolled `Authorization` headers. It adds the bearer header; with no token it is a plain `fetch`.
+- **A 401 on a bearer request ends the session.** `authFetch` dispatches `storybook:auth-expired` with the token it sent and returns the Response unchanged; `AuthProvider` ignores it unless the token matches the current user, then clears `storybook-auth` and navigates to `/login` with `state { from, reason: 'expired' }`. It does not call `/logout`.
+- **Deliberate exceptions** that still send the bearer by hand: `lib/feedback.ts` and `lib/narration/api.ts`. Their 401s do not end the session.
+- **Create-a-Book draft:** the wizard saves to sessionStorage key `storybook-create-draft` (`lib/createDraft.ts`) so it survives the sign-in bounce. Cleared on successful generate (`CreateBook.tsx`) and on explicit `logout()`; **not** cleared when the session expires.
+- Reasoning: `.code-captain/specs/auth-token-expiry/spec.md`.
 
 ## API calls — Vite dev proxy
 

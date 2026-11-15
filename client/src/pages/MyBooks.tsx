@@ -4,6 +4,7 @@ import { BookOpen, Sparkles, Send, Trash2, PencilLine } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { api } from '../lib/apiBase'
+import { authFetch } from '../lib/authFetch'
 import { commerceEnabled } from '../lib/commerce'
 import FallbackImage from '../components/FallbackImage'
 import type { Book, BookWithPages } from '../types'
@@ -20,10 +21,8 @@ export default function MyBooks() {
 
   const fetchBooks = useCallback(() => {
     if (!user) return
-    fetch(api('/api/books/mine'), {
-      headers: { Authorization: `Bearer ${user.token}` },
-    })
-      .then(res => res.json())
+    authFetch(user.token, api('/api/books/mine'))
+      .then(res => (res.ok ? res.json() as Promise<MyBook[]> : []))
       .then((data: MyBook[]) => setBooks(data))
       .catch(() => setBooks([]))
       .finally(() => setLoading(false))
@@ -33,9 +32,8 @@ export default function MyBooks() {
 
   const publishBook = async (bookId: string) => {
     if (!user) return
-    const res = await fetch(api(`/api/books/${bookId}/publish`), {
+    const res = await authFetch(user.token, api(`/api/books/${bookId}/publish`), {
       method: 'PUT',
-      headers: { Authorization: `Bearer ${user.token}` },
     })
     if (res.ok) fetchBooks()
   }
@@ -61,9 +59,8 @@ export default function MyBooks() {
     if (!ok) return
     setUnpublishingId(bookId)
     try {
-      const res = await fetch(api(`/api/books/${bookId}/unpublish`), {
+      const res = await authFetch(user.token, api(`/api/books/${bookId}/unpublish`), {
         method: 'PUT',
-        headers: { Authorization: `Bearer ${user.token}` },
       })
       if (res.ok) {
         const updated = (await res.json()) as MyBook
@@ -82,9 +79,8 @@ export default function MyBooks() {
 
   const deleteBook = async (bookId: string) => {
     if (!user) return
-    const res = await fetch(api(`/api/books/${bookId}`), {
+    const res = await authFetch(user.token, api(`/api/books/${bookId}`), {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${user.token}` },
     })
     if (res.ok) fetchBooks()
   }

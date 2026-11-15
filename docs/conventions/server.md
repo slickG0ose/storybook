@@ -124,7 +124,20 @@ Reasoning, rejected alternatives, and accepted costs:
 ## Auth — Bearer tokens (not "no auth")
 
 - **`Authorization: Bearer <uuid>`** header on every authed request.
-- Token is regenerated on every login (server-side rotation). Logout clears it. No expiration — token is invalidated by rotation or admin tombstone.
+- Token is regenerated on every login (server-side rotation). Logout clears it.
+- **Absolute 30-day expiry**, not sliding: `User.token_expires_at` is set at login/register and never extended. Helpers live in `server/src/lib/authToken.ts` (`issueToken`, `hashToken`, `resolveTokenTtlDays`).
+- **`TOKEN_TTL_DAYS`** sets the lifetime, read at call time. Integer 1 to 90 only; anything else falls back to 30 with one warning per process (the variable name, not the value).
+
+  | `TOKEN_TTL_DAYS` | Effective days |
+  |---|---|
+  | unset or blank | 30, silent |
+  | integer 1 to 90 | that value |
+  | `0`, `91+`, negative, decimal, non-numeric | 30, one warning |
+
+- **Hashed at rest:** `User.token` holds `sha256(token)` (hex); the raw UUID is returned to the client once and never stored. `getAuthUser` hashes the presented bearer before lookup.
+- **One 401 for every dead token:** expired, rotated, logged out, tombstoned and never-valid all return `getAuthUser` `null`, so the same `401`. No separate "expired" response.
+- **Admin restore** (`PUT /api/admin/users/:id/restore`) clears `token` and `token_expires_at`, so restoring never resurrects an old session.
+- Reasoning: `.code-captain/specs/auth-token-expiry/spec.md`.
 - Passwords stored as `salt:sha256(salt+password)` in `User.password_hash`.
 - `getAuthUser(req)` (exported from `routes/auth.ts`) returns the user row or `null`.
 - `requireAdmin(req)` returns the user row only if `user.role === 'admin'`, else `null`.

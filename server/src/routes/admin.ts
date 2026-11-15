@@ -160,7 +160,8 @@ router.put(
 
     const restored = await prisma.user.update({
       where: { id: req.params.id },
-      data: { deleted_at: null },
+      // Clear the session too, so restoring never resurrects an old token (#210).
+      data: { deleted_at: null, token: null, token_expires_at: null },
     });
 
     res.json(stripUser(restored));

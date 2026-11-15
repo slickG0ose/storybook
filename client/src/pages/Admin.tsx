@@ -4,6 +4,7 @@ import { Shield, Users, BookOpen, FolderOpen, Loader2, RotateCcw, Star, AlertCir
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { api } from '../lib/apiBase'
+import { authFetch } from '../lib/authFetch'
 import AdminFeedbackTab, { type FeedbackStatusFilter, type FeedbackUserFilter } from '../components/AdminFeedbackTab'
 import type {
   AdminUser,
@@ -90,9 +91,7 @@ export default function Admin() {
     setUsersLoading(true)
     setUsersError('')
     try {
-      const res = await fetch(api('/api/admin/users'), {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      const res = await authFetch(token, api('/api/admin/users'))
       if (!res.ok) throw new Error('Failed to load users')
       const data = (await res.json()) as AdminUser[]
       setUsers(data)
@@ -108,9 +107,7 @@ export default function Admin() {
     setBooksLoading(true)
     setBooksError('')
     try {
-      const res = await fetch(api('/api/admin/books'), {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      const res = await authFetch(token, api('/api/admin/books'))
       if (!res.ok) throw new Error('Failed to load books')
       const data = (await res.json()) as AdminBook[]
       setBooks(data)
@@ -126,9 +123,7 @@ export default function Admin() {
     setOrphansLoading(true)
     setOrphansError('')
     try {
-      const res = await fetch(api('/api/admin/orphan-illustrations'), {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      const res = await authFetch(token, api('/api/admin/orphan-illustrations'))
       if (!res.ok) throw new Error('Failed to load orphan illustrations')
       const data = (await res.json()) as OrphanIllustration[]
       setOrphans(data)
@@ -144,9 +139,7 @@ export default function Admin() {
     setAllowlistLoading(true)
     setAllowlistError('')
     try {
-      const res = await fetch(api('/api/admin/allowlist'), {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      const res = await authFetch(token, api('/api/admin/allowlist'))
       if (!res.ok) throw new Error('Failed to load the allowlist')
       const data = (await res.json()) as AllowedEmail[]
       setAllowlist(data)
@@ -162,9 +155,9 @@ export default function Admin() {
     setAllowlistAdding(true)
     setAllowlistAddError('')
     try {
-      const res = await fetch(api('/api/admin/allowlist'), {
+      const res = await authFetch(token, api('/api/admin/allowlist'), {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, ...(note.trim() ? { note: note.trim() } : {}) }),
       })
       if (!res.ok) {
@@ -185,9 +178,8 @@ export default function Admin() {
     if (!token) return
     setAllowlistRemoving(prev => ({ ...prev, [email]: true }))
     try {
-      const res = await fetch(api(`/api/admin/allowlist/${encodeURIComponent(email)}`), {
+      const res = await authFetch(token, api(`/api/admin/allowlist/${encodeURIComponent(email)}`), {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
       })
       if (!res.ok) throw new Error('Could not remove that email')
       setAllowlist(prev => prev.filter(a => a.email !== email))
@@ -207,9 +199,7 @@ export default function Admin() {
     setSpendLoading(true)
     setSpendError('')
     try {
-      const res = await fetch(api('/api/admin/spend'), {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      const res = await authFetch(token, api('/api/admin/spend'))
       if (!res.ok) throw new Error('Failed to load spend')
       setSpend((await res.json()) as AdminSpendResponse)
     } catch (err) {
@@ -228,9 +218,7 @@ export default function Admin() {
     if (feedbackUserFilter) params.set('user_id', feedbackUserFilter.id)
     const qs = params.toString()
     try {
-      const res = await fetch(api(`/api/admin/feedback${qs ? `?${qs}` : ''}`), {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      const res = await authFetch(token, api(`/api/admin/feedback${qs ? `?${qs}` : ''}`))
       if (!res.ok) throw new Error('Failed to load feedback')
       setFeedback((await res.json()) as AdminFeedbackItem[])
     } catch (err) {
@@ -270,9 +258,8 @@ export default function Admin() {
     if (!token) return
     if (!window.confirm('Restore this user? They will be able to sign in again.')) return
     try {
-      const res = await fetch(api(`/api/admin/users/${id}/restore`), {
+      const res = await authFetch(token, api(`/api/admin/users/${id}/restore`), {
         method: 'PUT',
-        headers: { Authorization: `Bearer ${token}` },
       })
       if (!res.ok) {
         showError("Couldn't restore that user. Refresh to see the latest state.")
@@ -289,9 +276,8 @@ export default function Admin() {
     if (!token) return
     if (!window.confirm('Restore this book? It will reappear in the catalog.')) return
     try {
-      const res = await fetch(api(`/api/admin/books/${id}/restore`), {
+      const res = await authFetch(token, api(`/api/admin/books/${id}/restore`), {
         method: 'PUT',
-        headers: { Authorization: `Bearer ${token}` },
       })
       if (!res.ok) {
         showError("Couldn't restore that book. Refresh to see the latest state.")
@@ -318,9 +304,8 @@ export default function Admin() {
     })
 
     try {
-      const res = await fetch(api(`/api/admin/orphan-illustrations/${encodeURIComponent(id)}`), {
+      const res = await authFetch(token, api(`/api/admin/orphan-illustrations/${encodeURIComponent(id)}`), {
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
       })
       if (!res.ok) {
         // 404 is "already gone" — treat as success and drop the row.
@@ -355,9 +340,9 @@ export default function Admin() {
     if (!token) return
     setFeedbackSaving(prev => ({ ...prev, [id]: true }))
     try {
-      const res = await fetch(api(`/api/admin/feedback/${encodeURIComponent(id)}`), {
+      const res = await authFetch(token, api(`/api/admin/feedback/${encodeURIComponent(id)}`), {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status }),
       })
       if (!res.ok) {
@@ -381,11 +366,10 @@ export default function Admin() {
     if (!token) return
     const next = !book.is_featured
     try {
-      const res = await fetch(api(`/api/admin/books/${book.id}/featured`), {
+      const res = await authFetch(token, api(`/api/admin/books/${book.id}/featured`), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ is_featured: next }),
       })

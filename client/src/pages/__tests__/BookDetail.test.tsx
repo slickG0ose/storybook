@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import BookDetail from '../BookDetail'
+import { AUTH_EXPIRED_EVENT } from '../../lib/authFetch'
 import { ToastProvider } from '../../context/ToastContext'
 import type { BookWithPages, BookVersion, IllustrationVersion } from '../../types'
 import type { CartContextValue } from '../../context/CartContext'
@@ -386,8 +387,8 @@ describe('BookDetail — Version History', () => {
       const restoreCall = calls.find(c => c.url === '/api/books/book-1/versions/1/restore')
       expect(restoreCall).toBeDefined()
       expect(restoreCall?.init?.method).toBe('PUT')
-      const headers = restoreCall?.init?.headers as Record<string, string> | undefined
-      expect(headers?.Authorization).toBe('Bearer test-token')
+      const headers = new Headers(restoreCall?.init?.headers)
+      expect(headers.get('Authorization')).toBe('Bearer test-token')
     })
 
     // Book state should reflect the restored book — restored pages text shows
@@ -884,8 +885,8 @@ describe('BookDetail — Cast panel + approve-cast soft gate', () => {
       const portraitCall = calls.find(c => c.url === '/api/books/book-1/characters/0/portrait')
       expect(portraitCall).toBeDefined()
       expect(portraitCall?.init?.method).toBe('POST')
-      const headers = portraitCall?.init?.headers as Record<string, string> | undefined
-      expect(headers?.Authorization).toBe('Bearer test-token')
+      const headers = new Headers(portraitCall?.init?.headers)
+      expect(headers.get('Authorization')).toBe('Bearer test-token')
     })
 
     // The returned hydrated book repaints the thumbnail.
@@ -1114,9 +1115,7 @@ describe('BookDetail — Download PDF', () => {
     const pdfCall = calls.find(c => c.url === '/api/books/book-1/pdf')
     expect(pdfCall?.init?.method).toBe('POST')
     expect(pdfCall?.init?.body).toBe('{}')
-    expect(
-      (pdfCall?.init?.headers as Record<string, string> | undefined)?.['Authorization']
-    ).toBe('Bearer test-token')
+    expect(new Headers(pdfCall?.init?.headers).get('Authorization')).toBe('Bearer test-token')
 
     // Check the error surface before the click. If the fetch→blob path threw,
     // this names the cause instead of leaving a bare "click was called 0 times".
@@ -1303,7 +1302,7 @@ describe('BookDetail — publish state and the reader-view edit controls', () =>
       const call = calls.find(c => c.url === '/api/books/book-1/unpublish')
       expect(call).toBeDefined()
       expect(call?.init?.method).toBe('PUT')
-      expect((call?.init?.headers as Record<string, string> | undefined)?.Authorization).toBe('Bearer test-token')
+      expect(new Headers(call?.init?.headers).get('Authorization')).toBe('Bearer test-token')
     })
 
     // Draft surfaces mount off the merged response...
@@ -1457,8 +1456,8 @@ describe('BookDetail — orphaned illustration recovery', () => {
       '/api/books/book-1/illustrations/1',
       '/api/books/book-1/illustrations/2',
     ])
-    const headers = historyGets[0]?.init?.headers as Record<string, string> | undefined
-    expect(headers?.Authorization).toBe('Bearer test-token')
+    const headers = new Headers(historyGets[0]?.init?.headers)
+    expect(headers.get('Authorization')).toBe('Bearer test-token')
   })
 
   it('leaves a page with no surviving history out of the map', async () => {
@@ -1558,7 +1557,7 @@ describe('BookDetail — typography', () => {
       font_family: 'atkinson',
       text_size: 'xlarge',
     })
-    expect((put?.init?.headers as Record<string, string>)['Authorization']).toBe('Bearer test-token')
+    expect(new Headers(put?.init?.headers).get('Authorization')).toBe('Bearer test-token')
     // Free route: no cost confirm, and nothing about spend in the request.
     expect(calls.filter(c => c.url === '/api/books/book-1/typography')).toHaveLength(1)
   })
@@ -1712,5 +1711,41 @@ describe('BookDetail — image fails to load', () => {
     expect(screen.getByText('desc 1')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /regenerate/i })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /generate illustration/i })).toBeInTheDocument()
+  })
+})
+
+describe('BookDetail — expired session (401)', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('dispatches the auth-expired event when the owner-only versions call returns 401', async () => {
+    setupFetchMock({})
+    const base = (globalThis.fetch as unknown as import('vitest').Mock).getMockImplementation()!
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.endsWith('/versions')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: 'Session expired' }), {
+            status: 401,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        )
+      }
+      return base(input, init)
+    })
+    const onExpired = vi.fn()
+    window.addEventListener(AUTH_EXPIRED_EVENT, onExpired)
+    try {
+      renderBookDetail()
+      await waitFor(() => expect(onExpired).toHaveBeenCalledTimes(1))
+      expect(screen.queryByText('Book not found')).not.toBeInTheDocument()
+    } finally {
+      window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired)
+    }
   })
 })
