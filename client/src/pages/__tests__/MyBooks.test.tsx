@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import MyBooks from '../MyBooks'
+import { AUTH_EXPIRED_EVENT } from '../../lib/authFetch'
 import { ToastProvider } from '../../context/ToastContext'
 import type { Book, Page } from '../../types'
 
@@ -197,8 +198,8 @@ describe('MyBooks — Edit this book (withdraw to edit)', () => {
       const call = calls.find(c => c.url === '/api/books/book-1/unpublish')
       expect(call).toBeDefined()
       expect(call?.init?.method).toBe('PUT')
-      const headers = call?.init?.headers as Record<string, string> | undefined
-      expect(headers?.Authorization).toBe('Bearer test-token')
+      const headers = new Headers(call?.init?.headers)
+      expect(headers.get('Authorization')).toBe('Bearer test-token')
     })
 
     // Card status badge flips to Draft after the response.
@@ -311,8 +312,8 @@ describe('MyBooks — Edit this book (withdraw to edit)', () => {
       const call = calls.find(c => c.url === '/api/books/book-1/publish')
       expect(call).toBeDefined()
       expect(call?.init?.method).toBe('PUT')
-      const headers = call?.init?.headers as Record<string, string> | undefined
-      expect(headers?.Authorization).toBe('Bearer test-token')
+      const headers = new Headers(call?.init?.headers)
+      expect(headers.get('Authorization')).toBe('Bearer test-token')
     })
   })
 })
@@ -432,5 +433,30 @@ describe('MyBooks — cover image fails to load', () => {
 
     expect(container.querySelector('img[src="/illustrations/book-1/cover.png"]')).not.toBeInTheDocument()
     expect(screen.getByText(publishedBook.cover_emoji)).toHaveClass('drop-shadow-lg')
+  })
+})
+
+describe('MyBooks — expired session (401)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('dispatches the auth-expired event and leaves the list empty instead of storing the error body', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ error: 'Session expired' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    const onExpired = vi.fn()
+    window.addEventListener(AUTH_EXPIRED_EVENT, onExpired)
+    try {
+      renderMyBooks()
+      await waitFor(() => expect(onExpired).toHaveBeenCalledTimes(1))
+      expect((onExpired.mock.calls[0]![0] as CustomEvent).detail).toEqual({ token: 'test-token' })
+      await waitFor(() => expect(screen.queryByText('Published Adventure')).not.toBeInTheDocument())
+    } finally {
+      window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired)
+    }
   })
 })

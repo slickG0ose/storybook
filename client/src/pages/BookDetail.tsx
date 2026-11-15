@@ -5,6 +5,7 @@ import { useCart } from '../context/CartContext'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { api } from '../lib/apiBase'
+import { authFetch } from '../lib/authFetch'
 import { commerceEnabled } from '../lib/commerce'
 import { resolveReaderTypography } from '../lib/typography'
 import { PER_IMAGE_COST_USD, fmtUsd, portraitStepCostNote } from '../lib/cost'
@@ -182,9 +183,7 @@ export default function BookDetail() {
     setVersionsLoading(true)
     setVersionsError('')
     try {
-      const res = await fetch(api(`/api/books/${bookId}/versions`), {
-        headers: { 'Authorization': `Bearer ${token}` },
-      })
+      const res = await authFetch(token, api(`/api/books/${bookId}/versions`))
       if (!res.ok) {
         const data = await res.json().catch(() => ({})) as { error?: string }
         throw new Error(data.error || 'Failed to load version history')
@@ -236,9 +235,7 @@ export default function BookDetail() {
     void (async () => {
       const entries = await Promise.all(orphaned.map(async pageNumber => {
         try {
-          const res = await fetch(api(`/api/books/${bookId}/illustrations/${pageNumber}`), {
-            headers: { 'Authorization': `Bearer ${token}` },
-          })
+          const res = await authFetch(token, api(`/api/books/${bookId}/illustrations/${pageNumber}`))
           if (!res.ok) return [pageNumber, [] as IllustrationVersion[]] as const
           return [pageNumber, await res.json() as IllustrationVersion[]] as const
         } catch {
@@ -362,9 +359,8 @@ export default function BookDetail() {
     setPublishBusy(true)
     setPublishError('')
     try {
-      const res = await fetch(api(`/api/books/${book.id}/unpublish`), {
+      const res = await authFetch(user.token, api(`/api/books/${book.id}/unpublish`), {
         method: 'PUT',
-        headers: { 'Authorization': `Bearer ${user.token}` },
       })
       if (handledStale403(res)) return
       const parsed = await safeReadJson<BookWithPages>(res)
@@ -392,11 +388,10 @@ export default function BookDetail() {
     try {
       const body: { feedback: string; newPageCount?: number } = { feedback: text }
       if (typeof newPageCount === 'number') body.newPageCount = newPageCount
-      const res = await fetch(api(`/api/books/${book.id}/revise`), {
+      const res = await authFetch(user.token, api(`/api/books/${book.id}/revise`), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${user.token}`,
         },
         body: JSON.stringify(body),
       })
@@ -433,9 +428,8 @@ export default function BookDetail() {
     setRestoringVersion(version)
     setRestoreError('')
     try {
-      const res = await fetch(api(`/api/books/${book.id}/versions/${version}/restore`), {
+      const res = await authFetch(user.token, api(`/api/books/${book.id}/versions/${version}/restore`), {
         method: 'PUT',
-        headers: { 'Authorization': `Bearer ${user.token}` },
       })
       if (handledStale403(res)) return
       const parsed = await safeReadJson<BookWithPages>(res)
@@ -464,9 +458,8 @@ export default function BookDetail() {
     setPublishBusy(true)
     setPublishError('')
     try {
-      const res = await fetch(api(`/api/books/${book.id}/publish`), {
+      const res = await authFetch(user.token, api(`/api/books/${book.id}/publish`), {
         method: 'PUT',
-        headers: { 'Authorization': `Bearer ${user.token}` },
       })
       if (handledStale403(res)) return
       const parsed = await safeReadJson<BookWithPages>(res)
@@ -490,11 +483,10 @@ export default function BookDetail() {
     setPdfError('')
     setDownloadingPdf(true)
     try {
-      const res = await fetch(api(`/api/books/${book.id}/pdf`), {
+      const res = await authFetch(user.token, api(`/api/books/${book.id}/pdf`), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${user.token}`,
         },
         body: '{}',
       })
@@ -517,11 +509,10 @@ export default function BookDetail() {
 
   const handleEditPrompt = async (pageNumber: number, description: string): Promise<void> => {
     if (!user) return
-    const res = await fetch(api(`/api/books/${book.id}/pages/${pageNumber}`), {
+    const res = await authFetch(user.token, api(`/api/books/${book.id}/pages/${pageNumber}`), {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${user.token}`,
       },
       body: JSON.stringify({ illustration_description: description }),
     })
@@ -542,11 +533,10 @@ export default function BookDetail() {
     if (!user) return
     setTypographySaving(true)
     try {
-      const res = await fetch(api(`/api/books/${book.id}/typography`), {
+      const res = await authFetch(user.token, api(`/api/books/${book.id}/typography`), {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${user.token}`,
         },
         body: JSON.stringify(next),
       })
@@ -579,11 +569,10 @@ export default function BookDetail() {
         body.pageNumber = pageNum
         if (illustrationFeedback.trim()) body.feedback = illustrationFeedback.trim()
       }
-      const res = await fetch(api(`/api/books/${book.id}/illustrate`), {
+      const res = await authFetch(user.token, api(`/api/books/${book.id}/illustrate`), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${user.token}`,
         },
         body: JSON.stringify(body),
       })
@@ -613,13 +602,13 @@ export default function BookDetail() {
       const fb = (portraitFeedback[characterIndex] ?? '').trim()
       const body: { feedback?: string } = {}
       if (fb) body.feedback = fb
-      const res = await fetch(
+      const res = await authFetch(
+        user.token,
         api(`/api/books/${book.id}/characters/${characterIndex}/portrait`),
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${user.token}`,
           },
           body: JSON.stringify(body),
         }
@@ -647,9 +636,7 @@ export default function BookDetail() {
 
   const loadVersions = async (pageNum: number) => {
     if (!user || !book) return
-    const res = await fetch(api(`/api/books/${book.id}/illustrations/${pageNum}`), {
-      headers: { 'Authorization': `Bearer ${user.token}` },
-    })
+    const res = await authFetch(user.token, api(`/api/books/${book.id}/illustrations/${pageNum}`))
     if (res.ok) {
       const versions = await res.json() as IllustrationVersion[]
       setIllustrationVersions(versions)
@@ -659,11 +646,10 @@ export default function BookDetail() {
 
   const revertIllustration = async (pageNum: number, url: string) => {
     if (!user || !book) return
-    const res = await fetch(api(`/api/books/${book.id}/illustrations/${pageNum}/revert`), {
+    const res = await authFetch(user.token, api(`/api/books/${book.id}/illustrations/${pageNum}/revert`), {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${user.token}`,
       },
       body: JSON.stringify({ url }),
     })

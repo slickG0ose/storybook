@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import { Sparkles, Wand2, Loader2, Plus, X } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { api } from '../lib/apiBase'
+import { authFetch } from '../lib/authFetch'
 import { PER_IMAGE_COST_USD, fmtUsd, portraitStepCostNote } from '../lib/cost'
 import { AGE_RANGES } from '../lib/ageRanges'
 import type { Character, CharacterRole } from '../types'
@@ -112,11 +113,8 @@ export default function CreateBook() {
       // call, so it is metered like every other paid path. No Content-Type header:
       // fetch sets the multipart boundary itself, and setting it by hand breaks
       // the upload.
-      const headers: Record<string, string> = {}
-      if (user?.token) headers['Authorization'] = `Bearer ${user.token}`
-      const res = await fetch(api('/api/uploads/style-reference'), {
+      const res = await authFetch(user?.token, api('/api/uploads/style-reference'), {
         method: 'POST',
-        headers,
         body: fd,
       })
       if (!res.ok) {
@@ -171,17 +169,15 @@ export default function CreateBook() {
     setGenerating(true)
     setError('')
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (user?.token) headers['Authorization'] = `Bearer ${user.token}`
       const characters: Character[] = cast.map(({ role, name, descriptor, relationship }) => ({
         role,
         name: name.trim(),
         descriptor: descriptor?.trim() || undefined,
         relationship: relationship?.trim() || undefined,
       }))
-      const res = await fetch(api('/api/generate'), {
+      const res = await authFetch(user?.token, api('/api/generate'), {
         method: 'POST',
-        headers,
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           theme: effectiveTheme,
           characters,

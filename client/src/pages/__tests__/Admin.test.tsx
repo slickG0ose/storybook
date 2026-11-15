@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor, act, within } from '@testing-librar
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import Admin from '../Admin'
+import { AUTH_EXPIRED_EVENT } from '../../lib/authFetch'
 import { ToastProvider } from '../../context/ToastContext'
 import type {
   AdminUser,
@@ -482,8 +483,8 @@ describe('Admin page', () => {
       const call = calls.find(c => c.url === '/api/admin/users/u-2/restore')
       expect(call).toBeDefined()
       expect(call?.init?.method).toBe('PUT')
-      const headers = call?.init?.headers as Record<string, string> | undefined
-      expect(headers?.Authorization).toBe('Bearer admin-token')
+      const headers = new Headers(call?.init?.headers)
+      expect(headers.get('Authorization')).toBe('Bearer admin-token')
     })
 
     // The "Deleted" status badge for that row should be gone — replaced with Active.
@@ -627,8 +628,8 @@ describe('Admin page', () => {
         const call = calls.find(c => c.url === '/api/admin/orphan-illustrations/orphan-1')
         expect(call).toBeDefined()
         expect(call?.init?.method).toBe('DELETE')
-        const headers = call?.init?.headers as Record<string, string> | undefined
-        expect(headers?.Authorization).toBe('Bearer admin-token')
+        const headers = new Headers(call?.init?.headers)
+        expect(headers.get('Authorization')).toBe('Bearer admin-token')
       })
 
       // Row disappears from local state.
@@ -893,8 +894,8 @@ describe('Admin page', () => {
       })
       const call = calls.find(c => c.url.startsWith('/api/admin/feedback'))
       expect(call?.url).toBe('/api/admin/feedback?status=new')
-      const headers = call?.init?.headers as Record<string, string> | undefined
-      expect(headers?.Authorization).toBe('Bearer admin-token')
+      const headers = new Headers(call?.init?.headers)
+      expect(headers.get('Authorization')).toBe('Bearer admin-token')
     })
 
     it('refetches with the user filter and without status when All is chosen', async () => {
@@ -952,5 +953,35 @@ describe('Admin page', () => {
       })
       expect(screen.getByRole('combobox', { name: /Status for feedback/ })).toHaveValue('new')
     })
+  })
+})
+
+describe('Admin page — expired session (401)', () => {
+  beforeEach(() => {
+    currentUser = adminUser
+    currentAuthLoading = false
+    vi.restoreAllMocks()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('dispatches the auth-expired event on a 401 and does not throw', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ error: 'Session expired' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    const onExpired = vi.fn()
+    window.addEventListener(AUTH_EXPIRED_EVENT, onExpired)
+    try {
+      renderAdmin()
+      await waitFor(() => expect(onExpired).toHaveBeenCalled())
+      expect((onExpired.mock.calls[0]![0] as CustomEvent).detail).toEqual({ token: 'admin-token' })
+    } finally {
+      window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired)
+    }
   })
 })

@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { PER_IMAGE_COST_USD, portraitStepCostNote } from '../../lib/cost'
+import { AUTH_EXPIRED_EVENT } from '../../lib/authFetch'
 import { AGE_RANGES } from '../../lib/ageRanges'
 import CreateBook, {
   quickModeCostLabel,
@@ -127,5 +128,35 @@ describe('CreateBook — age range picker', () => {
     expect(next).toBeEnabled()
     fireEvent.click(next)
     expect(screen.getByText('Any Special Requests?')).toBeInTheDocument()
+  })
+})
+
+describe('CreateBook — expired session (401)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('dispatches the auth-expired event when generate returns 401 and does not throw', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ error: 'Session expired' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    const onExpired = vi.fn()
+    window.addEventListener(AUTH_EXPIRED_EVENT, onExpired)
+    try {
+      renderAtStepTwo()
+      fireEvent.change(screen.getByPlaceholderText('Name (e.g., Luna)'), { target: { value: 'Luna' } })
+      fireEvent.click(screen.getByRole('button', { name: `Ages ${AGE_RANGES[0]!}` }))
+      fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+      fireEvent.click(screen.getByRole('button', { name: /Generate My Story/ }))
+
+      await waitFor(() => expect(onExpired).toHaveBeenCalledTimes(1))
+      expect(fetchSpy).toHaveBeenCalledWith('/api/generate', expect.objectContaining({ method: 'POST' }))
+      expect((onExpired.mock.calls[0]![0] as CustomEvent).detail).toEqual({ token: 'test-token' })
+    } finally {
+      window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired)
+    }
   })
 })

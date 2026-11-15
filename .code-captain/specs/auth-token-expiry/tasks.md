@@ -270,6 +270,7 @@ export interface LoginLocationState { from?: string; reason?: 'expired' }
 ---
 
 ### Task 5 — Move the authed page call sites to `authFetch`
+**Status:** Done (2026-11-15). 11 existing header assertions changed to read a `Headers` object (values unchanged, none deleted); only the excluded optional-auth `fetchBook` still builds a Bearer header by hand.
 
 **Zone:** client
 **Depends on:** Task 4
