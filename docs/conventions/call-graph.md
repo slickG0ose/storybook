@@ -36,6 +36,7 @@ called from; change a route's shape and this tells you the single file to update
 | Client caller | API prefix it owns |
 |---|---|
 | `context/AuthContext.tsx` | `/api/auth/{register,login,logout,me}` |
+| `lib/authFetch.ts` | no URL of its own: wraps `fetch` with the bearer header and ends the session on a 401. `MyBooks`, `BookDetail`, `CreateBook` and `Admin` call routes through it; `lib/feedback.ts` and `lib/narration/api.ts` deliberately do not |
 | `context/CartContext.tsx` | `/api/cart/:sessionId` (+ `/items`, `/items/:bookId`) |
 | `lib/useHeroPool.ts` | `/api/hero/pool` |
 | `lib/narration/api.ts` | `/api/narration/voices`, `GET`/`POST /api/books/:id/narration` |
@@ -64,7 +65,7 @@ Fan-out per router. `db/prisma` is elided where a route only reads through a ser
 
 | Router (`/api/…`) | services | lib | middleware |
 |---|---|---|---|
-| `auth` | `allowlist` | `password` | `authRateLimit` |
+| `auth` | `allowlist` | `authToken`, `password` | `authRateLimit` |
 | `books` | `illustrations`, `imagePin`, `parseAiJson`, `pdf`, `spend` | `apiKeys`, `availability`, `models` | `requireAuth`, `spendGate`, `validate` |
 | `generate` | `illustrations`, `imagePin`, `parseAiJson`, `spend` | `apiKeys`, `models` | `requireAuth`, `spendGate` |
 | `cart` | — | `availability` | `validate` |

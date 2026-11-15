@@ -411,6 +411,7 @@ Rules:
 ---
 
 ### Task 8 — Docs: conventions, call graph, env example
+**Status:** Done (2026-11-15)
 
 **Zone:** docs
 **Depends on:** Tasks 3 and 4
