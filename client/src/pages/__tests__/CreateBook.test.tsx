@@ -1,9 +1,10 @@
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { PER_IMAGE_COST_USD, portraitStepCostNote } from '../../lib/cost'
 import { AUTH_EXPIRED_EVENT } from '../../lib/authFetch'
 import { AGE_RANGES } from '../../lib/ageRanges'
+import { CREATE_DRAFT_KEY } from '../../lib/createDraft'
 import CreateBook, {
   quickModeCostLabel,
   coverModeCostLabel,
@@ -20,6 +21,9 @@ vi.mock('../../context/AuthContext', () => ({
     logout: vi.fn(),
   }),
 }))
+
+// The wizard persists a draft to sessionStorage; start every test from a clean slate.
+beforeEach(() => sessionStorage.clear())
 
 describe('CreateBook — cost copy', () => {
   it('quick mode reports zero image AI cost', () => {
@@ -158,5 +162,66 @@ describe('CreateBook — expired session (401)', () => {
     } finally {
       window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired)
     }
+  })
+})
+
+describe('CreateBook — draft kept across the sign-in bounce', () => {
+  const stored = (over: Record<string, unknown> = {}) => ({
+    v: 1,
+    step: 2,
+    theme: 'adventure',
+    customTheme: '',
+    stylePreset: 'storybook',
+    cast: [{ role: 'primary', name: 'Mira', descriptor: '' }],
+    ageRange: AGE_RANGES[1]!,
+    additionalDetails: '',
+    previewMode: 'quick',
+    pageCount: 5,
+    styleReferenceUrl: '',
+    customStyleDescriptor: '',
+    ...over,
+  })
+
+  beforeEach(() => sessionStorage.clear())
+  afterEach(() => vi.restoreAllMocks())
+
+  it('writes the filled-in fields to sessionStorage', () => {
+    renderAtStepTwo()
+    fireEvent.change(screen.getByPlaceholderText('Name (e.g., Luna)'), { target: { value: 'Luna' } })
+    fireEvent.click(screen.getByRole('button', { name: `Ages ${AGE_RANGES[0]!}` }))
+    const saved = JSON.parse(sessionStorage.getItem(CREATE_DRAFT_KEY) ?? 'null')
+    expect(saved).toMatchObject({ v: 1, step: 2, theme: 'adventure', ageRange: AGE_RANGES[0]! })
+    expect(saved.cast[0]).toMatchObject({ role: 'primary', name: 'Luna' })
+  })
+
+  it('restores step, theme, character name and age range from a stored draft', () => {
+    sessionStorage.setItem(CREATE_DRAFT_KEY, JSON.stringify(stored()))
+    render(<MemoryRouter><CreateBook /></MemoryRouter>)
+    expect(screen.getByPlaceholderText('Name (e.g., Luna)')).toHaveValue('Mira')
+    expect(screen.getByRole('button', { name: `Ages ${AGE_RANGES[1]!}` }).className).not.toBe(
+      screen.getByRole('button', { name: `Ages ${AGE_RANGES[0]!}` }).className,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    expect(screen.getByRole('button', { name: /Adventure/ })).toBeInTheDocument()
+  })
+
+  it('ignores a draft whose cast has no primary character', () => {
+    sessionStorage.setItem(CREATE_DRAFT_KEY, JSON.stringify(stored({ cast: [{ role: 'supporting', name: 'Mira' }] })))
+    render(<MemoryRouter><CreateBook /></MemoryRouter>)
+    expect(screen.queryByPlaceholderText('Name (e.g., Luna)')).toBeNull()
+    expect(screen.getByRole('button', { name: /Adventure/ })).toBeInTheDocument()
+  })
+
+  it('clears the draft after a successful generate', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ id: 'book-1' }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+    )
+    renderAtStepTwo()
+    fireEvent.change(screen.getByPlaceholderText('Name (e.g., Luna)'), { target: { value: 'Luna' } })
+    fireEvent.click(screen.getByRole('button', { name: `Ages ${AGE_RANGES[0]!}` }))
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    expect(sessionStorage.getItem(CREATE_DRAFT_KEY)).not.toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /Generate My Story/ }))
+    await waitFor(() => expect(sessionStorage.getItem(CREATE_DRAFT_KEY)).toBeNull())
   })
 })

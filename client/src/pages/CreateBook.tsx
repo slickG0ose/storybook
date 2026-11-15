@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { Sparkles, Wand2, Loader2, Plus, X } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
@@ -6,6 +6,8 @@ import { api } from '../lib/apiBase'
 import { authFetch } from '../lib/authFetch'
 import { PER_IMAGE_COST_USD, fmtUsd, portraitStepCostNote } from '../lib/cost'
 import { AGE_RANGES } from '../lib/ageRanges'
+import { loadCreateDraft, saveCreateDraft, clearCreateDraft } from '../lib/createDraft'
+import type { CreateDraft } from '../lib/createDraft'
 import type { Character, CharacterRole } from '../types'
 
 interface ThemeOption {
@@ -70,25 +72,53 @@ const newDraft = (role: CharacterRole, relationship?: string): DraftCharacter =>
   relationship,
 })
 
+// A restored cast must hold exactly one primary; otherwise the draft is ignored.
+const loadUsableDraft = (): CreateDraft | null => {
+  const d = loadCreateDraft()
+  if (!d) return null
+  return d.cast.filter(c => c.role === 'primary').length === 1 ? d : null
+}
+
 export default function CreateBook() {
   const navigate = useNavigate()
   const { user } = useAuth()
-  const [step, setStep] = useState(1)
-  const [theme, setTheme] = useState('')
-  const [customTheme, setCustomTheme] = useState('')
-  const [stylePreset, setStylePreset] = useState<string>('storybook')
-  const [cast, setCast] = useState<DraftCharacter[]>([newDraft('primary')])
-  const [ageRange, setAgeRange] = useState('')
-  const [additionalDetails, setAdditionalDetails] = useState('')
-  const [previewMode, setPreviewMode] = useState<'quick' | 'cover' | 'full'>('quick')
-  const [pageCount, setPageCount] = useState<number>(5)
-  const [styleReferenceUrl, setStyleReferenceUrl] = useState<string>('')
-  const [customStyleDescriptor, setCustomStyleDescriptor] = useState<string>('')
+  const [draft] = useState<CreateDraft | null>(loadUsableDraft)
+  const [step, setStep] = useState(() => draft?.step ?? 1)
+  const [theme, setTheme] = useState(() => draft?.theme ?? '')
+  const [customTheme, setCustomTheme] = useState(() => draft?.customTheme ?? '')
+  const [stylePreset, setStylePreset] = useState<string>(() => draft?.stylePreset ?? 'storybook')
+  const [cast, setCast] = useState<DraftCharacter[]>(() =>
+    draft ? draft.cast.map(c => ({ ...c, _id: nextId++ })) : [newDraft('primary')],
+  )
+  const [ageRange, setAgeRange] = useState(() => draft?.ageRange ?? '')
+  const [additionalDetails, setAdditionalDetails] = useState(() => draft?.additionalDetails ?? '')
+  const [previewMode, setPreviewMode] = useState<'quick' | 'cover' | 'full'>(() => draft?.previewMode ?? 'quick')
+  const [pageCount, setPageCount] = useState<number>(() => draft?.pageCount ?? 5)
+  const [styleReferenceUrl, setStyleReferenceUrl] = useState<string>(() => draft?.styleReferenceUrl ?? '')
+  const [customStyleDescriptor, setCustomStyleDescriptor] = useState<string>(() => draft?.customStyleDescriptor ?? '')
   const [styleUploading, setStyleUploading] = useState(false)
   const [styleUploadError, setStyleUploadError] = useState('')
   const [styleDragOver, setStyleDragOver] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState('')
+
+  // Persist the wizard so a sign-in bounce (expired session) does not lose it.
+  useEffect(() => {
+    saveCreateDraft({
+      v: 1,
+      step,
+      theme,
+      customTheme,
+      stylePreset,
+      cast: cast.map(({ role, name, descriptor, relationship }) => ({ role, name, descriptor, relationship })),
+      ageRange,
+      additionalDetails,
+      previewMode,
+      pageCount,
+      styleReferenceUrl,
+      customStyleDescriptor,
+    })
+  }, [step, theme, customTheme, stylePreset, cast, ageRange, additionalDetails, previewMode, pageCount, styleReferenceUrl, customStyleDescriptor])
 
   const isCustomTheme = theme === '__custom__'
   const effectiveTheme = isCustomTheme ? customTheme.trim() : theme
@@ -194,6 +224,7 @@ export default function CreateBook() {
         throw new Error(data.error || 'Generation failed')
       }
       const book = await res.json() as { id: string }
+      clearCreateDraft()
       navigate(`/book/${book.id}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Generation failed')

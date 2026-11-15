@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from '../AuthContext'
 import { AUTH_EXPIRED_EVENT } from '../../lib/authFetch'
+import { CREATE_DRAFT_KEY } from '../../lib/createDraft'
 
 const KEY = 'storybook-auth'
 const STORED = { id: 'u1', email: 'a@b.c', name: 'Ann', token: 'tok-1' }
@@ -90,6 +91,16 @@ describe('AuthProvider session-end event', () => {
     expect(fetchMock.mock.calls.some(c => String(c[0]).includes('/api/auth/logout'))).toBe(false)
   })
 
+  it('keeps the create draft on session end', async () => {
+    sessionStorage.setItem(CREATE_DRAFT_KEY, '{"v":1}')
+    mount()
+    await waitFor(() => expect(screen.getByTestId('user')).toHaveTextContent('Ann:user'))
+    fire('tok-1')
+    await waitFor(() => expect(screen.getByTestId('loc')).toHaveTextContent('/login'))
+    expect(sessionStorage.getItem(CREATE_DRAFT_KEY)).toBe('{"v":1}')
+    sessionStorage.clear()
+  })
+
   it('ignores an event for a different token', async () => {
     mount()
     await waitFor(() => expect(screen.getByTestId('user')).toHaveTextContent('Ann:user'))
@@ -97,5 +108,22 @@ describe('AuthProvider session-end event', () => {
     expect(screen.getByTestId('user')).toHaveTextContent('Ann:user')
     expect(screen.getByTestId('loc')).toHaveTextContent('/my-books?tab=1')
     expect(localStorage.getItem(KEY)).not.toBeNull()
+  })
+})
+
+describe('AuthProvider explicit logout', () => {
+  it('clears the create draft', async () => {
+    localStorage.setItem(KEY, JSON.stringify(STORED))
+    sessionStorage.setItem(CREATE_DRAFT_KEY, '{"v":1}')
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ id: 'u1', email: 'a@b.c', name: 'Ann', role: 'user' }), { status: 200 }))
+    let doLogout: () => void = () => {}
+    function Grab() {
+      doLogout = useAuth().logout
+      return null
+    }
+    render(<MemoryRouter><AuthProvider><Grab /></AuthProvider></MemoryRouter>)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    act(() => doLogout())
+    expect(sessionStorage.getItem(CREATE_DRAFT_KEY)).toBeNull()
   })
 })

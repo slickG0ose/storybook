@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import type { User, UserRole } from '../types'
 import { api } from '../lib/apiBase'
+import { clearCreateDraft } from '../lib/createDraft'
 import { AUTH_EXPIRED_EVENT } from '../lib/authFetch'
 import type { AuthExpiredDetail, LoginLocationState } from '../lib/authFetch'
 
@@ -136,6 +137,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setUser(null)
     localStorage.removeItem('storybook-auth')
+    clearCreateDraft()
   }
 
   return (

@@ -309,6 +309,7 @@ Rules:
 ---
 
 ### Task 6 — Keep the Create-a-Book draft across the sign-in bounce
+**Status:** Done (2026-11-15). Manual browser verify pending, to be done with the full flow.
 
 **Zone:** client
 **Depends on:** Task 4
