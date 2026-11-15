@@ -139,6 +139,7 @@ Not verified by the architect (read-only): whether `prisma migrate dev --create-
 ---
 
 ### Task 3 — Issue, store and check tokens through the helper; 401 on expiry
+**Status:** Done (2026-11-15). One existing assertion in auth-hashing.test.ts moved from plaintext to `hashToken(...)` (kept, not deleted).
 
 > USER CONFIRMATION REQUIRED — auth/session guardrail. Requires the owner's approval of the spec.
 

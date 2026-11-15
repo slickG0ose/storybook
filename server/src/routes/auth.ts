@@ -1,8 +1,8 @@
 import { Router } from 'express';
-import { v4 as uuidv4 } from 'uuid';
 import prisma from '../db/prisma';
 import { hashPassword, verifyPassword } from '../lib/password';
 import { isEmailAllowed, normalizeEmail } from '../services/allowlist';
+import { hashToken, issueToken } from '../lib/authToken';
 import { authRateLimit } from '../middleware/authRateLimit';
 import type { Request, Response } from 'express';
 
@@ -16,10 +16,19 @@ export { hashPassword, verifyPassword };
 export async function getAuthUser(req: Request) {
   const header = req.headers.authorization;
   if (!header?.startsWith('Bearer ')) return null;
-  const token = header.slice(7);
-  // Reject soft-deleted users: their tokens stop authenticating once an admin
-  // tombstones them, but rows remain so an admin can restore later.
-  return prisma.user.findFirst({ where: { token, deleted_at: null } });
+  const presented = header.slice(7);
+  if (!presented) return null;
+  // The column holds sha256(token), so hash what was presented. Reject
+  // soft-deleted users (rows remain so an admin can restore later) and expired
+  // tokens. A null token_expires_at never matches `gt`, so legacy rows are dead.
+  // Expired, revoked and never-valid tokens are all the same null: one 401.
+  return prisma.user.findFirst({
+    where: {
+      token: hashToken(presented),
+      deleted_at: null,
+      token_expires_at: { gt: new Date() },
+    },
+  });
 }
 
 /**
@@ -77,13 +86,14 @@ router.post('/register', authRateLimit('register'), async (req: Request, res: Re
     return res.status(409).json({ error: 'An account with this email already exists' });
   }
 
-  const token = uuidv4();
+  const { token, tokenHash, expiresAt } = issueToken();
   const user = await prisma.user.create({
     data: {
       email: normalized,
       name,
       password_hash: hashPassword(password),
-      token,
+      token: tokenHash,
+      token_expires_at: expiresAt,
     },
   });
 
@@ -110,9 +120,12 @@ router.post('/login', authRateLimit('login'), async (req: Request, res: Response
     return res.status(401).json({ error: 'Invalid email or password' });
   }
 
-  const token = uuidv4();
+  const { token, tokenHash, expiresAt } = issueToken();
 
-  await prisma.user.update({ where: { id: user.id }, data: { token } });
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { token: tokenHash, token_expires_at: expiresAt },
+  });
 
   res.json({ id: user.id, email: user.email, name: user.name, role: user.role, token });
 });
@@ -120,7 +133,10 @@ router.post('/login', authRateLimit('login'), async (req: Request, res: Response
 router.post('/logout', async (req: Request, res: Response) => {
   const user = await getAuthUser(req);
   if (user) {
-    await prisma.user.update({ where: { id: user.id }, data: { token: null } });
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { token: null, token_expires_at: null },
+    });
   }
   res.json({ ok: true });
 });
