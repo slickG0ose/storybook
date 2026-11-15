@@ -371,6 +371,7 @@ Rules:
 ---
 
 ### Task 7 — e2e: a dead token routes to sign-in and back, in both themes
+**Status:** Done (2026-11-15). Full e2e 194/194. Also fixed two regressions from Tasks 4/6: mobile smoke clears the sessionStorage draft per theme; PWA crash-update now crashes via a blocked `storybook-auth` read (the malformed-blob tolerance is kept and pinned in AuthContext.test.tsx).
 
 **Zone:** e2e
 **Depends on:** Tasks 3, 5 and 6

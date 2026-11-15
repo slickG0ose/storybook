@@ -217,6 +217,11 @@ const WIZARD_NAV = 'main button:text-is("Back"), main button:text-is("Next"), ma
 const ADD_CHARACTER = 'main button:has-text("Add antagonist"), main button:has-text("Add supporting character")';
 
 async function advanceToStep2(page: Page): Promise<void> {
+  // #210: the wizard draft lives in sessionStorage, which survives forEachTheme's reload, so
+  // the second theme would restore at step 2/3 instead of step 1. Clear it and start over.
+  await page.evaluate(() => sessionStorage.clear());
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Choose a Theme' })).toBeVisible();
   await page.getByRole('button', { name: /Adventure/ }).click();
   await page.getByRole('button', { name: 'Next', exact: true }).click();
   await expect(page.getByRole('heading', { name: WIZARD_STEP_2 })).toBeVisible();

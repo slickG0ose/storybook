@@ -74,6 +74,16 @@ describe('AuthProvider mount check', () => {
   })
 })
 
+describe('AuthProvider malformed stored blob', () => {
+  it('drops it, finishes loading signed out, and does not call the API', async () => {
+    localStorage.setItem(KEY, '{not json')
+    mount()
+    await waitFor(() => expect(screen.getByTestId('user')).not.toHaveTextContent('Ann'))
+    expect(localStorage.getItem(KEY)).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
 describe('AuthProvider session-end event', () => {
   beforeEach(() => {
     localStorage.setItem(KEY, JSON.stringify(STORED))
