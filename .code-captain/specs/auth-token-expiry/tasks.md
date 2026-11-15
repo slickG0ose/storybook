@@ -30,6 +30,8 @@ Written for the recommended rulings on the spec's five Owner decisions. If the o
 
 ### Task 1 — Token helper: hash, TTL config, issue
 
+**Status:** Done (2026-11-15)
+
 **Zone:** server
 **Depends on:** none
 **Parallel-safe with:** 4, 5, 6
