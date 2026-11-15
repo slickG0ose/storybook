@@ -434,6 +434,7 @@ Rules:
 ---
 
 ### Task 9 — Pre-merge follow-ups
+**Status:** Done (2026-11-15). ADR-038 written; follow-ups filed as #230 (Session table) and #231 (re-validate on focus).
 
 **Zone:** docs (harness) · **Depends on:** none (run last)
 

@@ -4,6 +4,52 @@ Append-only log. Newest entries on top. Each entry should answer: *what was deci
 
 ---
 
+## ADR-038 — Auth tokens: 30-day absolute expiry on the single per-user token, stored as sha256, existing sessions purged at deploy
+
+**Date:** 2026-11-15
+**Status:** Accepted. Nick Konecny ruled all five Owner decisions in the spec as recommended on 2026-11-15, in chat. That ruling is the auth/session guardrail confirmation. Recorded at Task 9, before merge.
+**Scope:** `auth-token-expiry` spec, Tasks 1–9 (#210). Files: `server/src/lib/authToken.ts`, `server/src/routes/{auth,admin}.ts`, `server/prisma/schema.prisma`, `server/prisma/postgres/schema.prisma`, both `add_token_expiry` migrations, `client/src/lib/{authFetch,createDraft}.ts`, `client/src/context/AuthContext.tsx`, `client/src/pages/{Login,CreateBook,MyBooks,BookDetail,Admin}.tsx`. Spec at [.code-captain/specs/auth-token-expiry/spec.md](../specs/auth-token-expiry/spec.md).
+
+### Decision
+
+1. **Absolute expiry, not sliding.** Login and register set `User.token_expires_at = now + TOKEN_TTL_DAYS`. `getAuthUser` requires `token_expires_at > now`, and a null expiry never authenticates. Using a token does not extend it.
+2. **The token is stored as unsalted sha256 in the existing `User.token` column.** That column is now `@unique`, because it is the lookup key on every authed request. The client still holds the plaintext UUID. The column keeps its name, and the schema comment says it holds a hash.
+3. **Existing sessions end at deploy.** Both `add_token_expiry` migrations run `UPDATE "User" SET "token" = NULL;` before building the unique index. Every user signs in once.
+4. **Every dead token gets one 401.** Expired, logged out and rotated by a login elsewhere all return `401 { error: 'Not authenticated' }`. `expiresAt` stays off the wire, and no response shape changes. On the client, `authFetch` turns a 401 into the `storybook:auth-expired` event. `AuthContext` clears the session and routes to `/login` with a return path. The mount-time `/me` check clears only on a 401. The Create-a-Book draft survives the round trip in `sessionStorage`.
+5. **`TOKEN_TTL_DAYS` defaults to 30 and is range-checked to 1–90.** Anything unset, malformed or out of range falls back to 30 with a one-time warning that does not echo the value. This matches the spend-gate rule that a typo can't widen a guard.
+
+### Why
+
+- **The threat is a leaked token that works forever,** from a shared family tablet, an extension or an XSS. Only an absolute cap bounds it. A thief who uses a sliding token weekly keeps it alive indefinitely.
+- **Hashing now costs nothing extra; hashing later costs a second forced sign-in.** Any move to hashed storage invalidates every live token, so it belongs in the same deploy as the purge.
+- **Unsalted sha256 is enough for a 122-bit random UUID.** Salting and slow hashing defend low-entropy secrets like passwords. Here they would only cost a lookup index.
+- **Grandfathering would keep today's tokens permanent,** which is the exact bug.
+
+### Alternative considered: sliding expiry (Option 2)
+
+Rejected: it does not bound a token that is in active use, and it adds a write on the read path plus a throttle to test. About half a day to add on top of this later if wanted, as sliding plus an absolute cap.
+
+### Alternative considered: a `Session` table (Option 3)
+
+Deferred to #230. It solves multi-device sign-in, a different problem, and it gives up today's free property that a new login revokes a leaked token, so it needs a "sign out everywhere" control first. Moving there from here is cheap because `getAuthUser` is the only token reader.
+
+### Alternative considered: a separate `token_hash` column
+
+Rejected on cost: it needs a second deploy to drop `token`. Revisit the name if #230 happens, since the column moves anyway.
+
+### Consequences
+
+- **Every signed-in user is signed out once** when this deploys to Render (the Neon migration runs then). Reverting the server build afterwards signs everyone out again and breaks nothing, since no column was removed.
+- **Signing in on a second device still signs out the first.** That is unchanged, and tracked in #230.
+- **A tab left open past expiry looks signed in until its next authed call.** An owned draft opened through the optional-auth book read shows "not found" rather than a sign-in prompt. Tracked in #231 (re-validate on focus).
+- **Only a 401 ends a session on the client.** Being offline or a Render cold start keeps the stored session instead of wiping it.
+- **The Create-a-Book draft, including the child's name, sits in `sessionStorage`** until the tab closes, an explicit logout, or a successful generate. It is not cleared on expiry, on purpose.
+- **Admin restore clears the restored user's token,** so a soft-deleted user's old token can't come back.
+- **Pages must call authed endpoints through `authFetch`.** The deliberate exceptions are the optional-auth `fetchBook` in `BookDetail.tsx`, `lib/feedback.ts` and `lib/narration/api.ts`.
+- **Do not run `prisma format` on `server/prisma/schema.prisma`** without updating `gen-postgres-schema.mjs`'s exact `email` needle and its test together. The new fields are left unaligned on purpose.
+
+---
+
 ## ADR-037 — Seed-book art ships as committed JPEG fixtures owned by the seed; the one-off generator gates its own spend
 
 **Date:** 2026-11-11
