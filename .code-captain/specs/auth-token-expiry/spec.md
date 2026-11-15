@@ -279,8 +279,11 @@ Work in progress:
 
 ## ADR-worthy decisions
 
-- [ ] **Absolute 30-day expiry on the single per-user token; Session table and sliding expiry deferred** — the session model changes under a guardrail, and the deferral of multi-device needs a recorded reason and a tracking issue. Write via /create-adr after spec approval.
-- [ ] **Bearer tokens are stored as unsalted sha256 in the existing `User.token` column** — hard to reverse (every change of scheme forces a global sign-in) and the column name no longer describes its contents.
-- [ ] **Existing sessions are invalidated at deploy by the migration, not grandfathered** — a one-way data change run against production by `migrate deploy`.
-- [ ] **One 401 for every dead token, and the client treats any 401 on a bearer request as session end** — a cross-zone contract; `authFetch` is the new seam every authed page call goes through, and `expiresAt` is deliberately kept off the wire.
-- [ ] **`TOKEN_TTL_DAYS` is range-checked (1 to 90) and falls back to 30** — the upper bound is a security control, not validation tidiness.
+- [x] **Absolute 30-day expiry on the single per-user token; Session table and sliding expiry deferred** — the session model changes under a guardrail, and the deferral of multi-device needs a recorded reason and a tracking issue. Write via /create-adr after spec approval.
+- [x] **Bearer tokens are stored as unsalted sha256 in the existing `User.token` column** — hard to reverse (every change of scheme forces a global sign-in) and the column name no longer describes its contents.
+- [x] **Existing sessions are invalidated at deploy by the migration, not grandfathered** — a one-way data change run against production by `migrate deploy`.
+- [x] **One 401 for every dead token, and the client treats any 401 on a bearer request as session end** — a cross-zone contract; `authFetch` is the new seam every authed page call goes through, and `expiresAt` is deliberately kept off the wire.
+- [x] **`TOKEN_TTL_DAYS` is range-checked (1 to 90) and falls back to 30** — the upper bound is a security control, not validation tidiness.
+
+Tracked: all five bundled into ADR-038. Deferrals: #230 (Session table), #231 (focus re-validation). Surfaced in Task 7: #232 (unguarded storage read).
+
