@@ -12,7 +12,10 @@ model User {
   email         String    @unique
   name          String
   password_hash String
-  token         String?
+  // sha256 hex of the bearer token, never the token itself (#210). A row whose
+  // token_expires_at is null or past does not authenticate. See lib/authToken.ts.
+  token         String?   @unique
+  token_expires_at DateTime?
   role          String    @default("user")
   deleted_at    DateTime?
   created_at    DateTime  @default(now())

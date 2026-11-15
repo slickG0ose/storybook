@@ -82,6 +82,7 @@ export function resetTokenTtlWarning(): void;
 ---
 
 ### Task 2 — Schema and both migrations: `token_expires_at`, unique `token`, purge old tokens
+**Status:** Done (2026-11-15). SQLite DDL generated with `prisma migrate diff` (non-interactive shell); purge prepended by hand; no drift.
 
 > USER CONFIRMATION REQUIRED — auth/session guardrail. Requires the owner's approval of the spec.
 
