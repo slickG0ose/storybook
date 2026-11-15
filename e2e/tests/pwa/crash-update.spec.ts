@@ -51,39 +51,33 @@ async function stageWaitingWorker(page: Page): Promise<void> {
 }
 
 /**
- * Deterministic crash trigger: a storage fault the app does not guard.
+ * Deterministic crash trigger: the API returns a shape this build cannot render.
  *
- * Until #210 this seeded a corrupt `storybook-auth` blob, but AuthContext now drops a
- * malformed blob on purpose, so that no longer crashes anything. Instead, an init script makes
- * `localStorage.getItem('storybook-auth')` throw, as real browsers do when storage is blocked
- * (a SecurityError). AuthProvider reads that key in a mount effect OUTSIDE its try/catch
- * (only the JSON.parse is guarded), and AuthProvider sits inside the root ErrorBoundary,
- * so the throw lands on the boundary. No test hook exists in app code.
+ * That is the real-world version of a crashed build (a server and client out of step), and
+ * it needs no hook in app code. Home renders each `/api/books/themes` entry as a React
+ * child, so an object there throws during render ("Objects are not valid as a React
+ * child") and lands on the root ErrorBoundary.
  *
- * The fault is armed by a localStorage flag (read through the original getItem) so a test can
- * disarm it with `disarmCrash` and reload into a clean boot; the init script itself runs on
- * every navigation for the life of the page.
+ * History: until #210 this seeded a corrupt `storybook-auth` blob; #210 made AuthContext
+ * drop that. Then it made `localStorage.getItem('storybook-auth')` throw; #232 made
+ * AuthContext survive blocked storage. Both were app bugs, fixed. Don't go back to either.
+ *
+ * Routed on the browser context, not the page, so the request is caught even when the
+ * service worker issues it. `disarmCrash` removes the route so the next load boots cleanly.
  */
-const CRASH_FLAG = 'e2e-crash-auth-read';
+const THEMES_ROUTE = '**/api/books/themes';
 
 async function crashAndReload(page: Page): Promise<void> {
-  await page.addInitScript((flag) => {
-    const original = Storage.prototype.getItem;
-    Storage.prototype.getItem = function (this: Storage, key: string) {
-      if (key === 'storybook-auth' && original.call(this, flag) === '1') {
-        throw new DOMException('The operation is insecure.', 'SecurityError');
-      }
-      return original.call(this, key);
-    };
-  }, CRASH_FLAG);
-  await page.evaluate((flag) => localStorage.setItem(flag, '1'), CRASH_FLAG);
+  await page.context().route(THEMES_ROUTE, route =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ not: 'a string' }]) }),
+  );
   await page.reload();
   await expect(page.getByRole('alert')).toContainText('This page hit a snag');
 }
 
 /** Clears the crash trigger so the next load boots cleanly. */
 async function disarmCrash(page: Page): Promise<void> {
-  await page.evaluate((flag) => localStorage.removeItem(flag), CRASH_FLAG);
+  await page.context().unroute(THEMES_ROUTE);
 }
 
 /**
