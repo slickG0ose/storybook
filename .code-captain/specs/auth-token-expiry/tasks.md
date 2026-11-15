@@ -205,6 +205,7 @@ Rules:
 ---
 
 ### Task 4 — `authFetch`, session-end handling in `AuthContext`, Login notice and return path
+**Status:** Done (2026-11-15). Manual browser verify (light + dark) pending, to be done with the full flow.
 
 > USER CONFIRMATION REQUIRED — auth/session guardrail. Requires the owner's approval of the spec.
 
