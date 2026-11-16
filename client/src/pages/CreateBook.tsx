@@ -335,7 +335,7 @@ export default function CreateBook() {
             </div>
 
             <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-400 mt-6 mb-2">Or upload a reference image (optional)</h3>
-            <p className="text-xs text-gray-500 dark:text-gray-500 mb-3">We'll read the style from your image and use it for every illustration. Overrides the preset above.</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">We'll read the style from your image and use it for every illustration. Overrides the preset above.</p>
 
             {styleReferenceUrl ? (
               <div className="flex gap-3 items-start p-3 rounded-2xl border-2 border-pink-200 dark:border-pink-800 bg-pink-50/40 dark:bg-pink-900/10">
@@ -345,10 +345,11 @@ export default function CreateBook() {
                   className="w-20 h-20 object-cover rounded-lg shadow-sm shrink-0"
                 />
                 <div className="flex-1 min-w-0">
-                  <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
+                  <label htmlFor="create-detected-style" className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
                     Detected style (editable)
                   </label>
                   <textarea
+                    id="create-detected-style"
                     value={customStyleDescriptor}
                     onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setCustomStyleDescriptor(e.target.value)}
                     placeholder="Describe the art style you want..."
@@ -398,7 +399,7 @@ export default function CreateBook() {
                   <>
                     <div className="text-3xl mb-2">{'\u{1F4F8}'}</div>
                     <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">Drag &amp; drop an image, or click to browse</p>
-                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">JPG or PNG, max 5MB</p>
+                    <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">JPG or PNG, max 5MB</p>
                   </>
                 )}
               </label>
@@ -470,8 +471,8 @@ export default function CreateBook() {
             )}
 
             <div>
-              <label className="block text-sm font-semibold text-gray-600 dark:text-gray-400 mb-1">Age Range</label>
-              <div className="flex flex-wrap gap-2">
+              <p id="create-age-range-label" className="block text-sm font-semibold text-gray-600 dark:text-gray-400 mb-1">Age Range</p>
+              <div role="group" aria-labelledby="create-age-range-label" className="flex flex-wrap gap-2">
                 {AGE_RANGES.map(ar => (
                   <button
                     key={ar}

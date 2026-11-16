@@ -77,9 +77,11 @@ export default function Checkout() {
           <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100 font-display mb-4">Your Details</h2>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-semibold text-gray-600 dark:text-gray-400 mb-1">Name</label>
+              <label htmlFor="checkout-name" className="block text-sm font-semibold text-gray-600 dark:text-gray-400 mb-1">Name</label>
               <input
+                id="checkout-name"
                 type="text"
+                autoComplete="name"
                 value={name}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
                 required
@@ -87,9 +89,11 @@ export default function Checkout() {
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-600 dark:text-gray-400 mb-1">Email</label>
+              <label htmlFor="checkout-email" className="block text-sm font-semibold text-gray-600 dark:text-gray-400 mb-1">Email</label>
               <input
+                id="checkout-email"
                 type="email"
+                autoComplete="email"
                 autoCapitalize="none"
                 autoCorrect="off"
                 spellCheck={false}

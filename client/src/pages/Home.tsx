@@ -268,7 +268,8 @@ export default function Home() {
               <div className="relative">
                 <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
-                  type="text"
+                  type="search"
+                  aria-label="Search books"
                   placeholder="Search books by title, description, or author..."
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
@@ -389,7 +390,7 @@ export default function Home() {
               <button
                 onClick={() => setActiveAge(null)}
                 className={`px-3 py-1 rounded-full text-sm font-semibold transition-colors cursor-pointer ${
-                  !activeAge ? 'bg-amber-500 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                  !activeAge ? 'bg-amber-500 text-amber-950' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
                 }`}
               >
                 All
@@ -399,7 +400,7 @@ export default function Home() {
                   key={range}
                   onClick={() => setActiveAge(activeAge === range ? null : range)}
                   className={`px-3 py-1 rounded-full text-sm font-semibold transition-colors cursor-pointer ${
-                    activeAge === range ? 'bg-amber-500 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    activeAge === range ? 'bg-amber-500 text-amber-950' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
                   }`}
                 >
                   {range}

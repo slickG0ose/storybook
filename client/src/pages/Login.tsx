@@ -54,9 +54,11 @@ export default function Login() {
 
         <form onSubmit={e => void handleSubmit(e)} className="space-y-4">
           <div>
-            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Email</label>
+            <label htmlFor="login-email" className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Email</label>
             <input
+              id="login-email"
               type="email"
+              autoComplete="email"
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
@@ -67,9 +69,11 @@ export default function Login() {
             />
           </div>
           <div>
-            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Password</label>
+            <label htmlFor="login-password" className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Password</label>
             <input
+              id="login-password"
               type="password"
+              autoComplete="current-password"
               value={password}
               onChange={e => setPassword(e.target.value)}
               required
@@ -92,7 +96,7 @@ export default function Login() {
 
         <p className="text-center text-sm text-gray-500 dark:text-gray-400 mt-6">
           Don't have an account?{' '}
-          <Link to="/register" className="text-purple-500 hover:text-purple-600 font-semibold no-underline">
+          <Link to="/register" className="text-purple-600 hover:text-purple-700 dark:text-purple-300 dark:hover:text-purple-200 font-semibold no-underline">
             Create one
           </Link>
         </p>

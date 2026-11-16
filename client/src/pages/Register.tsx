@@ -42,9 +42,11 @@ export default function Register() {
 
         <form onSubmit={e => void handleSubmit(e)} className="space-y-4">
           <div>
-            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Your Name</label>
+            <label htmlFor="register-name" className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Your Name</label>
             <input
+              id="register-name"
               type="text"
+              autoComplete="name"
               value={name}
               onChange={e => setName(e.target.value)}
               required
@@ -52,9 +54,11 @@ export default function Register() {
             />
           </div>
           <div>
-            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Email</label>
+            <label htmlFor="register-email" className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Email</label>
             <input
+              id="register-email"
               type="email"
+              autoComplete="email"
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
@@ -65,9 +69,11 @@ export default function Register() {
             />
           </div>
           <div>
-            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Password</label>
+            <label htmlFor="register-password" className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Password</label>
             <input
+              id="register-password"
               type="password"
+              autoComplete="new-password"
               value={password}
               onChange={e => setPassword(e.target.value)}
               required
@@ -91,7 +97,7 @@ export default function Register() {
 
         <p className="text-center text-sm text-gray-500 dark:text-gray-400 mt-6">
           Already have an account?{' '}
-          <Link to="/login" className="text-purple-500 hover:text-purple-600 font-semibold no-underline">
+          <Link to="/login" className="text-purple-600 hover:text-purple-700 dark:text-purple-300 dark:hover:text-purple-200 font-semibold no-underline">
             Sign in
           </Link>
         </p>

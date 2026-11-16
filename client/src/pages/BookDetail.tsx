@@ -4,6 +4,7 @@ import { ArrowLeft, ShoppingCart, ChevronLeft, ChevronRight, Loader2, RefreshCw,
 import { useCart } from '../context/CartContext'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
+import { withSiteName } from '../lib/pageTitle'
 import { api } from '../lib/apiBase'
 import { authFetch } from '../lib/authFetch'
 import { commerceEnabled } from '../lib/commerce'
@@ -178,6 +179,13 @@ export default function BookDetail() {
     if (authLoading) return
     fetchBook()
   }, [id, user, authLoading])
+
+  // The book's own title in the tab, history and bookmarks. App sets a generic
+  // "Book" title on navigation; this replaces it once the book has loaded.
+  const loadedTitle = book?.title
+  useEffect(() => {
+    if (loadedTitle) document.title = withSiteName(loadedTitle)
+  }, [loadedTitle])
 
   const fetchVersions = useCallback(async (bookId: string, token: string) => {
     setVersionsLoading(true)
@@ -734,7 +742,7 @@ export default function BookDetail() {
           </div>
           <div className="p-8 md:w-2/3">
             <h1 className="text-3xl font-bold text-gray-800 dark:text-gray-100 font-display mb-2">{book.title}</h1>
-            <p className="text-gray-500 dark:text-gray-400 mb-1">by {book.author}</p>
+            <p className="text-gray-600 dark:text-gray-400 mb-1">by {book.author}</p>
             <p className="text-gray-600 dark:text-gray-300 mb-4">{book.description}</p>
             <div className="flex flex-wrap gap-2 mb-4">
               <span className="text-sm bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 px-3 py-1 rounded-full font-semibold">
@@ -816,7 +824,7 @@ export default function BookDetail() {
                       addFailed
                         ? 'bg-red-500 dark:bg-red-600 text-white'
                         : added
-                          ? 'bg-green-500 text-white'
+                          ? 'bg-green-700 text-white'
                           : 'bg-purple-500 hover:bg-purple-600 dark:bg-purple-500 dark:hover:bg-purple-400 text-white'
                     }`}
                   >
@@ -985,7 +993,7 @@ export default function BookDetail() {
               aria-pressed={viewMode === 'spread'}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold cursor-pointer border-none transition-colors ${
                 viewMode === 'spread'
-                  ? 'bg-amber-500 text-white'
+                  ? 'bg-amber-500 text-amber-950'
                   : 'bg-transparent text-gray-500 dark:text-gray-400 hover:bg-amber-50 dark:hover:bg-gray-700'
               }`}
             >
@@ -996,7 +1004,7 @@ export default function BookDetail() {
               aria-pressed={viewMode === 'reader'}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold cursor-pointer border-none transition-colors ${
                 viewMode === 'reader'
-                  ? 'bg-amber-500 text-white'
+                  ? 'bg-amber-500 text-amber-950'
                   : 'bg-transparent text-gray-500 dark:text-gray-400 hover:bg-amber-50 dark:hover:bg-gray-700'
               }`}
             >

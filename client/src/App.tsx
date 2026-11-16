@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Routes, Route, Link, useLocation } from 'react-router-dom'
 import Navbar from './components/Navbar'
 import ErrorBoundary from './components/ErrorBoundary'
@@ -14,6 +15,7 @@ import Admin from './pages/Admin'
 import NotFound from './pages/NotFound'
 import Privacy from './pages/Privacy'
 import { commerceEnabled } from './lib/commerce'
+import { titleForPath } from './lib/pageTitle'
 
 /** `py-2 -my-2` clears the 24px WCAG tap-target floor without adding footer height. */
 const FOOTER_LINK =
@@ -21,6 +23,13 @@ const FOOTER_LINK =
 
 function App() {
   const { pathname } = useLocation()
+
+  // One title per route (lib/pageTitle.ts). The commerce routes are not registered in
+  // the tester build, so there they are the not-found page and are titled as such.
+  useEffect(() => {
+    const commerceRoute = /^\/(cart|checkout|order\/)/.test(pathname)
+    document.title = titleForPath(pathname, !commerceRoute || commerceEnabled())
+  }, [pathname])
 
   return (
     // min-h-dvh, not min-h-screen: 100vh on mobile Safari includes the collapsing
