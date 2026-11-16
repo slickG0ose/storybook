@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { AlertTriangle, PencilLine, Send } from 'lucide-react'
+import { AlertTriangle, Globe, Lock } from 'lucide-react'
 import { commerceEnabled } from '../lib/commerce'
 
 /**
@@ -23,6 +23,11 @@ import { commerceEnabled } from '../lib/commerce'
  * not block publishing a text-only book — the seed catalog contains them and `renderBookPdf`
  * handles them (spec Open question 2). It is the second net under `POST /:id/revise`, which
  * nulls `illustration_url` on every changed page.
+ *
+ * **Author-facing vocabulary is Private / Public, not Draft / Published.** The wire status is
+ * still `draft` / `published`; only the words changed. A published book is readable by anyone
+ * who visits, signed in or not, so making one public always asks first, even when every page
+ * is illustrated. New books start private (`generate.ts` always writes `draft`).
  *
  * Class strings are written out per element rather than hoisted into shared constants so that
  * every light class and its `dark:` partner sit in one literal string — which is exactly what
@@ -89,11 +94,11 @@ export default function PublishStateBar({
       >
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
-            <p className="font-display font-bold text-gray-800 dark:text-gray-100">In the catalog</p>
+            <p className="font-display font-bold text-gray-800 dark:text-gray-100">Public</p>
             <p className="mt-0.5 text-sm text-gray-600 dark:text-gray-300">
               {commerce
-                ? 'Readers can find and buy this book. Editing it means taking it out first.'
-                : 'Readers can find and read this book. Editing it means taking it out first.'}
+                ? 'Anyone who visits StoryBook can find and buy this book. To edit it, make it private first.'
+                : 'Anyone who visits StoryBook can find and read this book. To edit it, make it private first.'}
             </p>
           </div>
           <button
@@ -104,8 +109,8 @@ export default function PublishStateBar({
             aria-controls="withdraw-confirm"
             className="min-h-11 inline-flex items-center gap-2 rounded-xl border-none px-5 font-bold bg-purple-600 dark:bg-purple-600 text-white dark:text-white hover:bg-purple-700 dark:hover:bg-purple-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-500 dark:focus-visible:outline-purple-400 disabled:opacity-40 disabled:cursor-default disabled:hover:bg-purple-600 dark:disabled:hover:bg-purple-600 transition-colors cursor-pointer"
           >
-            <PencilLine size={16} aria-hidden="true" />
-            Edit this book
+            <Lock size={16} aria-hidden="true" />
+            Make private
           </button>
         </div>
 
@@ -116,11 +121,9 @@ export default function PublishStateBar({
             className="mt-4 rounded-2xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/30 p-4 transition-colors"
           >
             <p className="text-sm text-amber-900 dark:text-amber-200">
-              Editing takes <strong className="font-bold text-amber-900 dark:text-amber-100">{title}</strong> out of the
-              catalog while you work.{' '}
-              {commerce
-                ? 'Readers won’t be able to find or buy it until you publish again. Anyone who already bought it keeps their receipt.'
-                : 'Readers won’t be able to find it until you publish again.'}
+              Making <strong className="font-bold text-amber-900 dark:text-amber-100">{title}</strong> private takes it
+              out of the catalog, so only you can see it, and you can edit it again.
+              {commerce ? ' Anyone who already bought it keeps their receipt.' : ''}
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <button
@@ -129,7 +132,7 @@ export default function PublishStateBar({
                 disabled={busy}
                 className="min-h-11 inline-flex items-center gap-2 rounded-xl border-none px-5 font-bold bg-purple-600 dark:bg-purple-600 text-white dark:text-white hover:bg-purple-700 dark:hover:bg-purple-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-500 dark:focus-visible:outline-purple-400 disabled:opacity-40 disabled:cursor-default disabled:hover:bg-purple-600 dark:disabled:hover:bg-purple-600 transition-colors cursor-pointer"
               >
-                Take it out and edit
+                Make it private
               </button>
               <button
                 type="button"
@@ -156,13 +159,9 @@ export default function PublishStateBar({
     `${pageCount} ${pageCount === 1 ? 'page' : 'pages'}` +
     (unillustratedCount > 0 ? ` · ${unillustratedCount} without an illustration` : '')
 
-  const handlePublishClick = () => {
-    if (unillustratedCount > 0) {
-      setOpenConfirm(confirmOpen ? null : 'publish')
-      return
-    }
-    void onPublish()
-  }
+  // Always confirm: making a book public shows it to anyone who visits, signed in or not.
+  const handlePublishClick = () => setOpenConfirm(confirmOpen ? null : 'publish')
+  const commerce = commerceEnabled()
 
   return (
     <section
@@ -172,19 +171,19 @@ export default function PublishStateBar({
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="font-display font-bold text-amber-900 dark:text-amber-200">Out of the catalog while you edit</p>
-          <p className="mt-0.5 text-sm text-amber-800 dark:text-amber-300">{summary}</p>
+          <p className="font-display font-bold text-amber-900 dark:text-amber-200">Private</p>
+          <p className="mt-0.5 text-sm text-amber-800 dark:text-amber-300">Only you can see this book · {summary}</p>
         </div>
         <button
           type="button"
           onClick={handlePublishClick}
           disabled={busy}
-          aria-expanded={unillustratedCount > 0 ? confirmOpen : undefined}
-          aria-controls={unillustratedCount > 0 ? 'publish-confirm' : undefined}
+          aria-expanded={confirmOpen}
+          aria-controls="publish-confirm"
           className="min-h-11 inline-flex items-center gap-2 rounded-xl border-none px-5 font-bold bg-green-600 dark:bg-green-600 text-white dark:text-white hover:bg-green-700 dark:hover:bg-green-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600 dark:focus-visible:outline-green-400 disabled:opacity-40 disabled:cursor-default disabled:hover:bg-green-600 dark:disabled:hover:bg-green-600 transition-colors cursor-pointer"
         >
-          <Send size={16} aria-hidden="true" />
-          Publish changes
+          <Globe size={16} aria-hidden="true" />
+          Make public
         </button>
       </div>
 
@@ -195,7 +194,11 @@ export default function PublishStateBar({
           className="mt-4 rounded-2xl border border-amber-300 dark:border-amber-700 bg-white dark:bg-gray-800 p-4 transition-colors"
         >
           <p className="text-sm text-gray-700 dark:text-gray-200">
-            {unillustratedCount} of {pageCount} pages have no illustration yet. Publish anyway?
+            Anyone who visits StoryBook will be able to find {commerce ? 'and buy' : 'and read'}{' '}
+            <strong className="font-bold text-gray-900 dark:text-gray-100">{title}</strong>, without signing in. To edit it
+            later, you’ll make it private again.
+            {unillustratedCount > 0 &&
+              ` ${unillustratedCount} of ${pageCount} ${pageCount === 1 ? 'page has' : 'pages have'} no illustration yet.`}
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button
@@ -204,7 +207,7 @@ export default function PublishStateBar({
               disabled={busy}
               className="min-h-11 inline-flex items-center gap-2 rounded-xl border-none px-5 font-bold bg-green-600 dark:bg-green-600 text-white dark:text-white hover:bg-green-700 dark:hover:bg-green-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600 dark:focus-visible:outline-green-400 disabled:opacity-40 disabled:cursor-default disabled:hover:bg-green-600 dark:disabled:hover:bg-green-600 transition-colors cursor-pointer"
             >
-              Publish anyway
+              Make it public
             </button>
             <button
               type="button"

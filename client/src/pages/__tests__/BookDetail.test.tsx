@@ -1261,20 +1261,20 @@ describe('BookDetail — publish state and the reader-view edit controls', () =>
     vi.restoreAllMocks()
   })
 
-  it('shows "Edit this book" for a published owner and "Publish changes" for a draft owner', async () => {
+  it('shows "Make private" for a public book\'s owner and "Make public" for a private book\'s owner', async () => {
     setupPublishFetchMock({ book: { ...twoPageBook, status: 'published' } })
     const { unmount } = renderBookDetail()
 
-    expect(await screen.findByRole('button', { name: /edit this book/i })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /publish changes/i })).not.toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /^make private$/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^make public$/i })).not.toBeInTheDocument()
     unmount()
 
     vi.restoreAllMocks()
     setupPublishFetchMock({ book: { ...twoPageBook, status: 'draft' } })
     renderBookDetail()
 
-    expect(await screen.findByRole('button', { name: /publish changes/i })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /edit this book/i })).not.toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /^make public$/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^make private$/i })).not.toBeInTheDocument()
   })
 
   it('shows no publish-state surface at all to a non-owner', async () => {
@@ -1285,18 +1285,18 @@ describe('BookDetail — publish state and the reader-view edit controls', () =>
       expect(screen.getByText('Test Adventure')).toBeInTheDocument()
     })
     expect(screen.queryByTestId('publish-state-bar')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /edit this book/i })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /publish changes/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^make private$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^make public$/i })).not.toBeInTheDocument()
   })
 
-  it('withdraws via PUT /unpublish with the bearer token and re-renders in draft state', async () => {
+  it('makes a book private via PUT /unpublish with the bearer token and re-renders in the private state', async () => {
     const { calls } = setupPublishFetchMock({ book: { ...twoPageBook, status: 'published' } })
     renderBookDetail()
 
-    fireEvent.click(await screen.findByRole('button', { name: /edit this book/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /^make private$/i }))
     // The confirm is inline and must be crossed before anything is called.
     expect(calls.find(c => c.url.includes('/unpublish'))).toBeUndefined()
-    fireEvent.click(screen.getByRole('button', { name: /take it out and edit/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^make it private$/i }))
 
     await waitFor(() => {
       const call = calls.find(c => c.url === '/api/books/book-1/unpublish')
@@ -1306,8 +1306,8 @@ describe('BookDetail — publish state and the reader-view edit controls', () =>
     })
 
     // Draft surfaces mount off the merged response...
-    expect(await screen.findByRole('button', { name: /publish changes/i })).toBeInTheDocument()
-    expect(screen.getByText(/out of the catalog while you edit/i)).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /^make public$/i })).toBeInTheDocument()
+    expect(screen.getByText(/only you can see this book/i)).toBeInTheDocument()
     // ...and the pages survived the merge, even though /unpublish returns no
     // `pages` field.
     await readerView()

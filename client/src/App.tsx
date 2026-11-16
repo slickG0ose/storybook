@@ -12,6 +12,7 @@ import Register from './pages/Register'
 import MyBooks from './pages/MyBooks'
 import Admin from './pages/Admin'
 import NotFound from './pages/NotFound'
+import Privacy from './pages/Privacy'
 import { commerceEnabled } from './lib/commerce'
 
 /** `py-2 -my-2` clears the 24px WCAG tap-target floor without adding footer height. */
@@ -58,6 +59,7 @@ function App() {
             <Route path="/register" element={<Register />} />
             <Route path="/my-books" element={<MyBooks />} />
             <Route path="/admin" element={<Admin />} />
+            <Route path="/privacy" element={<Privacy />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </ErrorBoundary>
@@ -73,7 +75,7 @@ function App() {
             `nav a, nav button` tap-target sweep. `py-2 -my-2` clears the 24px WCAG
             floor via the hit area without adding vertical space to the footer row.
           */}
-          <nav aria-label="Footer" className="flex items-center gap-6 text-sm font-semibold">
+          <nav aria-label="Footer" className="flex flex-wrap items-center justify-center gap-x-6 gap-y-3 text-sm font-semibold">
             {/*
               Deliberately NOT the navbar's labels. Two links to the same route with the
               same accessible name are one entry repeated twice in a screen reader's link
@@ -89,6 +91,9 @@ function App() {
             </Link>
             <Link to="/my-books" className={FOOTER_LINK}>
               Your library
+            </Link>
+            <Link to="/privacy" className={FOOTER_LINK}>
+              Privacy
             </Link>
           </nav>
         </div>

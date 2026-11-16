@@ -365,16 +365,16 @@ export default function BookDetail() {
       if (handledStale403(res)) return
       const parsed = await safeReadJson<BookWithPages>(res)
       if (!res.ok) {
-        throw new Error(errorMessageFromResponse(parsed, res, 'Could not take the book out of the catalog'))
+        throw new Error(errorMessageFromResponse(parsed, res, 'Could not make this book private'))
       }
       if (parsed === null || (typeof parsed === 'object' && 'error' in parsed)) {
-        throw new Error(errorMessageFromResponse(parsed, res, 'Could not take the book out of the catalog'))
+        throw new Error(errorMessageFromResponse(parsed, res, 'Could not make this book private'))
       }
       // The route responds with BookSchema — the book row, with no `pages`.
       // Merge rather than replace, or the reader loses the story it is showing.
       setBook({ ...book, ...parsed })
     } catch (err) {
-      setPublishError(err instanceof Error ? err.message : 'Could not take the book out of the catalog')
+      setPublishError(err instanceof Error ? err.message : 'Could not make this book private')
     } finally {
       setPublishBusy(false)
     }
@@ -464,15 +464,15 @@ export default function BookDetail() {
       if (handledStale403(res)) return
       const parsed = await safeReadJson<BookWithPages>(res)
       if (!res.ok) {
-        throw new Error(errorMessageFromResponse(parsed, res, 'Could not publish this book'))
+        throw new Error(errorMessageFromResponse(parsed, res, 'Could not make this book public'))
       }
       if (parsed === null || (typeof parsed === 'object' && 'error' in parsed)) {
-        throw new Error(errorMessageFromResponse(parsed, res, 'Could not publish this book'))
+        throw new Error(errorMessageFromResponse(parsed, res, 'Could not make this book public'))
       }
       // BookSchema again — no `pages` on the response, so merge.
       setBook({ ...book, ...parsed })
     } catch (err) {
-      setPublishError(err instanceof Error ? err.message : 'Could not publish this book')
+      setPublishError(err instanceof Error ? err.message : 'Could not make this book public')
     } finally {
       setPublishBusy(false)
     }
@@ -728,7 +728,7 @@ export default function BookDetail() {
                   ? 'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300'
                   : 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300'
               }`}>
-                {isDraft ? 'Draft' : 'Published'} &middot; v{book.version}
+                {isDraft ? 'Private' : 'Public'} &middot; v{book.version}
               </span>
             )}
           </div>

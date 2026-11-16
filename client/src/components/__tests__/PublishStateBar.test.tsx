@@ -32,22 +32,33 @@ describe('PublishStateBar', () => {
     })
   })
 
-  describe('owner, published', () => {
-    it('offers "Edit this book" and keeps the consequence copy out of the DOM until asked', () => {
+  describe('owner, public', () => {
+    it('offers "Make private" and keeps the consequence copy out of the DOM until asked', () => {
       renderBar()
 
-      expect(screen.getByRole('button', { name: /Edit this book/ })).toBeInTheDocument()
+      expect(screen.getByText('Public')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Make private/ })).toBeInTheDocument()
       expect(screen.queryByTestId('withdraw-confirm')).not.toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: 'Take it out and edit' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Make it private' })).not.toBeInTheDocument()
+    })
+
+    it('says anyone who visits can find it, and that editing means making it private', () => {
+      renderBar()
+
+      expect(screen.getByTestId('publish-state-bar')).toHaveTextContent(
+        'Anyone who visits StoryBook can find and buy this book. To edit it, make it private first.',
+      )
     })
 
     it('expands the confirm in place without withdrawing anything', async () => {
       renderBar()
 
-      await userEvent.click(screen.getByRole('button', { name: /Edit this book/ }))
+      await userEvent.click(screen.getByRole('button', { name: /Make private/ }))
 
       const confirm = screen.getByTestId('withdraw-confirm')
-      expect(confirm).toHaveTextContent(/Editing takes The Brave Little Toaster out of the catalog while you work\./)
+      expect(confirm).toHaveTextContent(
+        /Making The Brave Little Toaster private takes it out of the catalog, so only you can see it, and you can edit it again\./,
+      )
       expect(confirm).toHaveTextContent(/Anyone who already bought it keeps their receipt\./)
       expect(onWithdraw).not.toHaveBeenCalled()
     })
@@ -55,7 +66,7 @@ describe('PublishStateBar', () => {
     it('collapses on Cancel, still without withdrawing', async () => {
       renderBar()
 
-      await userEvent.click(screen.getByRole('button', { name: /Edit this book/ }))
+      await userEvent.click(screen.getByRole('button', { name: /Make private/ }))
       await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
 
       expect(screen.queryByTestId('withdraw-confirm')).not.toBeInTheDocument()
@@ -65,58 +76,61 @@ describe('PublishStateBar', () => {
     it('withdraws exactly once when confirmed', async () => {
       renderBar()
 
-      await userEvent.click(screen.getByRole('button', { name: /Edit this book/ }))
-      await userEvent.click(screen.getByRole('button', { name: 'Take it out and edit' }))
+      await userEvent.click(screen.getByRole('button', { name: /Make private/ }))
+      await userEvent.click(screen.getByRole('button', { name: 'Make it private' }))
 
       expect(onWithdraw).toHaveBeenCalledTimes(1)
       expect(onPublish).not.toHaveBeenCalled()
     })
   })
 
-  describe('owner, draft', () => {
-    it('banners the out-of-catalog state and omits the illustration clause when nothing is missing', () => {
+  describe('owner, private', () => {
+    it('banners the private state and omits the illustration clause when nothing is missing', () => {
       renderBar({ isDraft: true, pageCount: 5, unillustratedCount: 0 })
 
-      expect(screen.getByText('Out of the catalog while you edit')).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: /Publish changes/ })).toBeInTheDocument()
-      expect(screen.getByText('5 pages')).toBeInTheDocument()
+      expect(screen.getByText('Private')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Make public/ })).toBeInTheDocument()
+      expect(screen.getByText('Only you can see this book · 5 pages')).toBeInTheDocument()
       expect(screen.queryByText(/without an illustration/)).not.toBeInTheDocument()
     })
 
     it('summarises the unillustrated pages when some are missing', () => {
       renderBar({ isDraft: true, pageCount: 5, unillustratedCount: 3 })
 
-      expect(screen.getByText('5 pages · 3 without an illustration')).toBeInTheDocument()
+      expect(screen.getByText('Only you can see this book · 5 pages · 3 without an illustration')).toBeInTheDocument()
     })
 
-    it('publishes straight away when every page is illustrated', async () => {
+    // Public means anyone who visits, signed in or not, so it never happens in one tap.
+    it('asks before making a fully illustrated book public', async () => {
       renderBar({ isDraft: true, pageCount: 5, unillustratedCount: 0 })
 
-      await userEvent.click(screen.getByRole('button', { name: /Publish changes/ }))
+      await userEvent.click(screen.getByRole('button', { name: /Make public/ }))
 
-      expect(screen.queryByTestId('publish-confirm')).not.toBeInTheDocument()
-      expect(onPublish).toHaveBeenCalledTimes(1)
-    })
-
-    it('asks a second time before publishing a part-illustrated book', async () => {
-      renderBar({ isDraft: true, pageCount: 5, unillustratedCount: 3 })
-
-      await userEvent.click(screen.getByRole('button', { name: /Publish changes/ }))
-
-      expect(screen.getByTestId('publish-confirm')).toHaveTextContent(
-        '3 of 5 pages have no illustration yet. Publish anyway?',
+      const confirm = screen.getByTestId('publish-confirm')
+      expect(confirm).toHaveTextContent(
+        'Anyone who visits StoryBook will be able to find and buy The Brave Little Toaster, without signing in.',
       )
+      expect(confirm).not.toHaveTextContent(/no illustration/)
       expect(onPublish).not.toHaveBeenCalled()
 
-      await userEvent.click(screen.getByRole('button', { name: 'Publish anyway' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Make it public' }))
       expect(onPublish).toHaveBeenCalledTimes(1)
       expect(onWithdraw).not.toHaveBeenCalled()
     })
 
-    it('cancels the unillustrated confirm without publishing', async () => {
+    it('adds the unillustrated count to the confirm for a part-illustrated book', async () => {
       renderBar({ isDraft: true, pageCount: 5, unillustratedCount: 3 })
 
-      await userEvent.click(screen.getByRole('button', { name: /Publish changes/ }))
+      await userEvent.click(screen.getByRole('button', { name: /Make public/ }))
+
+      expect(screen.getByTestId('publish-confirm')).toHaveTextContent('3 of 5 pages have no illustration yet.')
+      expect(onPublish).not.toHaveBeenCalled()
+    })
+
+    it('cancels the confirm without making anything public', async () => {
+      renderBar({ isDraft: true, pageCount: 5, unillustratedCount: 3 })
+
+      await userEvent.click(screen.getByRole('button', { name: /Make public/ }))
       await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
 
       expect(screen.queryByTestId('publish-confirm')).not.toBeInTheDocument()
@@ -126,8 +140,8 @@ describe('PublishStateBar', () => {
 
   describe('busy and error', () => {
     it.each([
-      ['published', false, 0, /Edit this book/] as const,
-      ['draft', true, 3, /Publish changes/] as const,
+      ['public', false, 0, /Make private/] as const,
+      ['private', true, 3, /Make public/] as const,
     ])('disables every control while busy (%s)', async (_label, isDraft, unillustratedCount, trigger) => {
       // Open the confirm first, then re-render busy, so the confirm's own buttons are on
       // screen and covered by the assertion too.
@@ -170,24 +184,34 @@ describe('PublishStateBar', () => {
       vi.unstubAllEnvs()
     })
 
-    it('describes the catalog state without mentioning buying', () => {
+    it('describes the public state without mentioning buying', () => {
       renderBar()
 
       const bar = screen.getByTestId('publish-state-bar')
-      expect(bar).toHaveTextContent('Readers can find and read this book. Editing it means taking it out first.')
+      expect(bar).toHaveTextContent('Anyone who visits StoryBook can find and read this book. To edit it, make it private first.')
       expect(bar).not.toHaveTextContent(/buy/i)
     })
 
-    it('drops the purchase and receipt wording from the withdraw confirm', async () => {
+    it('drops the purchase and receipt wording from the make-private confirm', async () => {
       renderBar()
 
-      await userEvent.click(screen.getByRole('button', { name: /Edit this book/ }))
+      await userEvent.click(screen.getByRole('button', { name: /Make private/ }))
 
       const confirm = screen.getByTestId('withdraw-confirm')
       expect(confirm).toHaveTextContent(
-        'Editing takes The Brave Little Toaster out of the catalog while you work. Readers won’t be able to find it until you publish again.',
+        'Making The Brave Little Toaster private takes it out of the catalog, so only you can see it, and you can edit it again.',
       )
       expect(confirm).not.toHaveTextContent(/buy|bought|receipt/i)
+    })
+
+    it('drops the purchase wording from the make-public confirm', async () => {
+      renderBar({ isDraft: true })
+
+      await userEvent.click(screen.getByRole('button', { name: /Make public/ }))
+
+      const confirm = screen.getByTestId('publish-confirm')
+      expect(confirm).toHaveTextContent('will be able to find and read The Brave Little Toaster, without signing in.')
+      expect(confirm).not.toHaveTextContent(/buy/i)
     })
   })
 })

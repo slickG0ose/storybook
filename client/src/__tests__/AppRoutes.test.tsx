@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import App from '../App'
@@ -48,6 +48,14 @@ describe('App routes', () => {
       vi.stubEnv('VITE_COMMERCE_ENABLED', 'false')
       renderAt('/')
       expect(screen.getByText('Home stub')).toBeInTheDocument()
+    })
+
+    it('serves the privacy note, linked from the footer (#117)', () => {
+      vi.stubEnv('VITE_COMMERCE_ENABLED', 'false')
+      renderAt('/privacy')
+      expect(screen.getByRole('heading', { level: 1, name: 'Privacy' })).toBeInTheDocument()
+      const footer = screen.getByRole('navigation', { name: 'Footer' })
+      expect(within(footer).getByRole('link', { name: 'Privacy' })).toHaveAttribute('href', '/privacy')
     })
   })
 })
