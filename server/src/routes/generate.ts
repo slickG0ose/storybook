@@ -2,6 +2,7 @@ import { Router } from 'express';
 import Anthropic from '@anthropic-ai/sdk';
 import prisma from '../db/prisma';
 import { requireAuth } from '../middleware/requireAuth';
+import { rateLimit, PAID_RATE_LIMITS } from '../middleware/rateLimit';
 import { validate } from '../middleware/validate';
 import { GenerateRequestSchema, type AgeRange } from '@storybook/shared';
 import { STORY_MODEL, STORY_THINKING, STORY_CLIENT_OPTIONS } from '../lib/models';
@@ -119,9 +120,21 @@ const router = Router();
 // requireAuth runs first (docs/conventions/server.md §middleware order rule).
 // spendGate reads only res.locals.user, so nothing depends on the body being
 // parsed before it.
+/**
+ * Only a path this server's own upload route hands out is stored. The field is a
+ * free string on the wire and ends up on the Book row, so without this any caller
+ * could park an arbitrary URL there.
+ */
+const STYLE_REFERENCE_PATH = /^\/uploads\/style-refs\/[0-9a-f-]{36}\.(jpg|png)$/;
+function ownStyleReferenceUrl(raw: string | undefined): string | null {
+  const value = raw?.trim();
+  return value && STYLE_REFERENCE_PATH.test(value) ? value : null;
+}
+
 router.post(
   '/',
   requireAuth,
+  rateLimit(PAID_RATE_LIMITS.generate),
   validate({ name: 'POST /api/generate', request: GenerateRequestSchema }),
   spendGate('story'),
   async (req: Request, res: Response) => {
@@ -232,7 +245,7 @@ Make the story warm, engaging, and age-appropriate. Use vivid but simple languag
         version: 1,
         characters_json: JSON.stringify(characters),
         style_descriptor: styleDescriptor?.trim() || null,
-        style_reference_url: styleReferenceUrl?.trim() || null,
+        style_reference_url: ownStyleReferenceUrl(styleReferenceUrl),
         created_by: user.id,
         pages: {
           create: story.pages.map((page, i) => ({

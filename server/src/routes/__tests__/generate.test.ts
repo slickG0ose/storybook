@@ -415,6 +415,28 @@ describe('POST /api/generate — request validation (#172)', () => {
     expect(await prisma.usageLog.count()).toBe(0);
   });
 
+
+  it('stores a style reference only when it is one of this server\'s own upload paths', async () => {
+    // The field is a free string on the wire and lands on the Book row. Anything that
+    // is not the shape POST /api/uploads/style-reference hands out is dropped.
+    const token = await createUserAndGetToken(app);
+    mockStory(4);
+
+    const res = await request(app)
+      .post('/api/generate')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        theme: 'deep sea',
+        ageRange: '4-8',
+        characters: [{ role: 'primary', name: 'Luna' }],
+        styleReferenceUrl: 'https://tracker.example/pixel.gif',
+        pageCount: 4,
+      });
+
+    expect(res.status).toBe(200);
+    const book = await prisma.book.findUnique({ where: { id: res.body.id } });
+    expect(book).toMatchObject({ style_reference_url: null });
+  });
   it('does not strip any field the handler reads from a full-fat body', async () => {
     // The strip guard. `z.object` drops unknown keys and validate() REPLACES
     // req.body with the parsed value, so a field missing from
@@ -445,7 +467,7 @@ describe('POST /api/generate — request validation (#172)', () => {
           { role: 'sidekick', name: 'Dropped' },
         ],
         styleDescriptor: 'soft watercolour',
-        styleReferenceUrl: '/uploads/style-ref.png',
+        styleReferenceUrl: '/uploads/style-refs/123e4567-e89b-12d3-a456-426614174000.png',
         previewMode: 'cover',
         pageCount: 4,
       });
@@ -460,7 +482,7 @@ describe('POST /api/generate — request validation (#172)', () => {
       age_range: '4-8',
       theme: 'deep sea',
       style_descriptor: 'soft watercolour',
-      style_reference_url: '/uploads/style-ref.png',
+      style_reference_url: '/uploads/style-refs/123e4567-e89b-12d3-a456-426614174000.png',
       // previewMode 'cover' survived: the cover path ran at all.
       cover_url: '/illustrations/full-fat/cover.png',
     });

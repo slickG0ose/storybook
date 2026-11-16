@@ -29,6 +29,7 @@ import {
 import prisma from '../db/prisma';
 import { countHeroFrames } from '../lib/heroPool';
 import { getAuthUser, requireAdmin } from './auth';
+import { rateLimit, PAID_RATE_LIMITS } from '../middleware/rateLimit';
 import { validate } from '../middleware/validate';
 import { normalizeEmail } from '../services/allowlist';
 import { getStorage, isValidKey } from '../services/storage';
@@ -382,6 +383,7 @@ router.get(
 router.post(
   '/allowlist',
   adminGate,
+  rateLimit(PAID_RATE_LIMITS.invite),
   validate({
     name: 'POST /api/admin/allowlist',
     request: AllowlistAddRequestSchema,

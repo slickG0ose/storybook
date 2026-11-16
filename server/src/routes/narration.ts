@@ -15,6 +15,7 @@ import prisma from '../db/prisma';
 import { getAuthUser } from './auth';
 import { validate } from '../middleware/validate';
 import { requireAuth } from '../middleware/requireAuth';
+import { rateLimit, PAID_RATE_LIMITS } from '../middleware/rateLimit';
 import { spendGate, sendQuotaDenied } from '../middleware/spendGate';
 import { findNarration, generateNarration, type NarrationBook } from '../services/narration/narration';
 import { isNarrationConfigured } from '../services/narration/synthesizer';
@@ -109,6 +110,7 @@ bookNarrationRouter.get(
 bookNarrationRouter.post(
   '/:id/narration',
   requireAuth,
+  rateLimit(PAID_RATE_LIMITS.narration),
   spendGate('narration'),
   validate({
     name: 'POST /api/books/:id/narration',
