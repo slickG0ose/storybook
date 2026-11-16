@@ -4,7 +4,7 @@ import type { ReactNode } from 'react'
 import type { User, UserRole } from '../types'
 import { api } from '../lib/apiBase'
 import { clearCreateDraft } from '../lib/createDraft'
-import { AUTH_EXPIRED_EVENT } from '../lib/authFetch'
+import { AUTH_EXPIRED_EVENT, authFetch } from '../lib/authFetch'
 import type { AuthExpiredDetail, LoginLocationState } from '../lib/authFetch'
 
 interface AuthState {
@@ -14,6 +14,35 @@ interface AuthState {
   register: (email: string, name: string, password: string) => Promise<string | null>
   logout: () => void
 }
+
+const AUTH_KEY = 'storybook-auth'
+
+// Storage can be blocked outright (site data blocked, some private modes): every access
+// then throws a SecurityError. That must degrade to "signed out", never crash the app (#232).
+function readStored(): string | null {
+  try {
+    return localStorage.getItem(AUTH_KEY)
+  } catch {
+    return null
+  }
+}
+function writeStored(u: User): void {
+  try {
+    localStorage.setItem(AUTH_KEY, JSON.stringify(u))
+  } catch {
+    // Signed in for this page's lifetime only.
+  }
+}
+function clearStored(): void {
+  try {
+    localStorage.removeItem(AUTH_KEY)
+  } catch {
+    // Nothing stored to clear.
+  }
+}
+
+/** Minimum gap between focus-triggered session checks (#231). */
+export const REVALIDATE_MIN_INTERVAL_MS = 60_000
 
 const AuthContext = createContext<AuthState>({
   user: null,
@@ -35,7 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   locationRef.current = location
 
   useEffect(() => {
-    const stored = localStorage.getItem('storybook-auth')
+    const stored = readStored()
     if (!stored) {
       setLoading(false)
       return
@@ -44,7 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       parsed = JSON.parse(stored) as User
     } catch {
-      localStorage.removeItem('storybook-auth')
+      clearStored()
       setLoading(false)
       return
     }
@@ -59,7 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const data = (await res.json()) as { id: string; email: string; name: string; role?: UserRole }
           setUser({ ...data, token: parsed.token, role: data.role ?? 'user' })
         } else if (res.status === 401) {
-          localStorage.removeItem('storybook-auth')
+          clearStored()
           setUser(null)
         } else {
           keepStored()
@@ -78,7 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const detail = (e as CustomEvent<AuthExpiredDetail>).detail
       if (!current || !detail || detail.token !== current.token) return
       setUser(null)
-      localStorage.removeItem('storybook-auth')
+      clearStored()
       const loc = locationRef.current
       if (loc.pathname === '/login') return
       const state: LoginLocationState = { from: loc.pathname + loc.search, reason: 'expired' }
@@ -87,6 +116,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.addEventListener(AUTH_EXPIRED_EVENT, onExpired)
     return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired)
   }, [navigate])
+
+  // A tab left open past expiry (or signed out by a login elsewhere) otherwise looks
+  // signed in until its next authed call. Re-check when the tab comes back into view,
+  // throttled. authFetch turns a 401 into AUTH_EXPIRED_EVENT, handled above; any other
+  // failure (offline, cold server) is ignored, matching the mount check (#231).
+  const lastCheckRef = useRef(Date.now())
+  useEffect(() => {
+    const revalidate = () => {
+      if (document.visibilityState !== 'visible') return
+      const current = userRef.current
+      if (!current) return
+      const now = Date.now()
+      if (now - lastCheckRef.current < REVALIDATE_MIN_INTERVAL_MS) return
+      lastCheckRef.current = now
+      authFetch(current.token, api('/api/auth/me')).catch(() => {})
+    }
+    document.addEventListener('visibilitychange', revalidate)
+    window.addEventListener('focus', revalidate)
+    return () => {
+      document.removeEventListener('visibilitychange', revalidate)
+      window.removeEventListener('focus', revalidate)
+    }
+  }, [])
 
   const login = async (email: string, password: string): Promise<string | null> => {
     const res = await fetch(api('/api/auth/login'), {
@@ -104,7 +156,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       role: (data.role as UserRole | undefined) ?? 'user',
     }
     setUser(u)
-    localStorage.setItem('storybook-auth', JSON.stringify(u))
+    writeStored(u)
     return null
   }
 
@@ -124,7 +176,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       role: (data.role as UserRole | undefined) ?? 'user',
     }
     setUser(u)
-    localStorage.setItem('storybook-auth', JSON.stringify(u))
+    writeStored(u)
     return null
   }
 
@@ -136,7 +188,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
     }
     setUser(null)
-    localStorage.removeItem('storybook-auth')
+    clearStored()
     clearCreateDraft()
   }
 

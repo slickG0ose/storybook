@@ -57,14 +57,18 @@ test.describe('Session expiry on mobile', () => {
       const user = await registerOwner(request, 'session-expiry');
       createdEmails.push(user.email);
       await seedAuth(page, user);
-      await page.goto('/my-books');
-      await expect(myBooksContent(page)).toBeVisible();
+      // Start on Browse and let its own authed calls (the cart) finish BEFORE the token
+      // dies. Otherwise whichever authed call lands first after the kill gets the 401, and
+      // the redirect can beat the My Books click (the flake found on #234).
+      await page.goto('/');
+      await page.waitForLoadState('networkidle');
+      const myBooksLink = page.getByRole('link', { name: 'My Books' });
+      await expect(myBooksLink).toBeVisible();
 
       await killToken(request, user.token);
 
       // Client-side navigation only: a reload takes the mount-check path, which does not redirect.
-      await page.getByRole('link', { name: 'Browse' }).click();
-      await page.getByRole('link', { name: 'My Books' }).click();
+      await myBooksLink.click();
 
       await expect(page).toHaveURL(/\/login$/);
       await expect(page.getByRole('status').filter({ hasText: NOTICE })).toBeVisible();
