@@ -1,14 +1,14 @@
 # Private media: short-lived signed URLs for art, narration audio and uploaded photos
 
-> Status: Draft
+> Status: Accepted (owner, 2026-11-16: recommended default on all five open questions; new dependency `@aws-sdk/s3-request-presigner` approved)
 > Last updated: 2026-11-16
 > Backlog: [#237 — Private books: illustrations, narration audio and uploaded photos are served from public, permanent URLs](https://github.com/slickG0ose/storybook/issues/237)
 > Related: [#238 — fix(server): rate-limit paid routes, strip photo metadata, hide style-reference URL from readers](https://github.com/slickG0ose/storybook/pull/238) (open, not merged; Tasks 2 and 6 wait for it) · [#192 — prune superseded versions, move R2 off r2.dev](https://github.com/slickG0ose/storybook/issues/192) (out of scope, see below)
 > Supersedes: ADR-026 (302 to a public bucket). Amends: ADR-025 (keyspace, `/uploads` behind the seam), ADR-027 (adds `@aws-sdk/s3-request-presigner`). ADRs at `.code-captain/product/decisions.md`.
 
-## Open questions for the owner
+## Open questions for the owner — RESOLVED 2026-11-16
 
-Each has a recommended default. If the owner says "go", the task plan runs on these defaults.
+The owner accepted the recommended default on all five. The task plan runs on these.
 
 1. **How long does a media link live?** Recommended: **1-hour windows. Every link works for at least 1 hour and at most 2 hours after the page that showed it loaded.** It is a setting (`MEDIA_URL_TTL_MINUTES`, default 60, range 5 to 1440). Longer means fewer re-downloads and a longer life for a leaked link. A 6-hour window, for example, means links live 6 to 12 hours.
 2. **Do published books go through the same signed links?** Recommended: **yes, one path for everything.** Nothing here needs a stable public image URL: the app has no per-book social preview (`client/index.html:49` is one static `og:image`), and a book flipped back to private stops being reachable within 2 hours. The alternative, a public custom domain for published art, belongs to #192.

@@ -1,7 +1,7 @@
 # Private media: short-lived signed URLs — task plan
 
 > Spec: [spec.md](spec.md)
-> Status: Draft
+> Status: Approved (owner, 2026-11-16)
 > Last updated: 2026-11-16
 
 ## Overview
