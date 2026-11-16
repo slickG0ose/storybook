@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { Sparkles, Wand2, Loader2, Plus, X } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { describeFailure, readErrorMessage } from '../lib/friendlyError'
 import { api } from '../lib/apiBase'
 import { authFetch } from '../lib/authFetch'
 import { PER_IMAGE_COST_USD, fmtUsd, portraitStepCostNote } from '../lib/cost'
@@ -148,14 +149,13 @@ export default function CreateBook() {
         body: fd,
       })
       if (!res.ok) {
-        const data = await res.json().catch(() => ({})) as { error?: string }
-        throw new Error(data.error || 'Upload failed')
+        throw new Error(await readErrorMessage(res, 'Upload failed'))
       }
       const data = await res.json() as { url: string; descriptor: string | null }
       setStyleReferenceUrl(data.url)
       if (data.descriptor) setCustomStyleDescriptor(data.descriptor)
     } catch (err) {
-      setStyleUploadError(err instanceof Error ? err.message : 'Upload failed')
+      setStyleUploadError(describeFailure(err, 'Upload failed'))
     } finally {
       setStyleUploading(false)
     }
@@ -220,14 +220,13 @@ export default function CreateBook() {
         }),
       })
       if (!res.ok) {
-        const data = await res.json() as { error?: string }
-        throw new Error(data.error || 'Generation failed')
+        throw new Error(await readErrorMessage(res, 'Generation failed'))
       }
       const book = await res.json() as { id: string }
       clearCreateDraft()
       navigate(`/book/${book.id}`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Generation failed')
+      setError(describeFailure(err, 'Generation failed'))
       setGenerating(false)
     }
   }

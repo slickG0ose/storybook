@@ -1,6 +1,7 @@
 import { Routes, Route, Link, useLocation } from 'react-router-dom'
 import Navbar from './components/Navbar'
 import ErrorBoundary from './components/ErrorBoundary'
+import ServerStatusBanner from './components/ServerStatusBanner'
 import Home from './pages/Home'
 import BookDetail from './pages/BookDetail'
 import CreateBook from './pages/CreateBook'
@@ -38,6 +39,7 @@ function App() {
       </a>
 
       <Navbar />
+      <ServerStatusBanner />
 
       <main id="main" className="flex-1">
         {/* Around the routes only, so a page that throws keeps the navbar and footer.

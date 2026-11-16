@@ -4,7 +4,7 @@ import prisma from '../db/prisma';
 import { requireAuth } from '../middleware/requireAuth';
 import { validate } from '../middleware/validate';
 import { GenerateRequestSchema, type AgeRange } from '@storybook/shared';
-import { STORY_MODEL, STORY_THINKING } from '../lib/models';
+import { STORY_MODEL, STORY_THINKING, STORY_CLIENT_OPTIONS } from '../lib/models';
 import { spendGate } from '../middleware/spendGate';
 import { recordUsage, checkQuota } from '../services/spend';
 import {
@@ -150,7 +150,7 @@ router.post(
   }
 
   try {
-    const client = new Anthropic({ apiKey });
+    const client = new Anthropic({ apiKey, ...STORY_CLIENT_OPTIONS });
 
     const prompt = `You are a beloved children's book author. Create a children's story with exactly ${pageCount} pages.
 

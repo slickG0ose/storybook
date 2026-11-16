@@ -50,6 +50,20 @@ import { getStorage, resolveBackendName } from './services/storage';
 
 import type { Request, Response, NextFunction } from 'express';
 
+// Last-resort logging. Express 5 forwards a rejected handler to errorHandler, but work
+// started with `void` (the boot backfills, fire-and-forget writes) has no request to
+// fail. Node's default for an unhandled rejection is to print and EXIT, which on a
+// single instance is a ~50s outage for every tester; log it with a greppable tag and
+// keep serving. An uncaught exception still exits (state is unknown after one), but
+// it is logged under the same tag first so the cause is in the host's log.
+process.on('unhandledRejection', (reason: unknown) => {
+  console.error('[process:unhandledRejection]', reason);
+});
+process.on('uncaughtException', (err: unknown) => {
+  console.error('[process:uncaughtException]', err);
+  process.exit(1);
+});
+
 const app = express();
 const PORT: number = parseInt(process.env.PORT || '3001', 10);
 

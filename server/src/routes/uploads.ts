@@ -6,6 +6,7 @@ import { join } from 'path';
 import { randomUUID } from 'crypto';
 import type { Request, Response } from 'express';
 import { isUsableApiKey } from '../lib/apiKeys';
+import { VISION_CLIENT_OPTIONS } from '../lib/models';
 import { requireAuth } from '../middleware/requireAuth';
 import { spendGate } from '../middleware/spendGate';
 import { recordUsage } from '../services/spend';
@@ -103,7 +104,7 @@ router.post(
     // otherwise the copied-`.env.example` case calls Anthropic, 401s, and turns
     // a perfectly good upload into a 500 through the catch below.
     if (isUsableApiKey(apiKey)) {
-      const client = new Anthropic({ apiKey });
+      const client = new Anthropic({ apiKey, ...VISION_CLIENT_OPTIONS });
       const message = await client.messages.create({
         model: 'claude-sonnet-4-6',
         max_tokens: 200,

@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { Sparkles, Search, X, BookOpen, Eye } from 'lucide-react'
 import BookCard from '../components/BookCard'
 import HeroArt from '../components/HeroArt'
+import { SERVER_READY_EVENT } from '../lib/serverStatus'
 import { api } from '../lib/apiBase'
 import { commerceEnabled } from '../lib/commerce'
 import type { Book, Page } from '../types'
@@ -199,6 +200,15 @@ export default function Home() {
       cancelled = true
     }
   }, [loadAttempt])
+
+  // The catalog failed while the API was still starting: load it as soon as the health
+  // check reports the server is up, rather than leaving the reader to press Try again.
+  useEffect(() => {
+    if (!loadError) return
+    const reload = () => { setLoading(true); setLoadAttempt(n => n + 1) }
+    window.addEventListener(SERVER_READY_EVENT, reload)
+    return () => window.removeEventListener(SERVER_READY_EVENT, reload)
+  }, [loadError])
 
   const featured = useMemo(() => books.filter(b => b.is_featured && !b.is_user_created), [books])
   const community = useMemo(() => books.filter(b => b.is_user_created), [books])

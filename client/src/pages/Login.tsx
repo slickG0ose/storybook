@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { LogIn, Loader2 } from 'lucide-react'
+import { UNREACHABLE_MESSAGE } from '../lib/friendlyError'
 import { useAuth } from '../context/AuthContext'
 import type { LoginLocationState } from '../lib/authFetch'
 
@@ -18,8 +19,16 @@ export default function Login() {
     e.preventDefault()
     setError('')
     setSubmitting(true)
-    const err = await login(email, password)
-    setSubmitting(false)
+    // login/register resolve to a message and never reject, but a spinner that can
+    // never be cleared is the failure this form must not have, so it does not rely on that.
+    let err: string | null
+    try {
+      err = await login(email, password)
+    } catch {
+      err = UNREACHABLE_MESSAGE
+    } finally {
+      setSubmitting(false)
+    }
     if (err) {
       setError(err)
     } else {
@@ -47,7 +56,7 @@ export default function Login() {
         )}
 
         {error && (
-          <div className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 px-4 py-2 rounded-lg text-sm mb-4">
+          <div role="alert" className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 px-4 py-2 rounded-lg text-sm mb-4">
             {error}
           </div>
         )}

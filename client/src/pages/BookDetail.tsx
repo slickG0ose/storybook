@@ -111,6 +111,7 @@ export default function BookDetail() {
   const [book, setBook] = useState<BookWithPages | null>(null)
   const [currentPage, setCurrentPage] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [loadFailed, setLoadFailed] = useState(false)
   const [added, setAdded] = useState(false)
   const [addFailed, setAddFailed] = useState(false)
   const [feedback, setFeedback] = useState('')
@@ -165,9 +166,23 @@ export default function BookDetail() {
       // resolve to `null`, never the error body. Otherwise the error object
       // is stored as `book`, slips past the `!book` guard, and crashes the
       // render at `book.price.toFixed` (#59).
-      .then(r => (r.ok ? r.json() as Promise<BookWithPages> : null))
-      .then(data => { setBook(data); setLoading(false) })
-      .catch(() => { setBook(null); setLoading(false) })
+      // 404 is "no such book" (or a private one that is not yours). Anything else
+      // that is not a 2xx, and any network failure, is "could not load" — which gets
+      // a retry instead of telling an author their book does not exist.
+      .then(r => {
+        if (r.ok) return r.json() as Promise<BookWithPages>
+        if (r.status !== 404) throw new Error(`/api/books/${id} responded ${r.status}`)
+        return null
+      })
+      .then(data => { setBook(data); setLoadFailed(false); setLoading(false) })
+      .catch((err: unknown) => {
+        console.error('Failed to load the book', err)
+        // A refetch after a save must not blank the book that is already on screen;
+        // a different book left over from the previous URL must not stay.
+        setBook(prev => (prev && prev.id === id ? prev : null))
+        setLoadFailed(true)
+        setLoading(false)
+      })
   }
 
   // Wait for auth to settle before the first fetch. Drafts 404 for anonymous
@@ -263,7 +278,40 @@ export default function BookDetail() {
   const readerIllustration = useImageFallback(book?.pages?.[currentPage]?.illustration_url)
 
   if (loading) return <div className="text-center py-20 text-gray-400 text-lg">Loading...</div>
-  if (!book) return <div className="text-center py-20 text-gray-400 text-lg">Book not found</div>
+  if (!book && loadFailed) {
+    return (
+      <div className="max-w-xl mx-auto px-4 py-20 text-center" role="alert">
+        <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100 font-display mb-2">
+          We couldn't open this book just now
+        </h1>
+        <p className="text-gray-500 dark:text-gray-400 mb-6">
+          The library may be waking up, or your connection dropped. Give it a moment and try again.
+        </p>
+        <button
+          onClick={() => { setLoading(true); fetchBook() }}
+          className="min-h-11 px-6 rounded-xl bg-purple-600 hover:bg-purple-700 dark:bg-purple-500 dark:hover:bg-purple-400 text-white font-bold cursor-pointer transition-colors"
+        >
+          Try again
+        </button>
+      </div>
+    )
+  }
+  if (!book) {
+    return (
+      <div className="max-w-xl mx-auto px-4 py-20 text-center">
+        <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100 font-display mb-2">Book not found</h1>
+        <p className="text-gray-500 dark:text-gray-400 mb-6">
+          It may have been removed, or it is private and belongs to someone else. If it is yours, sign in to open it.
+        </p>
+        <Link
+          to="/"
+          className="inline-flex items-center min-h-11 px-6 rounded-xl bg-purple-600 hover:bg-purple-700 dark:bg-purple-500 dark:hover:bg-purple-400 text-white font-bold no-underline transition-colors"
+        >
+          Browse the collection
+        </Link>
+      </div>
+    )
+  }
 
   const pages: Page[] = book.pages || []
   const page = pages[currentPage]

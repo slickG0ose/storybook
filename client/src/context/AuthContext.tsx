@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useRef } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import type { ReactNode } from 'react'
 import type { User, UserRole } from '../types'
+import { describeFailure, readErrorMessage } from '../lib/friendlyError'
 import { api } from '../lib/apiBase'
 import { clearCreateDraft } from '../lib/createDraft'
 import { AUTH_EXPIRED_EVENT, authFetch } from '../lib/authFetch'
@@ -141,19 +142,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const login = async (email: string, password: string): Promise<string | null> => {
-    const res = await fetch(api('/api/auth/login'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    })
-    const data = await res.json()
-    if (!res.ok) return data.error as string
+    // Never rejects: both callers show the returned string and clear their spinner.
+    // A cold or unreachable server used to throw out of here (network TypeError, or a
+    // SyntaxError parsing the host's HTML 502), leaving the form spinning forever.
+    let res: Response
+    let data: { id: string; email: string; name: string; token: string; role?: UserRole }
+    try {
+      res = await fetch(api('/api/auth/login'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
+      if (!res.ok) return await readErrorMessage(res, 'Sign-in failed. Please try again.')
+      data = (await res.json()) as typeof data
+    } catch (err) {
+      return describeFailure(err, 'Sign-in failed. Please try again.')
+    }
     const u: User = {
       id: data.id,
       email: data.email,
       name: data.name,
       token: data.token,
-      role: (data.role as UserRole | undefined) ?? 'user',
+      role: data.role ?? 'user',
     }
     setUser(u)
     writeStored(u)
@@ -161,19 +171,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const register = async (email: string, name: string, password: string): Promise<string | null> => {
-    const res = await fetch(api('/api/auth/register'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, name, password }),
-    })
-    const data = await res.json()
-    if (!res.ok) return data.error as string
+    // Never rejects: both callers show the returned string and clear their spinner.
+    // A cold or unreachable server used to throw out of here (network TypeError, or a
+    // SyntaxError parsing the host's HTML 502), leaving the form spinning forever.
+    let res: Response
+    let data: { id: string; email: string; name: string; token: string; role?: UserRole }
+    try {
+      res = await fetch(api('/api/auth/register'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, name, password }),
+      })
+      if (!res.ok) return await readErrorMessage(res, 'Sign-up failed. Please try again.')
+      data = (await res.json()) as typeof data
+    } catch (err) {
+      return describeFailure(err, 'Sign-up failed. Please try again.')
+    }
     const u: User = {
       id: data.id,
       email: data.email,
       name: data.name,
       token: data.token,
-      role: (data.role as UserRole | undefined) ?? 'user',
+      role: data.role ?? 'user',
     }
     setUser(u)
     writeStored(u)

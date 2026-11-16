@@ -61,3 +61,18 @@ export async function checkForNewerModel(client: Anthropic): Promise<void> {
     // Advisory only; never surface as an error.
   }
 }
+
+/**
+ * Client options for every Anthropic call the server makes.
+ *
+ * The SDK's defaults are a 10-minute timeout and 2 retries, so one hung connection
+ * held a request (and the author's "Creating your story..." screen) for up to half an
+ * hour, long after the browser or the host's proxy had given up. A story normally
+ * returns in well under a minute.
+ *
+ * One retry, not two: the SDK retries connection errors, 408/409/429 and 5xx, and a
+ * retried story call is a second paid call.
+ */
+export const STORY_CLIENT_OPTIONS = { timeout: 180_000, maxRetries: 1 } as const;
+/** The style-reference description: one image, 200 tokens out. */
+export const VISION_CLIENT_OPTIONS = { timeout: 45_000, maxRetries: 1 } as const;
