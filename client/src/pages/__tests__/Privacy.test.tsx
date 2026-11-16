@@ -21,12 +21,13 @@ describe('Privacy', () => {
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Privacy')
   })
 
-  it('says published books are readable without signing in', () => {
+  it('says books start private, and public ones are readable without signing in', () => {
     renderPage()
-    expect(screen.getByText(/can be read by anyone who visits the site, without/i)).toBeInTheDocument()
+    expect(screen.getByText(/Every book starts/i)).toHaveTextContent('Every book starts private: only you can see it.')
+    expect(screen.getByText(/anyone who visits the site can read that book/i)).toHaveTextContent(/without signing in/)
   })
 
-  it('links to Your library, where a book can be unpublished', () => {
+  it('links to Your library, where a book can be made private again', () => {
     renderPage()
     expect(screen.getByRole('link', { name: 'Your library' })).toHaveAttribute('href', '/my-books')
   })

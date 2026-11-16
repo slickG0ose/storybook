@@ -142,11 +142,11 @@ function toastHost() {
 }
 
 /**
- * Task 6 of the "withdraw to edit" spec: the published-book control is an *edit* affordance
- * whose consequence is leaving the catalog, not a bare "Unpublish". These tests pin the
- * vocabulary — the strings themselves are the product decision under review.
+ * Authors see Private / Public, not Draft / Published: a public book is readable by anyone
+ * who visits, signed in or not, so both directions say so and ask first. These tests pin the
+ * vocabulary; the strings themselves are the product decision under review.
  */
-describe('MyBooks — Edit this book (withdraw to edit)', () => {
+describe('MyBooks — Make private / Make public', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
   })
@@ -155,42 +155,42 @@ describe('MyBooks — Edit this book (withdraw to edit)', () => {
     vi.restoreAllMocks()
   })
 
-  it('labels the published-book control as editing, not unpublishing', async () => {
+  it('labels the public-book control "Make private", not unpublishing', async () => {
     setupFetchMock({})
 
     renderMyBooks()
 
     await waitFor(() => {
-      expect(screen.getByText('Published')).toBeInTheDocument()
+      expect(screen.getByText('Public')).toBeInTheDocument()
     })
 
-    const editBtn = screen.getByRole('button', { name: /edit this book/i })
-    expect(editBtn).toHaveTextContent('Edit this book')
+    const editBtn = screen.getByRole('button', { name: /make book private/i })
+    expect(editBtn).toHaveTextContent('Make private')
     // The old withdrawal-and-abandonment vocabulary is gone from the card entirely.
     expect(screen.queryByText(/unpublish/i)).not.toBeInTheDocument()
   })
 
-  it('withdraws a published book on confirm and flips the card to draft', async () => {
+  it('makes a public book private on confirm and flips the card', async () => {
     const { calls } = setupFetchMock({})
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
 
     renderMyBooks()
 
-    // Card renders as Published initially.
+    // Card renders as Public initially.
     await waitFor(() => {
-      expect(screen.getByText('Published')).toBeInTheDocument()
+      expect(screen.getByText('Public')).toBeInTheDocument()
     })
 
-    const editBtn = screen.getByRole('button', { name: /edit this book/i })
+    const editBtn = screen.getByRole('button', { name: /make book private/i })
     fireEvent.click(editBtn)
 
-    // The confirm carries PublishStateBar's wording: what leaving the catalog costs, and
-    // the reassurance that an existing buyer's receipt survives it.
+    // The confirm carries PublishStateBar's wording: who can see it afterwards, that it
+    // can be edited again, and that an existing buyer's receipt survives it.
     expect(confirmSpy).toHaveBeenCalledTimes(1)
     const confirmMessage = confirmSpy.mock.calls[0]?.[0] as string
     expect(confirmMessage).toContain('Published Adventure')
-    expect(confirmMessage).toMatch(/out of the catalog/i)
-    expect(confirmMessage).toMatch(/find or buy it until you publish again/i)
+    expect(confirmMessage).toMatch(/only you will be able to see it/i)
+    expect(confirmMessage).toMatch(/edit it again/i)
     expect(confirmMessage).toMatch(/keeps their receipt/i)
 
     // Unpublish endpoint hit with the right URL + auth header — same route, new words.
@@ -202,13 +202,13 @@ describe('MyBooks — Edit this book (withdraw to edit)', () => {
       expect(headers.get('Authorization')).toBe('Bearer test-token')
     })
 
-    // Card status badge flips to Draft after the response.
+    // Card status badge flips to Private after the response.
     await waitFor(() => {
-      expect(screen.getByText('Draft')).toBeInTheDocument()
+      expect(screen.getByText('Private')).toBeInTheDocument()
     })
-    expect(screen.queryByText('Published')).not.toBeInTheDocument()
-    // And the Publish button (which only renders for drafts) is now present.
-    expect(screen.getByRole('button', { name: /publish book/i })).toBeInTheDocument()
+    expect(screen.queryByText('Public')).not.toBeInTheDocument()
+    // And the Make public button (which only renders for private books) is now present.
+    expect(screen.getByRole('button', { name: /make book public/i })).toBeInTheDocument()
   })
 
   it('does not call the unpublish endpoint when the user cancels the confirm', async () => {
@@ -218,39 +218,39 @@ describe('MyBooks — Edit this book (withdraw to edit)', () => {
     renderMyBooks()
 
     await waitFor(() => {
-      expect(screen.getByText('Published')).toBeInTheDocument()
+      expect(screen.getByText('Public')).toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getByRole('button', { name: /edit this book/i }))
+    fireEvent.click(screen.getByRole('button', { name: /make book private/i }))
 
     // No unpublish call should have been made.
     const unpublishCall = calls.find(c => c.url.includes('/unpublish'))
     expect(unpublishCall).toBeUndefined()
-    // Card still shows Published.
-    expect(screen.getByText('Published')).toBeInTheDocument()
+    // Card still shows Public.
+    expect(screen.getByText('Public')).toBeInTheDocument()
   })
 
-  it('reads "Taking out..." while the withdrawal is in flight', async () => {
+  it('reads "Making private..." while the request is in flight', async () => {
     const { releaseUnpublish } = setupFetchMock({ deferUnpublish: true })
     vi.spyOn(window, 'confirm').mockReturnValue(true)
 
     renderMyBooks()
 
     await waitFor(() => {
-      expect(screen.getByText('Published')).toBeInTheDocument()
+      expect(screen.getByText('Public')).toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getByRole('button', { name: /edit this book/i }))
+    fireEvent.click(screen.getByRole('button', { name: /make book private/i }))
 
     await waitFor(() => {
-      const btn = screen.getByRole('button', { name: /edit this book/i })
-      expect(btn).toHaveTextContent('Taking out...')
+      const btn = screen.getByRole('button', { name: /make book private/i })
+      expect(btn).toHaveTextContent('Making private...')
       expect(btn).toBeDisabled()
     })
 
     releaseUnpublish()
     await waitFor(() => {
-      expect(screen.getByText('Draft')).toBeInTheDocument()
+      expect(screen.getByText('Private')).toBeInTheDocument()
     })
   })
 
@@ -261,18 +261,18 @@ describe('MyBooks — Edit this book (withdraw to edit)', () => {
     renderMyBooks()
 
     await waitFor(() => {
-      expect(screen.getByText('Published')).toBeInTheDocument()
+      expect(screen.getByText('Public')).toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getByRole('button', { name: /edit this book/i }))
+    fireEvent.click(screen.getByRole('button', { name: /make book private/i }))
 
     // The message is visible in the DOM, not handed to a blocking browser dialog (#115).
     await waitFor(() => {
-      expect(toastHost().getByText(/take that book out of the catalog/i)).toBeInTheDocument()
+      expect(toastHost().getByText(/make that book private/i)).toBeInTheDocument()
     })
     expect(toastHost().getByText(/refresh to see the latest state/i)).toBeInTheDocument()
-    // Still published — the card did not lie about the outcome.
-    expect(screen.getByText('Published')).toBeInTheDocument()
+    // Still public — the card did not lie about the outcome.
+    expect(screen.getByText('Public')).toBeInTheDocument()
   })
 
   it('explains a withdrawal that never reached the server', async () => {
@@ -282,31 +282,37 @@ describe('MyBooks — Edit this book (withdraw to edit)', () => {
     renderMyBooks()
 
     await waitFor(() => {
-      expect(screen.getByText('Published')).toBeInTheDocument()
+      expect(screen.getByText('Public')).toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getByRole('button', { name: /edit this book/i }))
+    fireEvent.click(screen.getByRole('button', { name: /make book private/i }))
 
     await waitFor(() => {
       expect(toastHost().getByText(/check your connection and try again/i)).toBeInTheDocument()
     })
-    expect(screen.getByText('Published')).toBeInTheDocument()
+    expect(screen.getByText('Public')).toBeInTheDocument()
     // The busy state released even though the request threw.
-    expect(screen.getByRole('button', { name: /edit this book/i })).not.toBeDisabled()
+    expect(screen.getByRole('button', { name: /make book private/i })).not.toBeDisabled()
   })
 
-  it('leaves the draft-book Publish control unchanged', async () => {
+  it('asks before making a private book public, then calls PUT /publish', async () => {
     const { calls } = setupFetchMock({ books: [unpublishedBook] })
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
 
     renderMyBooks()
 
     await waitFor(() => {
-      expect(screen.getByText('Draft')).toBeInTheDocument()
+      expect(screen.getByText('Private')).toBeInTheDocument()
     })
 
-    const publishBtn = screen.getByRole('button', { name: /publish book/i })
-    expect(publishBtn).toHaveTextContent('Publish')
+    const publishBtn = screen.getByRole('button', { name: /make book public/i })
+    expect(publishBtn).toHaveTextContent('Make public')
     fireEvent.click(publishBtn)
+
+    expect(confirmSpy).toHaveBeenCalledTimes(1)
+    const confirmMessage = confirmSpy.mock.calls[0]?.[0] as string
+    expect(confirmMessage).toContain(unpublishedBook.title)
+    expect(confirmMessage).toMatch(/anyone who visits StoryBook will be able to find and buy it, without signing in/i)
 
     await waitFor(() => {
       const call = calls.find(c => c.url === '/api/books/book-1/publish')
@@ -315,6 +321,27 @@ describe('MyBooks — Edit this book (withdraw to edit)', () => {
       const headers = new Headers(call?.init?.headers)
       expect(headers.get('Authorization')).toBe('Bearer test-token')
     })
+  })
+})
+
+describe('MyBooks — Make public cancelled', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('does not call the publish endpoint when the user cancels the confirm', async () => {
+    const { calls } = setupFetchMock({ books: [unpublishedBook] })
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+
+    renderMyBooks()
+
+    await waitFor(() => {
+      expect(screen.getByText('Private')).toBeInTheDocument()
+    })
+    fireEvent.click(screen.getByRole('button', { name: /make book public/i }))
+
+    expect(calls.find(c => c.url.endsWith('/publish'))).toBeUndefined()
+    expect(screen.getByText('Private')).toBeInTheDocument()
   })
 })
 
@@ -350,7 +377,7 @@ describe('MyBooks — Unillustrated badge', () => {
     renderMyBooks()
 
     await waitFor(() => {
-      expect(screen.getByText('Draft')).toBeInTheDocument()
+      expect(screen.getByText('Private')).toBeInTheDocument()
     })
     expect(screen.getByText('2 unillustrated')).toBeInTheDocument()
   })
@@ -369,7 +396,7 @@ describe('MyBooks — Unillustrated badge', () => {
     renderMyBooks()
 
     await waitFor(() => {
-      expect(screen.getByText('Draft')).toBeInTheDocument()
+      expect(screen.getByText('Private')).toBeInTheDocument()
     })
     expect(screen.queryByText(/unillustrated/i)).not.toBeInTheDocument()
   })
@@ -388,23 +415,22 @@ describe('MyBooks — commerce off', () => {
     vi.restoreAllMocks()
   })
 
-  it('warns about leaving the catalog without the purchase wording', async () => {
+  it('warns about making a book private without the purchase wording', async () => {
     setupFetchMock({})
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
 
     renderMyBooks()
 
     await waitFor(() => {
-      expect(screen.getByText('Published')).toBeInTheDocument()
+      expect(screen.getByText('Public')).toBeInTheDocument()
     })
 
-    fireEvent.click(screen.getByRole('button', { name: /edit this book/i }))
+    fireEvent.click(screen.getByRole('button', { name: /make book private/i }))
 
     expect(confirmSpy).toHaveBeenCalledTimes(1)
     const confirmMessage = confirmSpy.mock.calls[0]?.[0] as string
     expect(confirmMessage).toContain('Published Adventure')
-    expect(confirmMessage).toMatch(/out of the catalog/i)
-    expect(confirmMessage).toMatch(/find it until you publish again/i)
+    expect(confirmMessage).toMatch(/only you will be able to see it/i)
     expect(confirmMessage).not.toMatch(/buy|bought|receipt/i)
   })
 })

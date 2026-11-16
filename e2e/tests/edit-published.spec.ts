@@ -52,7 +52,7 @@ test.describe('Edit published books — the desktop loop and the immutability fe
     await deleteUsers(request, createdEmails);
   });
 
-  test('the loop: published -> take it out and edit -> publish changes -> published', async ({
+  test('the loop: public -> make private -> make public -> public', async ({
     page,
   }) => {
     const mocks = await installBookMocks(page, {
@@ -66,47 +66,51 @@ test.describe('Edit published books — the desktop loop and the immutability fe
     await page.goto(`/book/${BOOK_ID}`);
     await expect(page.getByRole('heading', { level: 1 })).toContainText('Pip Goes to the Mountains');
 
-    // --- In the catalog. No editing surface is reachable.
+    // --- Public. No editing surface is reachable.
     const bar = publishStateBar(page);
-    await expect(bar.getByText('In the catalog', { exact: true })).toBeVisible();
+    await expect(bar.getByText('Public', { exact: true })).toBeVisible();
     await expect(
-      bar.getByText('Readers can find and buy this book. Editing it means taking it out first.'),
+      bar.getByText('Anyone who visits StoryBook can find and buy this book. To edit it, make it private first.'),
     ).toBeVisible();
     for (const surface of draftOnlySurfaces(page)) {
       await expect(surface).toHaveCount(0);
     }
 
-    // --- Withdraw, behind the inline confirm.
-    await bar.getByRole('button', { name: 'Edit this book' }).click();
-    await expect(bar.getByText(/Editing takes/)).toContainText(
-      'out of the catalog while you work',
+    // --- Make private, behind the inline confirm.
+    await bar.getByRole('button', { name: 'Make private', exact: true }).click();
+    await expect(page.getByTestId('withdraw-confirm')).toContainText(
+      'private takes it out of the catalog, so only you can see it, and you can edit it again.',
     );
     await expect(bar.getByText(/keeps their receipt/)).toBeVisible();
-    await bar.getByRole('button', { name: 'Take it out and edit' }).click();
+    await bar.getByRole('button', { name: 'Make it private' }).click();
 
-    // --- Out of the catalog. Every draft-only surface mounts, with no other action.
-    await expect(bar.getByText('Out of the catalog while you edit')).toBeVisible();
+    // --- Private. Every draft-only surface mounts, with no other action.
+    await expect(bar.getByText('Private', { exact: true })).toBeVisible();
     expect(mocks.hits.unpublish).toBe(1);
     expect(mocks.status()).toBe('draft');
     for (const surface of draftOnlySurfaces(page)) {
       await expect(surface).toBeVisible();
     }
     // The summary is the page count, and it is singular-aware — `2 pages` here.
-    await expect(bar.getByText('2 pages')).toBeVisible();
+    await expect(bar.getByText('Only you can see this book · 2 pages')).toBeVisible();
 
-    // --- Republish. Fully illustrated, so no second confirm.
-    await bar.getByRole('button', { name: 'Publish changes' }).click();
-    await expect(bar.getByText('In the catalog', { exact: true })).toBeVisible();
+    // --- Make public again. Always behind a confirm, even fully illustrated, because
+    // public means anyone who visits can read it.
+    await bar.getByRole('button', { name: 'Make public', exact: true }).click();
+    await expect(page.getByTestId('publish-confirm')).toContainText('without signing in');
+    expect(mocks.hits.publish).toBe(0);
+    await bar.getByRole('button', { name: 'Make it public' }).click();
+    await expect(bar.getByText('Public', { exact: true })).toBeVisible();
     expect(mocks.hits.publish).toBe(1);
     expect(mocks.status()).toBe('published');
-    await expect(bar.getByRole('button', { name: 'Edit this book' })).toBeVisible();
-    await expect(bar.getByText('Out of the catalog while you edit')).toHaveCount(0);
+    await expect(bar.getByRole('button', { name: 'Make private', exact: true })).toBeVisible();
+    await expect(bar.getByText('Private', { exact: true })).toHaveCount(0);
     for (const surface of draftOnlySurfaces(page)) {
       await expect(surface).toHaveCount(0);
     }
   });
 
-  test('cancelling the withdrawal confirm issues no unpublish request', async ({ page }) => {
+  test('cancelling the make-private confirm issues no unpublish request', async ({ page }) => {
     const mocks = await installBookMocks(page, {
       status: 'published',
       createdBy: user.id,
@@ -117,24 +121,24 @@ test.describe('Edit published books — the desktop loop and the immutability fe
 
     await page.goto(`/book/${BOOK_ID}`);
     const bar = publishStateBar(page);
-    const editButton = bar.getByRole('button', { name: 'Edit this book' });
+    const editButton = bar.getByRole('button', { name: 'Make private', exact: true });
     await expect(editButton).toBeVisible();
 
     await editButton.click();
-    const confirmAction = bar.getByRole('button', { name: 'Take it out and edit' });
+    const confirmAction = bar.getByRole('button', { name: 'Make it private' });
     await expect(confirmAction).toBeVisible();
 
     await bar.getByRole('button', { name: 'Cancel' }).click();
     await expect(confirmAction).toHaveCount(0);
 
-    // Still in the catalog, and nothing was asked of the server.
-    await expect(bar.getByText('In the catalog', { exact: true })).toBeVisible();
-    await expect(bar.getByText('Out of the catalog while you edit')).toHaveCount(0);
+    // Still public, and nothing was asked of the server.
+    await expect(bar.getByText('Public', { exact: true })).toBeVisible();
+    await expect(bar.getByText('Private', { exact: true })).toHaveCount(0);
     expect(mocks.hits.unpublish).toBe(0);
     expect(mocks.status()).toBe('published');
   });
 
-  test('publishing a part-illustrated draft requires the second confirm', async ({ page }) => {
+  test('making a part-illustrated book public names the missing pages in the confirm', async ({ page }) => {
     const mocks = await installBookMocks(page, {
       status: 'draft',
       createdBy: user.id,
@@ -145,20 +149,20 @@ test.describe('Edit published books — the desktop loop and the immutability fe
 
     await page.goto(`/book/${BOOK_ID}`);
     const bar = publishStateBar(page);
-    await expect(bar.getByText('Out of the catalog while you edit')).toBeVisible();
-    await expect(bar.getByText('3 pages · 2 without an illustration')).toBeVisible();
+    await expect(bar.getByText('Private', { exact: true })).toBeVisible();
+    await expect(bar.getByText('Only you can see this book · 3 pages · 2 without an illustration')).toBeVisible();
 
-    await bar.getByRole('button', { name: 'Publish changes' }).click();
+    await bar.getByRole('button', { name: 'Make public', exact: true }).click();
 
     // The confirm is the second net under `POST /:id/revise`, which nulls `illustration_url`
     // on every changed page. Nothing is sent until it is answered.
-    await expect(
-      bar.getByText('2 of 3 pages have no illustration yet. Publish anyway?'),
-    ).toBeVisible();
+    await expect(page.getByTestId('publish-confirm')).toContainText(
+      '2 of 3 pages have no illustration yet.',
+    );
     expect(mocks.hits.publish).toBe(0);
 
-    await bar.getByRole('button', { name: 'Publish anyway' }).click();
-    await expect(bar.getByText('In the catalog', { exact: true })).toBeVisible();
+    await bar.getByRole('button', { name: 'Make it public' }).click();
+    await expect(bar.getByText('Public', { exact: true })).toBeVisible();
     expect(mocks.hits.publish).toBe(1);
     expect(mocks.status()).toBe('published');
   });
@@ -177,7 +181,7 @@ test.describe('Edit published books — the desktop loop and the immutability fe
     await page.goto(`/book/${BOOK_ID}`);
 
     // Positive control: this really is the published owner view, not a failed render.
-    await expect(publishStateBar(page).getByRole('button', { name: 'Edit this book' })).toBeVisible();
+    await expect(publishStateBar(page).getByRole('button', { name: 'Make private', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Add to Cart' })).toBeVisible();
 
     // --- Spread view (the default). Advance past the cover so the page canvases render;
@@ -225,7 +229,7 @@ test.describe('Edit published books — the desktop loop and the immutability fe
 
     // A reader is told nothing about publish state — not even that the concept exists.
     await expect(publishStateBar(page)).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Edit this book' })).toHaveCount(0);
-    await expect(page.getByText('In the catalog', { exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Make private', exact: true })).toHaveCount(0);
+    await expect(page.getByText('Anyone who visits StoryBook can find', { exact: false })).toHaveCount(0);
   });
 });

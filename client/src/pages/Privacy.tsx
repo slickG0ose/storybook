@@ -7,7 +7,9 @@ import { ShieldCheck } from 'lucide-react'
  * Every claim here was checked against the code on 2026-11-16, not written from
  * memory. If one of these changes, change this page in the same PR:
  *   - account fields + scrypt hash ............ server/prisma/schema.prisma, server/src/lib/password.ts
- *   - published books readable signed-out ..... GET /api/books has no auth (server/src/routes/books.ts)
+ *   - new books start private ................. generate.ts always writes status 'draft'
+ *   - public books readable signed-out ........ GET /api/books has no auth (server/src/routes/books.ts);
+ *                                               "public" in the UI is status 'published'
  *   - style upload sent to Anthropic .......... server/src/routes/uploads.ts
  *   - pictures + voices from fal.ai ........... IMAGE_PROVIDER default 'fal' (services/illustrations.ts),
  *                                               services/narration/falKokoro.ts. If prod is switched to
@@ -75,10 +77,13 @@ export default function Privacy() {
 
       <h2 className={H2}>Who can see your books</h2>
       <ul className={LIST}>
-        <li>A draft is visible only to you.</li>
         <li>
-          A <span className={STRONG}>published</span> book can be read by anyone who visits the site, without
-          signing in. You can unpublish it any time from <Link to="/my-books" className="text-purple-600 dark:text-purple-300 underline">Your library</Link>.
+          Every book starts <span className={STRONG}>private</span>: only you can see it.
+        </li>
+        <li>
+          If you choose <span className={STRONG}>Make public</span>, anyone who visits the site can read that book,
+          without signing in. You can make it private again any time from{' '}
+          <Link to="/my-books" className="text-purple-600 dark:text-purple-300 underline">Your library</Link>.
         </li>
         <li>
           Pictures and audio are stored at web addresses that are hard to guess but not password-protected.

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { BookOpen, Sparkles, Send, Trash2, PencilLine } from 'lucide-react'
+import { BookOpen, Sparkles, Globe, Trash2, Lock } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { api } from '../lib/apiBase'
@@ -30,8 +30,17 @@ export default function MyBooks() {
 
   useEffect(() => { fetchBooks() }, [fetchBooks])
 
-  const publishBook = async (bookId: string) => {
+  /**
+   * Making a book public shows it to anyone who visits, signed in or not, so it always asks
+   * first. Same `window.confirm` trade-off as `unpublishBook` below; the book page carries the
+   * themeable inline version.
+   */
+  const publishBook = async (bookId: string, title: string) => {
     if (!user) return
+    const ok = window.confirm(
+      `Make "${title}" public? Anyone who visits StoryBook will be able to find ${commerceEnabled() ? 'and buy' : 'and read'} it, without signing in.`
+    )
+    if (!ok) return
     const res = await authFetch(user.token, api(`/api/books/${bookId}/publish`), {
       method: 'PUT',
     })
@@ -39,9 +48,9 @@ export default function MyBooks() {
   }
 
   /**
-   * The withdraw-to-edit affordance, in the same vocabulary as `PublishStateBar` on
-   * `/book/:id`: the action is "start editing", and leaving the catalog is its consequence
-   * rather than its purpose (spec: `.code-captain/specs/edit-published-books/spec.md`).
+   * Make a public book private again, in the same Private / Public vocabulary as
+   * `PublishStateBar` on `/book/:id`. Private is also what unlocks editing
+   * (spec: `.code-captain/specs/edit-published-books/spec.md`).
    *
    * `window.confirm` stays here deliberately (Task 6). It is pre-existing, the destination
    * page now carries the richer themeable explanation, and pulling `PublishStateBar` into a
@@ -53,8 +62,8 @@ export default function MyBooks() {
     // Commerce off (tester build): the same warning without the purchase vocabulary.
     const ok = window.confirm(
       commerceEnabled()
-        ? `Editing takes "${title}" out of the catalog while you work. Readers won't be able to find or buy it until you publish again. Anyone who already bought it keeps their receipt.`
-        : `Editing takes "${title}" out of the catalog while you work. Readers won't be able to find it until you publish again.`
+        ? `Make "${title}" private? Only you will be able to see it, and you can edit it again. Anyone who already bought it keeps their receipt.`
+        : `Make "${title}" private? Only you will be able to see it, and you can edit it again.`
     )
     if (!ok) return
     setUnpublishingId(bookId)
@@ -67,11 +76,11 @@ export default function MyBooks() {
         setBooks(prev => prev.map(b => (b.id === updated.id ? { ...b, ...updated } : b)))
       } else {
         showError(
-          "Couldn't take that book out of the catalog. It may already be a draft — refresh to see the latest state."
+          "Couldn't make that book private. It may already be private, so refresh to see the latest state."
         )
       }
     } catch {
-      showError("Couldn't take that book out of the catalog. Check your connection and try again.")
+      showError("Couldn't make that book private. Check your connection and try again.")
     } finally {
       setUnpublishingId(null)
     }
@@ -153,7 +162,7 @@ export default function MyBooks() {
                 : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
             }`}
           >
-            {t === 'all' ? `All (${books.length})` : t === 'draft' ? `Drafts (${draftCount})` : `Published (${publishedCount})`}
+            {t === 'all' ? `All (${books.length})` : t === 'draft' ? `Private (${draftCount})` : `Public (${publishedCount})`}
           </button>
         ))}
       </div>
@@ -188,7 +197,7 @@ export default function MyBooks() {
                       ? 'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300'
                       : 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300'
                   }`}>
-                    {book.status === 'draft' ? 'Draft' : 'Published'}
+                    {book.status === 'draft' ? 'Private' : 'Public'}
                   </span>
                 </div>
               </div>
@@ -203,23 +212,23 @@ export default function MyBooks() {
               <div className="flex items-center gap-2">
                 {book.status === 'draft' && (
                   <button
-                    onClick={() => void publishBook(book.id)}
-                    aria-label="Publish book"
+                    onClick={() => void publishBook(book.id, book.title)}
+                    aria-label="Make book public"
                     className="flex items-center gap-1.5 bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors cursor-pointer border-none"
                   >
-                    <Send size={14} />
-                    Publish
+                    <Globe size={14} />
+                    Make public
                   </button>
                 )}
                 {book.status === 'published' && (
                   <button
                     onClick={() => void unpublishBook(book.id, book.title)}
                     disabled={unpublishingId === book.id}
-                    aria-label="Edit this book — takes it out of the catalog"
+                    aria-label="Make book private"
                     className="flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors cursor-pointer border border-gray-200 dark:border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <PencilLine size={14} />
-                    {unpublishingId === book.id ? 'Taking out...' : 'Edit this book'}
+                    <Lock size={14} />
+                    {unpublishingId === book.id ? 'Making private...' : 'Make private'}
                   </button>
                 )}
                 <button
