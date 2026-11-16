@@ -151,3 +151,35 @@ export function rateLimit({ max, windowMs, bucket, message }: RateLimitOptions) 
     });
   };
 }
+
+/**
+ * Request-rate ceilings for the routes that bill a paid API (Anthropic, fal.ai).
+ *
+ * The spend gate alone is not enough on these, for a reason that is easy to miss:
+ * `checkQuota()` runs when a request ARRIVES and `recordUsage()` runs after the model
+ * call RETURNS, tens of seconds later. Fifty requests fired in the same second all read
+ * the same under-quota ledger and all proceed. This counter increments synchronously on
+ * arrival, so it bounds that burst: the worst case per user per window is `max` calls,
+ * not "however many fit inside one model round-trip".
+ *
+ * Sized well above what the UI can do (an author making a book fires a handful of
+ * these, read-aloud asks for one clip per page), so a real person never meets one.
+ * Per user id, like every rateLimit() call. Mount AFTER requireAuth and BEFORE
+ * spendGate, as routes/uploads.ts does and explains.
+ */
+const TEN_MINUTES = 10 * 60 * 1000;
+const PAID_MESSAGE = "That's a lot of requests in a few minutes. Give it a moment, then try again.";
+export const PAID_RATE_LIMITS = {
+  /** POST /api/generate: a whole story (and in preview modes, a cover). */
+  generate: { max: 10, windowMs: TEN_MINUTES, bucket: 'generate', message: PAID_MESSAGE },
+  /** POST /api/books/:id/revise: a story rewrite. */
+  revise: { max: 20, windowMs: TEN_MINUTES, bucket: 'revise', message: PAID_MESSAGE },
+  /** POST /api/books/:id/illustrate: one request may render several pages. */
+  illustrate: { max: 30, windowMs: TEN_MINUTES, bucket: 'illustrate', message: PAID_MESSAGE },
+  /** POST /api/books/:id/characters/:i/portrait. */
+  portrait: { max: 30, windowMs: TEN_MINUTES, bucket: 'portrait', message: PAID_MESSAGE },
+  /** POST /api/books/:id/narration: one clip per slot, so a 24-page book is ~26. */
+  narration: { max: 120, windowMs: TEN_MINUTES, bucket: 'narration', message: PAID_MESSAGE },
+  /** POST /api/admin/allowlist: invites. Not paid, but an invite is a grant of spend. */
+  invite: { max: 60, windowMs: TEN_MINUTES, bucket: 'invite', message: PAID_MESSAGE },
+} as const satisfies Record<string, RateLimitOptions>;

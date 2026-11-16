@@ -103,6 +103,7 @@ AI calls cost real money, so every paid operation is metered and capped. Code li
 - **Per-call cost** is a fixed table, not a measured value: `COST_CENTS = { story: 6, illustration: 4, cover: 4, style_reference: 2, narration: 1 }`. Update it when model pricing moves — a stale figure makes the caps silently wrong. `narration` is char-priced: `costCentsFor('narration', undefined, chars)` charges `ceil(chars × NARRATION_CENTS_PER_1K_CHARS / 1000)` per slot (cover, each page, end) (2¢ per 1K chars) with `COST_CENTS.narration` as the 1¢ floor that `spendGate('narration')` reserves.
 - **Two windows, both UTC:** a per-user daily cap and a global monthly ceiling.
 - `checkQuota()` decides; `recordUsage()` writes the `UsageLog` row. A route must call both — gating without recording lets spend run away.
+- **Every paid route also carries `rateLimit(PAID_RATE_LIMITS.<kind>)`** ([server/src/middleware/rateLimit.ts](server/src/middleware/rateLimit.ts)), mounted after `requireAuth` and before `spendGate`. The quota is read on arrival and written after the model call returns, so without a request-rate ceiling a burst of parallel requests all passes the gate together. A new paid route needs both.
 
 | Env var | Default | Meaning |
 |---------|---------|---------|

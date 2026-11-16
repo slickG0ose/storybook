@@ -11,6 +11,7 @@ import heroRouter from '../routes/hero';
 import { narrationRouter, bookNarrationRouter } from '../routes/narration';
 import feedbackRouter from '../routes/feedback';
 import { resetAuthRateLimits } from '../middleware/authRateLimit';
+import { resetRateLimits } from '../middleware/rateLimit';
 
 const seedBooks = [
   { id: 'luna-star-garden', title: 'Luna and the Star Garden', author: 'AI Storybook', description: 'A story about stars.', theme: 'fantasy', age_range: '4-7', cover_emoji: '\u{1F31F}', cover_color: '#7c3aed', price: 19.99, is_featured: true, is_user_created: false },
@@ -56,6 +57,9 @@ export async function resetDatabase() {
   // Every supertest request comes from loopback, so one test's failed logins would
   // otherwise spend the next test's budget.
   resetAuthRateLimits();
+  // Per-user counters; user ids are fresh after every reset, but a clean slate here
+  // means no suite depends on that.
+  resetRateLimits();
   await prisma.feedback.deleteMany();
   await prisma.usageLog.deleteMany();
   await prisma.orderItem.deleteMany();

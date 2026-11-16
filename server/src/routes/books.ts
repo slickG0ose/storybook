@@ -57,6 +57,7 @@ import { isEditable, PUBLISHED_IMMUTABLE_ERROR } from '../lib/availability';
 import { isUsableApiKey } from '../lib/apiKeys';
 import { spendGate, sendQuotaDenied } from '../middleware/spendGate';
 import { recordUsage, checkQuota } from '../services/spend';
+import { rateLimit, PAID_RATE_LIMITS } from '../middleware/rateLimit';
 
 const router = Router();
 
@@ -73,6 +74,19 @@ function hydrateBook<T extends BookRow>(book: T): T & { characters: Character[] 
     }
   }
   return { ...book, characters };
+}
+
+/**
+ * What a reader who is not the author may see of a book row.
+ *
+ * `style_reference_url` points at the image the author uploaded as a style reference
+ * — possibly a family photo — in a publicly served directory. Shipping it on every
+ * catalog and detail read handed that URL to anyone who opened a public book. Nulled
+ * rather than removed: the wire schema keeps the field (nullable), so this is not a
+ * shape change, and the author's own reads are untouched.
+ */
+function redactForReader<T extends { style_reference_url?: string | null }>(book: T): T {
+  return { ...book, style_reference_url: null };
 }
 
 // requireAuth moved to ../middleware/requireAuth so generate.ts can share the
@@ -105,7 +119,7 @@ router.get(
       orderBy: { is_featured: 'desc' },
     });
 
-    res.json(books.map(hydrateBook));
+    res.json(books.map(b => redactForReader(hydrateBook(b))));
   },
 );
 
@@ -179,14 +193,13 @@ router.get(
       return res.status(404).json({ error: 'Book not found' });
     }
 
-    if (book.status === 'draft') {
-      const user = await getAuthUser(req);
-      if (!user || user.id !== book.created_by) {
-        return res.status(404).json({ error: 'Book not found' });
-      }
+    const user = await getAuthUser(req);
+    const isOwner = !!user && user.id === book.created_by;
+    if (book.status === 'draft' && !isOwner) {
+      return res.status(404).json({ error: 'Book not found' });
     }
 
-    res.json(hydrateBook(book));
+    res.json(isOwner ? hydrateBook(book) : redactForReader(hydrateBook(book)));
   },
 );
 
@@ -354,6 +367,7 @@ router.put(
 router.post(
   '/:id/revise',
   requireAuth,
+  rateLimit(PAID_RATE_LIMITS.revise),
   spendGate('story'),
   validate({
     name: 'POST /api/books/:id/revise',
@@ -779,6 +793,7 @@ router.get(
 router.post(
   '/:id/illustrate',
   requireAuth,
+  rateLimit(PAID_RATE_LIMITS.illustrate),
   spendGate('illustration'),
   validate({
     name: 'POST /api/books/:id/illustrate',
@@ -1030,6 +1045,7 @@ router.post(
 router.post(
   '/:id/characters/:characterIndex/portrait',
   requireAuth,
+  rateLimit(PAID_RATE_LIMITS.portrait),
   spendGate('cover'),
   validate({
     name: 'POST /api/books/:id/characters/:characterIndex/portrait',
