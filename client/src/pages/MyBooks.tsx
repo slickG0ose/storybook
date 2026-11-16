@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { BookOpen, Sparkles, Globe, Trash2, Lock } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
+import { MyBooksSkeleton } from '../components/Skeletons'
 import { api } from '../lib/apiBase'
 import { authFetch } from '../lib/authFetch'
 import { commerceEnabled } from '../lib/commerce'
@@ -120,13 +121,7 @@ export default function MyBooks() {
     )
   }
 
-  if (loading) {
-    return (
-      <div className="max-w-2xl mx-auto px-4 py-20 text-center">
-        <div className="animate-pulse text-gray-400 dark:text-gray-500 text-lg">Loading your books...</div>
-      </div>
-    )
-  }
+  if (loading) return <MyBooksSkeleton />
 
   if (loadError && books.length === 0) {
     return (
