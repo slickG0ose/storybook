@@ -677,7 +677,7 @@ function CoverArt({ book, className }: { book: BookWithPages; className: string 
         fallback={<div className="text-7xl md:text-8xl mb-4 drop-shadow-xl">{book.cover_emoji}</div>}
       />
       <h2 className="text-2xl md:text-3xl font-bold text-gray-800 dark:text-gray-100 font-display mb-2">{book.title}</h2>
-      <p className="text-sm text-gray-500 dark:text-gray-400">by {book.author}</p>
+      <p className="text-sm text-gray-600 dark:text-gray-400">by {book.author}</p>
     </div>
   )
 }

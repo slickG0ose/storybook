@@ -243,7 +243,7 @@ export default function MyBooks() {
                   <button
                     onClick={() => void publishBook(book.id, book.title)}
                     aria-label="Make book public"
-                    className="flex items-center gap-1.5 bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors cursor-pointer border-none"
+                    className="flex items-center gap-1.5 bg-green-700 hover:bg-green-800 text-white px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors cursor-pointer border-none"
                   >
                     <Globe size={14} />
                     Make public
@@ -263,7 +263,7 @@ export default function MyBooks() {
                 <button
                   onClick={() => void deleteBook(book.id)}
                   aria-label="Delete book"
-                  className="flex items-center gap-1.5 bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-600 dark:text-red-400 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors cursor-pointer border-none"
+                  className="flex items-center gap-1.5 bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-700 dark:text-red-300 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors cursor-pointer border-none"
                 >
                   <Trash2 size={14} />
                   Delete
