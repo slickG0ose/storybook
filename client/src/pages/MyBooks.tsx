@@ -167,7 +167,7 @@ export default function MyBooks() {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 animate-rise-in">
         {filtered.map(book => (
           <div key={book.id} className="bg-white dark:bg-gray-800 rounded-2xl shadow-md overflow-hidden group">
             <Link to={`/book/${book.id}`} className="no-underline">
