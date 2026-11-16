@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';
 import type { Express } from 'express';
-import { rm } from 'fs/promises';
+import { readFile, rm } from 'fs/promises';
 import { join } from 'path';
 import { createTestApp, allowEmail, resetDatabase } from '../../__tests__/setup';
 import prisma from '../../db/prisma';
@@ -326,5 +326,104 @@ describe('POST /api/uploads/style-reference — rate limiting', () => {
     expect(blocked.body.url).toBeUndefined();
     expect(mockCreate.mock.calls.length).toBe(callsBefore);
     expect(written.length).toBe(filesBefore);
+  });
+});
+
+describe('POST /api/uploads/style-reference — what gets stored', () => {
+  let app: Express;
+  let token: string;
+
+  beforeEach(async () => {
+    await resetDatabase();
+    app = createTestApp();
+    mockCreate.mockReset();
+    resetRateLimits();
+    ({ token } = await createUserAndGetToken(app));
+    vi.stubEnv('ANTHROPIC_API_KEY', undefined);
+  });
+
+  afterEach(async () => {
+    vi.unstubAllEnvs();
+    resetRateLimits();
+    for (const filename of written.splice(0)) {
+      await rm(join(UPLOADS_DIR, filename), { force: true });
+    }
+  });
+
+  async function upload(bytes: Buffer, filename: string, contentType: string) {
+    const res = await request(app)
+      .post('/api/uploads/style-reference')
+      .set('Authorization', `Bearer ${token}`)
+      .attach('image', bytes, { filename, contentType });
+    const url: unknown = res.body?.url;
+    if (typeof url === 'string') written.push(url.split('/').pop() as string);
+    return res;
+  }
+
+  function seg(marker: number, payload: Buffer): Buffer {
+    const head = Buffer.alloc(4);
+    head[0] = 0xff;
+    head[1] = marker;
+    head.writeUInt16BE(payload.length + 2, 2);
+    return Buffer.concat([head, payload]);
+  }
+
+  it('strips EXIF (GPS) from a JPEG before writing it to disk', async () => {
+    const photo = Buffer.concat([
+      Buffer.from([0xff, 0xd8]),
+      seg(0xe1, Buffer.from('Exif\0\0GPS:51.5007N,0.1246W', 'latin1')),
+      seg(0xdb, Buffer.alloc(65, 1)),
+      seg(0xda, Buffer.alloc(10, 2)),
+      Buffer.from([0x11, 0x22, 0xff, 0xd9]),
+    ]);
+
+    const res = await upload(photo, 'family.jpg', 'image/jpeg');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ url: expect.stringMatching(/^\/uploads\/style-refs\/[0-9a-f-]{36}\.jpg$/), descriptor: null });
+    const stored = await readFile(join(UPLOADS_DIR, (res.body.url as string).split('/').pop() as string));
+    expect(stored.toString('latin1')).not.toContain('GPS');
+    expect(stored.length).toBeLessThan(photo.length);
+  });
+
+  it('400s a file that is not an image, whatever Content-Type it claims', async () => {
+    // The multipart Content-Type is set by the caller. An SVG or HTML payload
+    // labelled image/png used to be written to a publicly served directory.
+    const res = await upload(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"/>'), 'x.png', 'image/png');
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ error: 'Only JPG and PNG files are allowed' });
+    expect(res.body.url).toBeUndefined();
+  });
+
+  it('names the extension from the bytes, not the claimed type', async () => {
+    const res = await upload(PNG_BYTES, 'x.jpg', 'image/jpeg');
+    expect(res.status).toBe(200);
+    expect(res.body.url).toMatch(/\.png$/);
+  });
+
+  it('400s a damaged image instead of storing it', async () => {
+    const res = await upload(PNG_BYTES.subarray(0, 40), 'x.png', 'image/png');
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ error: expect.stringContaining('damaged') });
+  });
+
+  it('400s a disallowed type with a message, not a bare 500', async () => {
+    const res = await upload(Buffer.from('GIF89a'), 'x.gif', 'image/gif');
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({ error: 'Only JPG and PNG files are allowed' });
+  });
+
+  it('413s a file over 5 MB with a message, not a bare 500', async () => {
+    const res = await upload(Buffer.concat([PNG_BYTES, Buffer.alloc(5 * 1024 * 1024)]), 'big.png', 'image/png');
+    expect(res.status).toBe(413);
+    expect(res.body).toMatchObject({ error: expect.stringContaining('5 MB') });
+  });
+
+  it('does not put the upstream error message in a 500 body', async () => {
+    vi.stubEnv('ANTHROPIC_API_KEY', 'sk-ant-test-key');
+    mockCreate.mockRejectedValue(new Error('401 invalid x-api-key sk-ant-secret'));
+    const res = await upload(PNG_BYTES, 'x.png', 'image/png');
+    expect(res.status).toBe(500);
+    expect(JSON.stringify(res.body)).not.toContain('sk-ant-secret');
   });
 });

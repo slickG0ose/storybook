@@ -4,7 +4,8 @@ import Anthropic from '@anthropic-ai/sdk';
 import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
-import type { Request, Response } from 'express';
+import type { Request, Response, NextFunction } from 'express';
+import { ImageSanitizeError, sniffImageType, stripImageMetadata } from '../lib/imageSanitize';
 import { isUsableApiKey } from '../lib/apiKeys';
 import { requireAuth } from '../middleware/requireAuth';
 import { spendGate } from '../middleware/spendGate';
@@ -28,6 +29,29 @@ const upload = multer({
 const router = Router();
 
 /**
+ * Runs multer and answers its rejections itself. Left to the global error handler,
+ * a too-large file or a non-image came back as a bare 500 "Internal server error",
+ * which told the author nothing about what to change.
+ */
+function receiveImage(req: Request, res: Response, next: NextFunction): void {
+  upload.single('image')(req, res, (err: unknown) => {
+    if (!err) {
+      next();
+      return;
+    }
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        res.status(413).json({ error: 'That image is larger than 5 MB. Try a smaller one.' });
+        return;
+      }
+      res.status(400).json({ error: 'Upload one image in the field named "image".' });
+      return;
+    }
+    res.status(400).json({ error: 'Only JPG and PNG files are allowed' });
+  });
+}
+
+/**
  * Style-reference upload (#96).
  *
  * This route was previously anonymous and unmetered while making a real Anthropic
@@ -38,8 +62,8 @@ const router = Router();
  *
  * Middleware order is load-bearing. `rateLimit` and `spendGate` both read
  * `res.locals.user`, so both must come after `requireAuth` — mounted the other way
- * round they fail closed with a 401 and the route would never work. `upload.single`
- * runs last so a caller who is not allowed through never gets 5MB buffered on their
+ * round they fail closed with a 401 and the route would never work. `receiveImage`
+ * (multer) runs last so a caller who is not allowed through never gets 5MB buffered on their
  * behalf.
  *
  * Rate limiting sits BEFORE the spend gate on purpose. They guard different things:
@@ -81,19 +105,40 @@ router.post(
   requireAuth,
   rateLimit({ max: 10, windowMs: 10 * 60 * 1000, bucket: 'style-reference' }),
   spendGate('style_reference'),
-  upload.single('image'),
+  receiveImage,
   async (req: Request, res: Response) => {
   const file = req.file;
   if (!file) {
     return res.status(400).json({ error: 'No image uploaded (field name: image)' });
   }
 
+  // What the file IS comes from its bytes. `file.mimetype` is the multipart
+  // Content-Type, which the caller sets — the fileFilter above is a courtesy for
+  // honest clients, this is the check. Nothing below reads `file.mimetype` again.
+  const type = sniffImageType(file.buffer);
+  if (!type) {
+    return res.status(400).json({ error: 'Only JPG and PNG files are allowed' });
+  }
+
+  // Strip EXIF (GPS, capture time, device), XMP, IPTC, comments and any trailer
+  // BEFORE the bytes are stored or sent anywhere. Authors upload family photos here
+  // and the stored file is served from a public path. See lib/imageSanitize.ts.
+  let bytes: Buffer;
+  try {
+    bytes = stripImageMetadata(file.buffer, type);
+  } catch (err: unknown) {
+    if (err instanceof ImageSanitizeError) {
+      return res.status(400).json({ error: "That image file looks damaged and couldn't be read. Try another one." });
+    }
+    throw err;
+  }
+
   try {
     await mkdir(UPLOADS_DIR, { recursive: true });
-    const ext = file.mimetype === 'image/png' ? 'png' : 'jpg';
+    const ext = type === 'image/png' ? 'png' : 'jpg';
     const id = randomUUID();
     const filename = `${id}.${ext}`;
-    await writeFile(join(UPLOADS_DIR, filename), file.buffer);
+    await writeFile(join(UPLOADS_DIR, filename), bytes);
     const url = `/uploads/style-refs/${filename}`;
 
     let descriptor: string | null = null;
@@ -113,7 +158,7 @@ router.post(
             content: [
               {
                 type: 'image',
-                source: { type: 'base64', media_type: file.mimetype as 'image/jpeg' | 'image/png', data: file.buffer.toString('base64') },
+                source: { type: 'base64', media_type: type, data: bytes.toString('base64') },
               },
               {
                 type: 'text',
@@ -140,8 +185,9 @@ router.post(
     res.json({ url, descriptor });
   } catch (err: unknown) {
     console.error('Style reference upload error:', err);
-    const msg = err instanceof Error ? err.message : String(err);
-    res.status(500).json({ error: 'Failed to process upload. ' + msg });
+    // No err.message in the body: it is an upstream SDK or filesystem error and can
+    // carry paths, request ids or key fragments. The detail is in the log line above.
+    res.status(500).json({ error: 'Failed to process upload. Please try again.' });
   }
   },
 );
