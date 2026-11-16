@@ -52,7 +52,7 @@ import { parseAiJson } from '../services/parseAiJson';
 import { renderBookPdf } from '../services/pdf';
 import { validate } from '../middleware/validate';
 import { requireAuth } from '../middleware/requireAuth';
-import { STORY_MODEL, STORY_THINKING } from '../lib/models';
+import { STORY_MODEL, STORY_THINKING, STORY_CLIENT_OPTIONS } from '../lib/models';
 import { isEditable, PUBLISHED_IMMUTABLE_ERROR } from '../lib/availability';
 import { isUsableApiKey } from '../lib/apiKeys';
 import { spendGate, sendQuotaDenied } from '../middleware/spendGate';
@@ -404,7 +404,7 @@ router.post(
         illustrationDescription: p.illustration_description,
       }));
 
-      const client = new Anthropic({ apiKey });
+      const client = new Anthropic({ apiKey, ...STORY_CLIENT_OPTIONS });
 
       const hydrated = hydrateBook(book);
       const castLine = hydrated.characters.length > 0

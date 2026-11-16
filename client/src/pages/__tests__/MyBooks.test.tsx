@@ -486,3 +486,33 @@ describe('MyBooks — expired session (401)', () => {
     }
   })
 })
+
+describe('MyBooks when the library cannot be loaded', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it('says so and offers a retry, rather than claiming there are no books', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValue(
+        new Response(JSON.stringify([publishedBook]), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+      )
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    renderMyBooks()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent("We couldn't load your books just now")
+    expect(screen.queryByText('No books yet')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(await screen.findByText('Published Adventure')).toBeInTheDocument()
+    expect(fetchSpy).toHaveBeenCalledTimes(2)
+  })
+
+  it('treats a 502 the same way', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('<html>Bad Gateway</html>', { status: 502 }))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    renderMyBooks()
+    expect(await screen.findByRole('alert')).toHaveTextContent("We couldn't load your books just now")
+  })
+})

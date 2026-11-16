@@ -16,15 +16,25 @@ export default function MyBooks() {
   const { showError } = useToast()
   const [books, setBooks] = useState<MyBook[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
   const [tab, setTab] = useState<'all' | 'draft' | 'published'>('all')
   const [unpublishingId, setUnpublishingId] = useState<string | null>(null)
 
   const fetchBooks = useCallback(() => {
     if (!user) return
+    // A failed load is NOT an empty library. This used to resolve to `[]` on any
+    // error, so a sleeping server told an author with ten books "No books yet".
+    // 401 is left to authFetch, which signs the user out and redirects.
     authFetch(user.token, api('/api/books/mine'))
-      .then(res => (res.ok ? res.json() as Promise<MyBook[]> : []))
-      .then((data: MyBook[]) => setBooks(data))
-      .catch(() => setBooks([]))
+      .then(res => {
+        if (!res.ok) throw new Error(`/api/books/mine responded ${res.status}`)
+        return res.json() as Promise<MyBook[]>
+      })
+      .then((data: MyBook[]) => { setBooks(data); setLoadError(false) })
+      .catch((err: unknown) => {
+        console.error('Failed to load your books', err)
+        setLoadError(true)
+      })
       .finally(() => setLoading(false))
   }, [user])
 
@@ -114,6 +124,25 @@ export default function MyBooks() {
     return (
       <div className="max-w-2xl mx-auto px-4 py-20 text-center">
         <div className="animate-pulse text-gray-400 dark:text-gray-500 text-lg">Loading your books...</div>
+      </div>
+    )
+  }
+
+  if (loadError && books.length === 0) {
+    return (
+      <div className="max-w-2xl mx-auto px-4 py-20 text-center" role="alert">
+        <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 font-display mb-2">
+          We couldn't load your books just now
+        </h2>
+        <p className="text-gray-500 dark:text-gray-400 mb-6">
+          They're safe. The library may be waking up, so give it a moment and try again.
+        </p>
+        <button
+          onClick={() => { setLoading(true); fetchBooks() }}
+          className="min-h-11 px-6 rounded-xl bg-purple-600 hover:bg-purple-700 dark:bg-purple-500 dark:hover:bg-purple-400 text-white font-bold cursor-pointer transition-colors"
+        >
+          Try again
+        </button>
       </div>
     )
   }

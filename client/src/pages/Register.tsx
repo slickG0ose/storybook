@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { UserPlus, Loader2 } from 'lucide-react'
+import { UNREACHABLE_MESSAGE } from '../lib/friendlyError'
 import { useAuth } from '../context/AuthContext'
 
 export default function Register() {
@@ -16,8 +17,16 @@ export default function Register() {
     e.preventDefault()
     setError('')
     setSubmitting(true)
-    const err = await register(email, name, password)
-    setSubmitting(false)
+    // login/register resolve to a message and never reject, but a spinner that can
+    // never be cleared is the failure this form must not have, so it does not rely on that.
+    let err: string | null
+    try {
+      err = await register(email, name, password)
+    } catch {
+      err = UNREACHABLE_MESSAGE
+    } finally {
+      setSubmitting(false)
+    }
     if (err) {
       setError(err)
     } else {
@@ -35,7 +44,7 @@ export default function Register() {
         </div>
 
         {error && (
-          <div className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 px-4 py-2 rounded-lg text-sm mb-4">
+          <div role="alert" className="bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 px-4 py-2 rounded-lg text-sm mb-4">
             {error}
           </div>
         )}
