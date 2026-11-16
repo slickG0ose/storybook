@@ -439,7 +439,7 @@ export default function Home() {
               </button>
             </div>
           ) : catalog.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 animate-rise-in">
               {catalog.map(book => (
                 <PreviewableCard key={book.id} book={book} onPreview={setPreviewBook} />
               ))}

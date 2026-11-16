@@ -10,6 +10,7 @@ import { AGE_RANGES } from '../lib/ageRanges'
 import { loadCreateDraft, saveCreateDraft, clearCreateDraft } from '../lib/createDraft'
 import type { CreateDraft } from '../lib/createDraft'
 import type { Character, CharacterRole } from '../types'
+import BookReadyMoment, { BOOK_READY_HOLD_MS, prefersReducedMotion } from '../components/BookReadyMoment'
 
 interface ThemeOption {
   value: string;
@@ -101,6 +102,13 @@ export default function CreateBook() {
   const [styleUploadError, setStyleUploadError] = useState('')
   const [styleDragOver, setStyleDragOver] = useState(false)
   const [generating, setGenerating] = useState(false)
+  // Set when generation succeeds: the "ready" moment shows, then the book opens.
+  const [readyBookId, setReadyBookId] = useState<string | null>(null)
+  useEffect(() => {
+    if (!readyBookId) return
+    const timer = setTimeout(() => navigate(`/book/${readyBookId}`), BOOK_READY_HOLD_MS)
+    return () => clearTimeout(timer)
+  }, [readyBookId, navigate])
   const [error, setError] = useState('')
 
   // Persist the wizard so a sign-in bounce (expired session) does not lose it.
@@ -224,12 +232,16 @@ export default function CreateBook() {
       }
       const book = await res.json() as { id: string }
       clearCreateDraft()
-      navigate(`/book/${book.id}`)
+      // A beat to mark that the wait is over, unless motion is unwanted.
+      if (prefersReducedMotion()) navigate(`/book/${book.id}`)
+      else setReadyBookId(book.id)
     } catch (err) {
       setError(describeFailure(err, 'Generation failed'))
       setGenerating(false)
     }
   }
+
+  if (readyBookId) return <BookReadyMoment name={primary?.name} />
 
   if (generating) {
     return (
