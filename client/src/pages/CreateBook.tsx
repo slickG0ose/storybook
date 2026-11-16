@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { Sparkles, Wand2, Loader2, Plus, X } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
-import BookReadyMoment, { BOOK_READY_HOLD_MS, prefersReducedMotion } from '../components/BookReadyMoment'
 import { api } from '../lib/apiBase'
 import { authFetch } from '../lib/authFetch'
 import { PER_IMAGE_COST_USD, fmtUsd, portraitStepCostNote } from '../lib/cost'
@@ -10,6 +9,7 @@ import { AGE_RANGES } from '../lib/ageRanges'
 import { loadCreateDraft, saveCreateDraft, clearCreateDraft } from '../lib/createDraft'
 import type { CreateDraft } from '../lib/createDraft'
 import type { Character, CharacterRole } from '../types'
+import BookReadyMoment, { BOOK_READY_HOLD_MS, prefersReducedMotion } from '../components/BookReadyMoment'
 
 interface ThemeOption {
   value: string;
