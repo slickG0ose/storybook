@@ -29,6 +29,7 @@ vi.mock('@anthropic-ai/sdk', () => {
 // suite uses real DB rows and shouldn't be affected.
 const mockGenerateIllustration = vi.fn();
 const mockGenerateCharacterPortrait = vi.fn();
+const mockGenerateCover = vi.fn();
 const mockListCharacterPortraitVersions = vi.fn();
 vi.mock('../../services/illustrations', async () => {
   const actual = await vi.importActual<typeof import('../../services/illustrations')>(
@@ -38,6 +39,7 @@ vi.mock('../../services/illustrations', async () => {
     ...actual,
     generateIllustration: (...args: unknown[]) => mockGenerateIllustration(...args),
     generateCharacterPortrait: (...args: unknown[]) => mockGenerateCharacterPortrait(...args),
+    generateCover: (...args: unknown[]) => mockGenerateCover(...args),
     listCharacterPortraitVersions: (...args: unknown[]) =>
       mockListCharacterPortraitVersions(...args),
   };
@@ -1864,6 +1866,125 @@ describe('Books API routes', () => {
       expect(res.body[0].feedback).toBeNull();
       expect(res.body[1].version).toBe(2);
       expect(res.body[1].feedback).toBe('make the moon bigger');
+    });
+  });
+
+  describe('POST /api/books/:id/cover', () => {
+    beforeEach(() => {
+      mockGenerateCover.mockReset();
+      vi.stubEnv('IMAGE_PROVIDER', 'fal');
+      vi.stubEnv('FAL_KEY', 'fal-test');
+    });
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    // An owned private book with no cover, like Spud the Happy Potato in prod.
+    async function setupOwnedCoverlessDraft(): Promise<string> {
+      const token = await createUserAndGetToken(app);
+      const user = await prisma.user.findFirst({ where: { email: 'author@example.com' } });
+      await prisma.book.update({
+        where: { id: 'luna-star-garden' },
+        data: { status: 'draft', created_by: user!.id, cover_url: null },
+      });
+      return token;
+    }
+
+    const post = (token?: string) => {
+      const r = request(app).post('/api/books/luna-star-garden/cover');
+      return token ? r.set('Authorization', `Bearer ${token}`).send({}) : r.send({});
+    };
+
+    it('returns 401 without auth', async () => {
+      expect((await post()).status).toBe(401);
+    });
+
+    it('returns 404 for another user\'s book', async () => {
+      const token = await createUserAndGetToken(app);
+      const res = await post(token);
+      expect(res.status).toBe(404);
+      expect(mockGenerateCover).not.toHaveBeenCalled();
+    });
+
+    it('returns 403 for a public book, before any provider call', async () => {
+      const token = await setupOwnedCoverlessDraft();
+      await prisma.book.update({ where: { id: 'luna-star-garden' }, data: { status: 'published' } });
+      const res = await post(token);
+      expect(res.status).toBe(403);
+      expect(mockGenerateCover).not.toHaveBeenCalled();
+    });
+
+    it('returns 409 when the book already has a cover, and draws nothing', async () => {
+      const token = await setupOwnedCoverlessDraft();
+      await prisma.book.update({
+        where: { id: 'luna-star-garden' },
+        data: { cover_url: '/illustrations/luna-star-garden/cover.jpg' },
+      });
+      const res = await post(token);
+      expect(res.status).toBe(409);
+      expect(res.body.error).toMatch(/already has a cover/);
+      expect(mockGenerateCover).not.toHaveBeenCalled();
+      expect(await prisma.usageLog.count()).toBe(0);
+    });
+
+    it('returns 501 when image generation is not configured', async () => {
+      vi.stubEnv('FAL_KEY', '');
+      vi.stubEnv('OPENAI_API_KEY', '');
+      const token = await setupOwnedCoverlessDraft();
+      const res = await post(token);
+      expect(res.status).toBe(501);
+      expect(mockGenerateCover).not.toHaveBeenCalled();
+    });
+
+    it('draws the cover, saves it on the book and charges one cover', async () => {
+      const token = await setupOwnedCoverlessDraft();
+      const coverUrl = '/illustrations/luna-star-garden/cover.png';
+      mockGenerateCover.mockResolvedValueOnce(coverUrl);
+
+      const res = await post(token);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        id: 'luna-star-garden',
+        title: expect.any(String),
+        status: 'draft',
+        cover_url: coverUrl,
+        pages: expect.any(Array),
+      });
+      // (bookId, title, description, style, characters, refs, { pin })
+      const args = mockGenerateCover.mock.calls[0];
+      expect(args[0]).toBe('luna-star-garden');
+      expect(args[1]).toBe('Luna and the Star Garden');
+      expect(args[6]).toMatchObject({ pin: { provider: 'fal' } });
+
+      const row = await prisma.book.findUnique({ where: { id: 'luna-star-garden' } });
+      expect(row!.cover_url).toBe(coverUrl);
+      const rows = await prisma.usageLog.findMany();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ kind: 'cover', cost_cents: costCentsFor('cover', 'fal') });
+    });
+
+    it('charges nothing and leaves the book alone when the provider returns no image', async () => {
+      const token = await setupOwnedCoverlessDraft();
+      mockGenerateCover.mockResolvedValueOnce(null);
+
+      const res = await post(token);
+
+      expect(res.status).toBe(200);
+      expect(res.body.cover_url).toBeNull();
+      expect(await prisma.usageLog.count()).toBe(0);
+    });
+
+    it('returns 500 and charges nothing when the provider throws', async () => {
+      const token = await setupOwnedCoverlessDraft();
+      mockGenerateCover.mockRejectedValueOnce(new Error('provider down'));
+
+      const res = await post(token);
+
+      expect(res.status).toBe(500);
+      expect(res.body.error).toMatch(/Failed to generate the cover/);
+      expect(await prisma.usageLog.count()).toBe(0);
     });
   });
 

@@ -1749,3 +1749,77 @@ describe('BookDetail — expired session (401)', () => {
     }
   })
 })
+
+describe('BookDetail — Make a cover', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  function setupCoverMock(book: BookWithPages, coverResponse: () => Response) {
+    const posts: string[] = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      const method = init?.method ?? 'GET'
+      const json = (body: unknown, status = 200) =>
+        Promise.resolve(new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }))
+
+      if (url === '/api/books/book-1' && method === 'GET') return json(book)
+      if (url === '/api/books/book-1/versions' && method === 'GET') return json(versionsResponse)
+      if (url === '/api/books/book-1/cover' && method === 'POST') {
+        posts.push(url)
+        return Promise.resolve(coverResponse())
+      }
+      return json({ error: `unmocked ${method} ${url}` }, 500)
+    })
+    return posts
+  }
+
+  const withCover: BookWithPages = { ...baseBook, cover_url: '/illustrations/book-1/cover.png' }
+
+  it('offers the button on an owned private book with no cover, and shows the new cover', async () => {
+    const posts = setupCoverMock(baseBook, () =>
+      new Response(JSON.stringify(withCover), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+    )
+
+    renderBookDetail()
+
+    fireEvent.click(await screen.findByRole('button', { name: /make a cover/i }))
+
+    await waitFor(() => {
+      expect(screen.getByAltText('Cover of Test Adventure')).toHaveAttribute('src', '/illustrations/book-1/cover.png')
+    })
+    expect(posts).toHaveLength(1)
+    expect(screen.queryByRole('button', { name: /make a cover/i })).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['already has a cover', withCover],
+    ['is public', { ...baseBook, status: 'published' as const }],
+    ['belongs to someone else', { ...baseBook, created_by: 'someone-else' }],
+  ])('does not offer it when the book %s', async (_label, book) => {
+    setupCoverMock(book, () => new Response('', { status: 500 }))
+
+    renderBookDetail()
+
+    await screen.findByRole('heading', { name: 'Test Adventure', level: 1 })
+    expect(screen.queryByRole('button', { name: /make a cover/i })).not.toBeInTheDocument()
+  })
+
+  it('shows the server error in a toast and keeps the button', async () => {
+    setupCoverMock(baseBook, () =>
+      new Response(JSON.stringify({ error: 'Daily limit reached' }), {
+        status: 429,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+
+    renderBookDetail()
+
+    fireEvent.click(await screen.findByRole('button', { name: /make a cover/i }))
+
+    await waitFor(() => {
+      expect(toastHost().getByText(/Daily limit reached/)).toBeInTheDocument()
+    })
+    expect(screen.getByRole('button', { name: /make a cover/i })).toBeEnabled()
+  })
+})

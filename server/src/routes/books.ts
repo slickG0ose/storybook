@@ -38,6 +38,7 @@ import prisma from '../db/prisma';
 import { getAuthUser } from './auth';
 import {
   generateIllustration,
+  generateCover,
   generateCharacterPortrait,
   listCharacterPortraitVersions,
   listIllustrationVersions,
@@ -929,6 +930,90 @@ router.post(
       console.error('Illustration error:', err);
       const message = err instanceof Error ? err.message : String(err);
       res.status(500).json({ error: 'Failed to generate illustrations. ' + message });
+    }
+  },
+);
+
+// Draw a cover for an owner's private book that has none. Covers are otherwise only
+// drawn at creation (generate.ts, previewMode 'cover' | 'full'), so a book made
+// text-first, or whose cover call failed, showed its emoji forever (Spud the Happy
+// Potato, 2026-11-16). Same requireAuth -> spendGate -> validate -> handler order and
+// the same ownership / mutability / pin / quota gates as the portrait route below.
+//
+// Deliberately add-only: a book that already has a cover gets 409. Covers have no
+// version history (storage key `<id>/cover.png` is overwritten in place), so a
+// re-roll here would silently discard art the owner may have wanted to keep.
+router.post(
+  '/:id/cover',
+  requireAuth,
+  spendGate('cover'),
+  validate({
+    name: 'POST /api/books/:id/cover',
+    response: BookDetailResponseSchema,
+  }),
+  async (req: Request<{ id: string }>, res: Response) => {
+    const user = res.locals.user as { id: string; role?: string };
+
+    const book = await prisma.book.findFirst({
+      where: { id: req.params.id, deleted_at: null },
+      include: { pages: { orderBy: { page_number: 'asc' } } },
+    });
+    if (!book || book.created_by !== user.id) {
+      return res.status(404).json({ error: 'Book not found' });
+    }
+    if (!isEditable(book)) {
+      return res.status(403).json({ error: PUBLISHED_IMMUTABLE_ERROR });
+    }
+    if (book.cover_url) {
+      return res.status(409).json({ error: 'This book already has a cover' });
+    }
+
+    // Drawn on the model the pages were drawn on, so the cover matches them.
+    const pin = await resolveAndPinImagePin(book);
+    if (!isImageGenConfigured(pin.provider)) {
+      return isImageGenConfigured()
+        ? res.status(409).json({ error: pinnedProviderUnavailableError(pin.provider) })
+        : res.status(501).json({ error: 'Image generation not configured' });
+    }
+
+    // The real gate, at the pinned provider's price (spendGate only reserved the
+    // default rate before the book was loaded). A denial costs nothing.
+    const decision = await checkQuota(user.id, 'cover', user.role === 'admin', undefined, pin.provider);
+    if (!decision.allowed) {
+      sendQuotaDenied(res, decision);
+      return;
+    }
+
+    const hydrated = hydrateBook(book);
+    const portraitRefs = collectRequiredPortraitRefs(hydrated.characters);
+
+    try {
+      const coverUrl = await generateCover(
+        book.id,
+        book.title,
+        book.description,
+        book.style_descriptor,
+        hydrated.characters,
+        portraitRefs.length > 0 ? portraitRefs : undefined,
+        { pin },
+      );
+
+      if (coverUrl) {
+        await recordUsage(user.id, 'cover', pin.provider);
+        await ensureBookPinned(book.id, pin);
+        await prisma.book.update({ where: { id: book.id }, data: { cover_url: coverUrl } });
+      }
+
+      const updated = await prisma.book.findUnique({
+        where: { id: book.id },
+        include: { pages: { orderBy: { page_number: 'asc' } } },
+      });
+      if (!updated) return res.status(404).json({ error: 'Book not found' });
+      res.json(hydrateBook(updated));
+    } catch (err: unknown) {
+      console.error('Cover generation error:', err);
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: 'Failed to generate the cover. ' + message });
     }
   },
 );
