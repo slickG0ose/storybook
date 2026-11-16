@@ -311,7 +311,7 @@
     "bookId": "luna-star-garden",
     "slot": "cover",
     "file": "luna-star-garden/cover.jpg",
-    "bytes": 465230,
+    "bytes": 357033,
     "height": 1024,
     "width": 1024,
     "model": "fal-ai/flux-pro/kontext",

@@ -168,6 +168,7 @@ The six canonical books (`server/src/seed/canonicalBooks.ts`) ship with committe
 - **Always-set on re-seed:** `seedCanonicalBooks()` writes the cover and page URLs on every run (`db:seed`, and the Render build). A fresh checkout has the bytes; nothing is uploaded to R2 and nothing is written to the prod DB by hand.
 - **Regenerate** (paid, offline, owner's machine): `cd server && npx tsx scripts/generate-seed-art.ts`. It is a dry run unless you pass `--spend`. Useful flags: `--max-images N`, `--only <id>` (repeatable), `--redo <id>:<slot>` (regenerate one slot, e.g. `luna-star-garden:page-3`), and `--compress-only` (re-encode the cached PNGs to JPEG with no generation calls).
 - **Raw cache:** the generated PNGs are kept in `server/.seed-art/` (gitignored) so a re-compress or a rerun never pays twice.
+- **Hand-corrected: `luna-star-garden/cover.jpg`.** The model lettered the title onto the cover with the G missing ("STAR ARDEN"). On 2026-11-16 the G was added by hand (word shift plus a gold Inter ExtraBold G; no generation call), so the committed JPEG no longer matches the cached PNG. A `--compress-only` run, or `--redo luna-star-garden:cover`, would bring the typo back or replace the cover outright; check the lettering after either.
 - **Never write into a seed-book directory from a test.** Those files are committed fixtures; a test that generates or deletes art there dirties the working tree. Tests use a temp directory or a non-seed book id.
 
 ### Local-disk fallback under `r2`

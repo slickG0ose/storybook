@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, Link, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, ShoppingCart, ChevronLeft, ChevronRight, Loader2, RefreshCw, Paintbrush, Image, BookOpen, FileText, History, RotateCcw, CheckCircle2, X, GitCompare, Users, Download } from 'lucide-react'
+import { ArrowLeft, ShoppingCart, ChevronLeft, ChevronRight, Loader2, RefreshCw, Paintbrush, Image, BookOpen, FileText, History, RotateCcw, CheckCircle2, X, GitCompare, Users, Download, ImagePlus } from 'lucide-react'
 import { useCart } from '../context/CartContext'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
@@ -117,6 +117,7 @@ export default function BookDetail() {
   const [revising, setRevising] = useState(false)
   const [reviseError, setReviseError] = useState('')
   const [illustrating, setIllustrating] = useState(false)
+  const [makingCover, setMakingCover] = useState(false)
   const [illustrationFeedback, setIllustrationFeedback] = useState('')
   const [illustrationVersions, setIllustrationVersions] = useState<IllustrationVersion[]>([])
   const [showVersions, setShowVersions] = useState(false)
@@ -594,6 +595,29 @@ export default function BookDetail() {
     }
   }
 
+  /**
+   * Draw a cover for a private book that has none (POST /api/books/:id/cover). Covers
+   * are otherwise only drawn when a book is created, so a book whose cover was skipped
+   * or failed showed its emoji for good. One paid image, so the button shows its price.
+   */
+  const handleMakeCover = async () => {
+    if (!user) return
+    setMakingCover(true)
+    try {
+      const res = await authFetch(user.token, api(`/api/books/${book.id}/cover`), { method: 'POST' })
+      if (handledStale403(res)) return
+      const parsed = await safeReadJson<BookWithPages>(res)
+      if (!res.ok || parsed === null || (typeof parsed === 'object' && 'error' in parsed)) {
+        throw new Error(errorMessageFromResponse(parsed, res, "Couldn't make a cover"))
+      }
+      setBook(parsed)
+    } catch (err) {
+      showError(err instanceof Error ? err.message : "Couldn't make a cover")
+    } finally {
+      setMakingCover(false)
+    }
+  }
+
   const handleGeneratePortrait = async (characterIndex: number) => {
     if (!user || !book) return
     setGeneratingPortrait(characterIndex)
@@ -794,6 +818,17 @@ export default function BookDetail() {
                 >
                   {illustrating ? <Loader2 size={16} className="animate-spin" /> : <Paintbrush size={16} />}
                   {illustrating ? 'Illustrating...' : `Illustrate All (~$${(pages.filter(p => !p.illustration_url).length * 0.04).toFixed(2)})`}
+                </button>
+              )}
+              {isDraft && isOwner && !book.cover_url && (
+                <button
+                  onClick={() => void handleMakeCover()}
+                  disabled={makingCover || illustrating}
+                  title="Draws one cover picture for this book, at about $0.04"
+                  className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold bg-amber-500 hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-500 text-white transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-default"
+                >
+                  {makingCover ? <Loader2 size={16} className="animate-spin" /> : <ImagePlus size={16} />}
+                  {makingCover ? 'Making a cover...' : 'Make a cover (~$0.04)'}
                 </button>
               )}
               {isDraft && isOwner && !canBulkIllustrate && (

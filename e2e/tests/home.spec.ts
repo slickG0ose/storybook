@@ -50,4 +50,20 @@ test.describe('Home page', () => {
     await page.getByRole('button', { name: 'All' }).first().click();
     await expect(page.getByRole('button', { name: 'Add to Cart' })).toHaveCount(11);
   });
+
+  // client/src/lib/reloadScroll.ts: tapping Browse scrolls to All books, but a refresh
+  // afterwards must open at the top, not jump back down to #browse.
+  test('Browse scrolls to All books, and a refresh then opens at the top', async ({ page }) => {
+    await page.getByRole('navigation').first().getByRole('link', { name: 'Browse' }).click();
+    await expect(page).toHaveURL(/#browse$/);
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(200);
+
+    await page.reload();
+    await expect(page.getByRole('button', { name: 'Add to Cart' }).first()).toBeVisible();
+
+    await expect(page).not.toHaveURL(/#browse/);
+    // Give any late scroll (the browser's restore, or Home's hash effect) time to land.
+    await page.waitForTimeout(500);
+    expect(await page.evaluate(() => window.scrollY)).toBeLessThan(50);
+  });
 });

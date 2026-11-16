@@ -10,10 +10,14 @@ import { ToastProvider } from './context/ToastContext'
 import UpdateToast from './components/UpdateToast'
 import ErrorBoundary from './components/ErrorBoundary'
 import { installRecentErrorCapture } from './lib/recentErrors'
+import { startReloadsAtTop } from './lib/reloadScroll'
 
 // Before render, so an error thrown while the app boots is still captured. Feeds
 // recent_errors on tester feedback reports (FeedbackDialog).
 installRecentErrorCapture()
+
+// Before render, so a refresh doesn't jump back down to #browse (see reloadScroll.ts).
+startReloadsAtTop()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

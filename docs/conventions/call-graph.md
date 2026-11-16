@@ -42,7 +42,7 @@ called from; change a route's shape and this tells you the single file to update
 | `lib/narration/api.ts` | `/api/narration/voices`, `GET`/`POST /api/books/:id/narration` |
 | `pages/Home.tsx` | `/api/books`, `/api/books/:id`, `/api/books/{themes,age-ranges}` |
 | `pages/MyBooks.tsx` | `/api/books/mine`, `/api/books/:id`, `:id/{publish,unpublish}` |
-| `pages/BookDetail.tsx` | `/api/books/:id/{illustrate,revise,publish,unpublish,pdf}`, `:id/pages/:n`, `:id/illustrations/:n[/revert]`, `:id/versions[/:v/restore]`, `:id/characters/:i/portrait` |
+| `pages/BookDetail.tsx` | `/api/books/:id/{illustrate,cover,revise,publish,unpublish,pdf}`, `:id/pages/:n`, `:id/illustrations/:n[/revert]`, `:id/versions[/:v/restore]`, `:id/characters/:i/portrait` |
 | `pages/CreateBook.tsx` | `/api/generate`, `/api/uploads/style-reference` |
 | `pages/Checkout.tsx` | `POST /api/orders` |
 | `pages/OrderConfirmation.tsx` | `GET /api/orders/:id` |
