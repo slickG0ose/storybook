@@ -115,6 +115,10 @@ const ROUTES: RouteCase[] = [
     // spec is the viewport, not the auth state — assert against whatever renders.
     ready: (page) => expect(page.getByRole('heading', { name: 'Sign in to see your books' })).toBeVisible(),
   },
+  {
+    path: '/privacy',
+    ready: (page) => expect(page.getByRole('heading', { name: 'Privacy', level: 1 })).toBeVisible(),
+  },
 ];
 
 /** Clears cart/auth/theme state, optionally seeds a cart, then lands on the route. */
