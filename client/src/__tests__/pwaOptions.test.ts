@@ -74,4 +74,23 @@ describe('pwaOptions', () => {
     // ...but an in-app route must still fall back to the shell.
     expect(denylist.some(re => re.test('/checkout'))).toBe(false)
   })
+
+  it('has no runtimeCaching pattern that matches signed media paths', () => {
+    // Signed media links expire (signed-media-urls, decision 4). A runtime cache keyed on the
+    // full URL would serve a dead link or pile up one entry per signature. If offline reading
+    // is ever wanted, key on mediaPath() with a Workbox cacheKeyWillBeUsed plugin.
+    const rules = pwaOptions.workbox?.runtimeCaching ?? []
+    const matches = (pattern: unknown, path: string): boolean => {
+      const url = new URL(path, 'https://app.example')
+      if (pattern instanceof RegExp) return pattern.test(url.href) || pattern.test(path)
+      if (typeof pattern === 'string') return url.href.includes(pattern) || path.includes(pattern)
+      if (typeof pattern === 'function') {
+        return Boolean((pattern as (o: unknown) => unknown)({ url, request: { destination: 'image' }, sameOrigin: true }))
+      }
+      return false
+    }
+    for (const path of ['/illustrations/x.png', '/uploads/style-refs/x.jpg']) {
+      expect(rules.some(rule => matches(rule.urlPattern, path))).toBe(false)
+    }
+  })
 })

@@ -18,6 +18,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
     "@aws-sdk/client-s3": "^3.1161.0",
+    "@aws-sdk/s3-request-presigner": "^3.1164.0",
     "@prisma/client": "^6.19.3",
     "@react-pdf/renderer": "^4.6.1",
     "@storybook/shared": "*",
@@ -25,6 +26,7 @@
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",
     "express": "^5.3.0",
+    "express-rate-limit": "8.7.3",
     "jsonrepair": "^3.14.0",
     "multer": "^2.5.0",
     "prisma": "^6.19.3",

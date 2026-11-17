@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import request from 'supertest';
 import type { Express } from 'express';
+import { mediaPath } from '@storybook/shared';
 import { createTestApp, allowEmail, resetDatabase } from '../../__tests__/setup';
 import prisma from '../../db/prisma';
 import { PAID_RATE_LIMITS } from '../../middleware/rateLimit';
@@ -120,6 +121,9 @@ describe('style_reference_url is the author’s alone', () => {
     expect(row).toMatchObject({ style_reference_url: null });
 
     const mine = await request(app).get('/api/books/luna-star-garden').set('Authorization', `Bearer ${ownerToken}`);
-    expect(mine.body).toMatchObject({ style_reference_url: url });
+    expect(mine.body).toMatchObject({
+      style_reference_url: expect.stringMatching(/^\/uploads\/style-refs\/[^?]+\?e=\d+&s=[A-Za-z0-9_-]{43}$/),
+    });
+    expect(mediaPath(mine.body.style_reference_url)).toBe(url);
   });
 });

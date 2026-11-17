@@ -40,6 +40,7 @@ Written for the spec's recommended rulings on its five open questions. A differe
 **Depends on:** none
 **Parallel-safe with:** none on the server; Task 7 starts after this
 **Owner step after merge:** none
+**Status:** Done (2026-11-16)
 
 **Files to add or change:**
 - `shared/src/media.ts`: new
@@ -71,6 +72,7 @@ export function mediaExpiresAt(url: string | null | undefined): number | null;
 ---
 
 ### Task 2 — Inbound canonicalisation on the two write paths
+**Status:** Done (2026-11-16)
 **WAITS FOR PR #238 TO MERGE.**
 
 **Zone:** server
@@ -108,6 +110,8 @@ function ownStyleReferenceUrl(raw: string | undefined): string | null {
 ---
 
 ### Task 3 — Media URL signer: config, sign, verify
+
+**Status:** Done (2026-11-16)
 
 **Zone:** server
 **Depends on:** Task 1
@@ -153,6 +157,8 @@ HMAC input: `` `v1\n${root}\n${key}\n${e}` ``. Output: base64url, unpadded.
 ---
 
 ### Task 4 — Serving: verifier, disk, presign redirect, lenient mode (stage 1)
+
+**Status:** Done (2026-11-16)
 
 > USER CONFIRMATION REQUIRED: new dependency. The spec must be `Status: Accepted`.
 
@@ -208,7 +214,25 @@ HMAC input: `` `v1\n${root}\n${key}\n${e}` ``. Output: base64url, unpadded.
 
 ---
 
+### Task 4a — Per-IP rate limit on the media routes (added 2026-11-17)
+
+**Status:** Done (2026-11-17)
+**Zone:** server and e2e config
+**Why:** CodeQL alert #41 on PR #244. Spec §Amendment 2026-11-17.
+**Dependency:** `express-rate-limit@8.7.3`, owner-approved in chat.
+
+**Files:**
+- `server/src/middleware/media.ts`: `resolveMediaRateLimit(env)`, and one limiter created in `mountMedia` ahead of `mediaGate` on both roots.
+- `server/src/middleware/__tests__/media.test.ts`: limit, shared budget across roots, 429 envelope and headers, env fallbacks.
+- `server/.env.example`, `e2e/playwright.config.ts`.
+
+**Owner step after merge:** none beyond checklist A; a book should still load in full.
+
+---
+
 ### Task 5 — Sign every outbound media URL (stage 2)
+
+**Status:** Done (2026-11-16)
 
 **Zone:** server
 **Depends on:** Tasks 2 and 4
@@ -274,6 +298,8 @@ export function signMediaResponses(req: Request, res: Response, next: NextFuncti
 ---
 
 ### Task 7 — Client: tolerate and recover from expired links
+
+**Status:** Done (2026-11-16)
 
 **Zone:** client
 **Depends on:** Task 1

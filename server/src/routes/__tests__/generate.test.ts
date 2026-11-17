@@ -437,6 +437,26 @@ describe('POST /api/generate — request validation (#172)', () => {
     const book = await prisma.book.findUnique({ where: { id: res.body.id } });
     expect(book).toMatchObject({ style_reference_url: null });
   });
+  it('canonicalises a signed style reference to its bare path before storing', async () => {
+    const token = await createUserAndGetToken(app);
+    mockStory(4);
+    const path = '/uploads/style-refs/123e4567-e89b-12d3-a456-426614174000.png';
+
+    const res = await request(app)
+      .post('/api/generate')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        theme: 'deep sea',
+        ageRange: '4-8',
+        characters: [{ role: 'primary', name: 'Luna' }],
+        styleReferenceUrl: `${path}?e=9999999999&s=abc`,
+        pageCount: 4,
+      });
+
+    expect(res.status).toBe(200);
+    const book = await prisma.book.findUnique({ where: { id: res.body.id } });
+    expect(book).toMatchObject({ style_reference_url: path });
+  });
   it('does not strip any field the handler reads from a full-fat body', async () => {
     // The strip guard. `z.object` drops unknown keys and validate() REPLACES
     // req.body with the parsed value, so a field missing from

@@ -87,8 +87,10 @@ services:
       # refuses to boot with any of them blank, naming the missing ones.
       - key: STORAGE_BACKEND
         sync: false
-      # Not secret, but per-deploy: R2_ACCOUNT_ID, R2_BUCKET, R2_PUBLIC_BASE_URL
-      # (e.g. https://pub-<hash>.r2.dev). The two credentials are secrets.
+      # Not secret, but per-deploy: R2_ACCOUNT_ID and R2_BUCKET. The two
+      # credentials are secrets. R2_PUBLIC_BASE_URL is no longer read (#237):
+      # media is served through signed links and a presigned R2 GET. It may
+      # stay set or be removed; the server does not need it.
       - key: R2_ACCOUNT_ID
         sync: false
       - key: R2_BUCKET
@@ -97,8 +99,28 @@ services:
         sync: false
       - key: R2_SECRET_ACCESS_KEY
         sync: false
+      # UNUSED and optional (#237); kept only so an existing dashboard value
+      # does not look orphaned. Safe to delete once the bucket is private.
       - key: R2_PUBLIC_BASE_URL
         sync: false
+      # Signs the /illustrations and /uploads links (#237, ADR-039).
+      # generateValue: Render makes a random value once and keeps it across
+      # deploys. Rotating it invalidates every link in flight, so rotate by
+      # moving the old value into MEDIA_URL_SECRET_PREVIOUS first. Like every
+      # sync:false / generateValue key it can LOOK set while blank: check the
+      # dashboard value, and that the boot log has no MEDIA_URL_SECRET warning.
+      - key: MEDIA_URL_SECRET
+        generateValue: true
+      # Verify-only old secret, for rotation. Never used to sign. Blank = none.
+      - key: MEDIA_URL_SECRET_PREVIOUS
+        sync: false
+      # Rollout stage (#237 decision 6). `lenient` serves unsigned links as
+      # today and only counts them, so this ships with no visible change.
+      # Flip to `enforce` in Task 9 after the API signs every URL. A `value:`
+      # entry on purpose: a Blueprint sync reasserts it. Unset or malformed
+      # means `enforce` in code, so never delete this line to "turn it off".
+      - key: MEDIA_URL_MODE
+        value: lenient
       # Seeds the registration allowlist (F4a / #5) on first start, so the
       # deployment isn't locked out of its own signup. Only applies while the
       # AllowedEmail table is empty; after that, manage it in the admin UI.

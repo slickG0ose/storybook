@@ -225,3 +225,36 @@ describe('CreateBook — draft kept across the sign-in bounce', () => {
     await waitFor(() => expect(sessionStorage.getItem(CREATE_DRAFT_KEY)).toBeNull())
   })
 })
+
+describe('CreateBook — style reference preview fallback', () => {
+  it('shows "Style picture attached" instead of a broken image when the preview fails to load', () => {
+    sessionStorage.setItem(
+      CREATE_DRAFT_KEY,
+      JSON.stringify({
+        v: 1,
+        step: 1,
+        theme: 'adventure',
+        customTheme: '',
+        stylePreset: 'storybook',
+        cast: [{ role: 'primary', name: 'Mira', descriptor: '' }],
+        ageRange: '',
+        additionalDetails: '',
+        previewMode: 'quick',
+        pageCount: 5,
+        styleReferenceUrl: '/uploads/style-refs/gone.jpg?e=1&s=expired',
+        customStyleDescriptor: '',
+      }),
+    )
+    render(<MemoryRouter><CreateBook /></MemoryRouter>)
+    const img = screen.getByRole('img', { name: 'Style reference' })
+    expect(screen.queryByText('Style picture attached')).toBeNull()
+
+    fireEvent.error(img)
+
+    expect(screen.getByText('Style picture attached')).toBeInTheDocument()
+    expect(screen.queryByRole('img', { name: 'Style reference' })).toBeNull()
+    // Dark-mode parity for the one new visible element.
+    expect(screen.getByText('Style picture attached').className).toMatch(/text-gray-600/)
+    expect(screen.getByText('Style picture attached').className).toMatch(/dark:text-gray-300/)
+  })
+})

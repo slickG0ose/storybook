@@ -164,7 +164,7 @@ describe('Narration routes', () => {
             index: 0,
             start: expect.any(Number),
             end: expect.any(Number),
-            url: expect.stringMatching(new RegExp(`^/illustrations/${BOOK_ID}/narration/.+\\.wav$`)),
+            url: expect.stringMatching(new RegExp(`^/illustrations/${BOOK_ID}/narration/[^?]+\\.wav\\?e=\\d+&s=[A-Za-z0-9_-]{43}$`)),
             durationMs: expect.any(Number),
           },
           {

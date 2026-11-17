@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { describeFailure, readErrorMessage } from '../lib/friendlyError'
 import { api } from '../lib/apiBase'
 import { authFetch } from '../lib/authFetch'
+import { useImageFallback } from '../hooks/useImageFallback'
 import { PER_IMAGE_COST_USD, fmtUsd, portraitStepCostNote } from '../lib/cost'
 import { AGE_RANGES } from '../lib/ageRanges'
 import { loadCreateDraft, saveCreateDraft, clearCreateDraft } from '../lib/createDraft'
@@ -97,6 +98,10 @@ export default function CreateBook() {
   const [previewMode, setPreviewMode] = useState<'quick' | 'cover' | 'full'>(() => draft?.previewMode ?? 'quick')
   const [pageCount, setPageCount] = useState<number>(() => draft?.pageCount ?? 5)
   const [styleReferenceUrl, setStyleReferenceUrl] = useState<string>(() => draft?.styleReferenceUrl ?? '')
+  // A draft restored after its signed link expired would paint a broken image; the hook
+  // swaps it for text. There is nothing to refetch (the draft holds no fresh link), and
+  // submitting still works because /api/generate canonicalises the value.
+  const stylePreview = useImageFallback(styleReferenceUrl ? api(styleReferenceUrl) : null)
   const [customStyleDescriptor, setCustomStyleDescriptor] = useState<string>(() => draft?.customStyleDescriptor ?? '')
   const [styleUploading, setStyleUploading] = useState(false)
   const [styleUploadError, setStyleUploadError] = useState('')
@@ -350,11 +355,18 @@ export default function CreateBook() {
 
             {styleReferenceUrl ? (
               <div className="flex gap-3 items-start p-3 rounded-2xl border-2 border-pink-200 dark:border-pink-800 bg-pink-50/40 dark:bg-pink-900/10">
-                <img
-                  src={api(styleReferenceUrl)}
-                  alt="Style reference"
-                  className="w-20 h-20 object-cover rounded-lg shadow-sm shrink-0"
-                />
+                {stylePreview.src ? (
+                  <img
+                    src={stylePreview.src}
+                    alt="Style reference"
+                    onError={stylePreview.onError}
+                    className="w-20 h-20 object-cover rounded-lg shadow-sm shrink-0"
+                  />
+                ) : (
+                  <div className="w-20 h-20 shrink-0 flex items-center justify-center text-center p-1 rounded-lg bg-white/60 dark:bg-gray-800/60">
+                    <span className="text-sm leading-tight text-gray-600 dark:text-gray-300">Style picture attached</span>
+                  </div>
+                )}
                 <div className="flex-1 min-w-0">
                   <label htmlFor="create-detected-style" className="block text-xs font-semibold text-gray-600 dark:text-gray-400 mb-1">
                     Detected style (editable)

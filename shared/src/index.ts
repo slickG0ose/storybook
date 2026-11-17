@@ -13,3 +13,4 @@ export * from './pdf';
 export * from './hero';
 export * from './narration';
 export * from './feedback';
+export * from './media';

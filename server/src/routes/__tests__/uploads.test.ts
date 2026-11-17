@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';
 import type { Express } from 'express';
+import { mediaPath } from '@storybook/shared';
 import { readFile, rm } from 'fs/promises';
 import { join } from 'path';
 import { createTestApp, allowEmail, resetDatabase } from '../../__tests__/setup';
@@ -63,7 +64,7 @@ async function uploadPng(app: Express, token?: string) {
   if (token) req.set('Authorization', `Bearer ${token}`);
   const res = await req;
   const url: unknown = res.body?.url;
-  if (typeof url === 'string') written.push(url.split('/').pop() as string);
+  if (typeof url === 'string') written.push(mediaPath(url).split('/').pop() as string);
   return res;
 }
 
@@ -356,7 +357,7 @@ describe('POST /api/uploads/style-reference — what gets stored', () => {
       .set('Authorization', `Bearer ${token}`)
       .attach('image', bytes, { filename, contentType });
     const url: unknown = res.body?.url;
-    if (typeof url === 'string') written.push(url.split('/').pop() as string);
+    if (typeof url === 'string') written.push(mediaPath(url).split('/').pop() as string);
     return res;
   }
 
@@ -380,8 +381,8 @@ describe('POST /api/uploads/style-reference — what gets stored', () => {
     const res = await upload(photo, 'family.jpg', 'image/jpeg');
 
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ url: expect.stringMatching(/^\/uploads\/style-refs\/[0-9a-f-]{36}\.jpg$/), descriptor: null });
-    const stored = await readFile(join(UPLOADS_DIR, (res.body.url as string).split('/').pop() as string));
+    expect(res.body).toMatchObject({ url: expect.stringMatching(/^\/uploads\/style-refs\/[0-9a-f-]{36}\.jpg\?e=\d+&s=[A-Za-z0-9_-]{43}$/), descriptor: null });
+    const stored = await readFile(join(UPLOADS_DIR, mediaPath(res.body.url as string).split('/').pop() as string));
     expect(stored.toString('latin1')).not.toContain('GPS');
     expect(stored.length).toBeLessThan(photo.length);
   });
@@ -398,7 +399,7 @@ describe('POST /api/uploads/style-reference — what gets stored', () => {
   it('names the extension from the bytes, not the claimed type', async () => {
     const res = await upload(PNG_BYTES, 'x.jpg', 'image/jpeg');
     expect(res.status).toBe(200);
-    expect(res.body.url).toMatch(/\.png$/);
+    expect(mediaPath(res.body.url)).toMatch(/\.png$/);
   });
 
   it('400s a damaged image instead of storing it', async () => {

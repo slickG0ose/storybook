@@ -1,8 +1,9 @@
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import BookDetail from '../BookDetail'
 import { AUTH_EXPIRED_EVENT } from '../../lib/authFetch'
+import { MEDIA_EXPIRED_EVENT } from '../../lib/mediaRefresh'
 import { ToastProvider } from '../../context/ToastContext'
 import type { BookWithPages, BookVersion, IllustrationVersion } from '../../types'
 import type { CartContextValue } from '../../context/CartContext'
@@ -1821,5 +1822,55 @@ describe('BookDetail — Make a cover', () => {
       expect(toastHost().getByText(/Daily limit reached/)).toBeInTheDocument()
     })
     expect(screen.getByRole('button', { name: /make a cover/i })).toBeEnabled()
+  })
+})
+
+describe('BookDetail — expired media links', () => {
+  beforeEach(() => { vi.restoreAllMocks() })
+  afterEach(() => { vi.restoreAllMocks() })
+
+  const bookGets = (calls: FetchCall[]) => calls.filter(c => c.url === '/api/books/book-1' && (c.init?.method ?? 'GET') === 'GET')
+  const expired = () => window.dispatchEvent(new CustomEvent(MEDIA_EXPIRED_EVENT, { detail: { url: 'x' } }))
+
+  it('refetches the book once on an expired-media event, and not again within 30 seconds', async () => {
+    const { calls } = setupFetchMock({})
+    renderBookDetail()
+    await waitFor(() => expect(bookGets(calls)).toHaveLength(1))
+    await screen.findByText('Test Adventure')
+
+    act(() => { expired() })
+    await waitFor(() => expect(bookGets(calls)).toHaveLength(2))
+
+    act(() => { expired() })
+    act(() => { expired() })
+    await new Promise(r => setTimeout(r, 20))
+    expect(bookGets(calls)).toHaveLength(2)
+    // Free reads only: nothing but GETs was issued by the recovery.
+    expect(calls.filter(c => (c.init?.method ?? 'GET') !== 'GET')).toHaveLength(0)
+  })
+
+  it('keeps the "Current" marker in the reader-view history when only the signature differs', async () => {
+    const sign = (path: string, e: number, c: string) => `${path}?e=${e}&s=${c.repeat(43)}`
+    const book: BookWithPages = {
+      ...baseBook,
+      pages: [
+        { id: 1, book_id: 'book-1', page_number: 1, text: 'Page 1 text', illustration_description: 'd', illustration_url: sign('/illustrations/book-1/p1-v2.png', 2_000_000_000, 'a') },
+        { id: 2, book_id: 'book-1', page_number: 2, text: 'Page 2 text', illustration_description: 'd', illustration_url: null },
+      ],
+    }
+    setupFetchMock({
+      book,
+      illustrationVersions: [
+        { url: sign('/illustrations/book-1/p1-v1.png', 2_000_003_600, 'b'), version: 1, created_at: new Date().toISOString(), feedback: null },
+        { url: sign('/illustrations/book-1/p1-v2.png', 2_000_003_600, 'b'), version: 2, created_at: new Date().toISOString(), feedback: null },
+      ],
+    })
+    renderBookDetail()
+    fireEvent.click(await screen.findByRole('button', { name: /reader view/i }))
+    fireEvent.click(await screen.findByRole('button', { name: /^history$/i }))
+
+    await waitFor(() => expect(screen.getByText('Current')).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: /revert to version 1/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /revert to version 2/i })).not.toBeInTheDocument()
   })
 })
