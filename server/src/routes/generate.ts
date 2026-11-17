@@ -4,7 +4,7 @@ import prisma from '../db/prisma';
 import { requireAuth } from '../middleware/requireAuth';
 import { rateLimit, PAID_RATE_LIMITS } from '../middleware/rateLimit';
 import { validate } from '../middleware/validate';
-import { GenerateRequestSchema, type AgeRange } from '@storybook/shared';
+import { GenerateRequestSchema, mediaPath, type AgeRange } from '@storybook/shared';
 import { STORY_MODEL, STORY_THINKING, STORY_CLIENT_OPTIONS } from '../lib/models';
 import { spendGate } from '../middleware/spendGate';
 import { recordUsage, checkQuota } from '../services/spend';
@@ -127,7 +127,9 @@ const router = Router();
  */
 const STYLE_REFERENCE_PATH = /^\/uploads\/style-refs\/[0-9a-f-]{36}\.(jpg|png)$/;
 function ownStyleReferenceUrl(raw: string | undefined): string | null {
-  const value = raw?.trim();
+  // Canonicalise first: the client may echo back a signed URL (?e=&s=), and the
+  // database only ever holds the bare path.
+  const value = raw ? mediaPath(raw.trim()) : '';
   return value && STYLE_REFERENCE_PATH.test(value) ? value : null;
 }
 

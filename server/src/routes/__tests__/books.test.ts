@@ -2700,6 +2700,34 @@ describe('Books API routes', () => {
       expect(page!.illustration_url).toBe('/illustrations/luna-star-garden/page-1.png');
     });
 
+    it('accepts a signed URL and stores the bare path', async () => {
+      const token = await setupDraftWithHistory();
+
+      const res = await request(app)
+        .put('/api/books/luna-star-garden/illustrations/1/revert')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ url: '/illustrations/luna-star-garden/page-1.png?e=9999999999&s=x' });
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ id: 'luna-star-garden', pages: expect.any(Array) });
+      const page = await prisma.page.findUnique({
+        where: { book_id_page_number: { book_id: 'luna-star-garden', page_number: 1 } },
+      });
+      expect(page!.illustration_url).toBe('/illustrations/luna-star-garden/page-1.png');
+    });
+
+    it('still rejects a signed URL for another page’s art (#100)', async () => {
+      const token = await setupDraftWithHistory();
+
+      const res = await request(app)
+        .put('/api/books/luna-star-garden/illustrations/1/revert')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ url: '/illustrations/luna-star-garden/page-2.png?e=9999999999&s=x' });
+
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ error: expect.stringContaining('history') });
+    });
+
     it('rejects an absolute offsite URL', async () => {
       const token = await setupDraftWithHistory();
       const before = await prisma.page.findUnique({

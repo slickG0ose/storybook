@@ -23,6 +23,7 @@ import {
   BookIllustrationRevertRequestSchema,
   BookIllustrationRevertResponseSchema,
   CharacterPortraitGenerateRequestSchema,
+  mediaPath,
   CharacterPortraitGenerateResponseSchema,
   CharacterPortraitVersionListResponseSchema,
   BookPdfRequestSchema,
@@ -1224,7 +1225,8 @@ router.put(
       return res.status(403).json({ error: PUBLISHED_IMMUTABLE_ERROR });
     }
 
-    const { url } = req.body as BookIllustrationRevertRequest;
+    // Canonicalise: the client holds signed URLs (?e=&s=); history and the DB hold bare paths.
+    const url = mediaPath((req.body as BookIllustrationRevertRequest).url);
 
     const pageNum = parseInt(req.params.pageNumber);
 
@@ -1245,7 +1247,7 @@ router.put(
     // still permit another book's art, and would need revisiting the moment the
     // storage layout moves.
     const history = await listIllustrationVersions(book.id, pageNum);
-    if (!history.some(v => v.url === url)) {
+    if (!history.some(v => mediaPath(v.url) === url)) {
       return res
         .status(400)
         .json({ error: "That illustration is not in this page's history" });

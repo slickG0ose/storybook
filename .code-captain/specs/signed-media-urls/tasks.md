@@ -72,6 +72,7 @@ export function mediaExpiresAt(url: string | null | undefined): number | null;
 ---
 
 ### Task 2 — Inbound canonicalisation on the two write paths
+**Status:** Done (2026-11-16)
 **WAITS FOR PR #238 TO MERGE.**
 
 **Zone:** server
