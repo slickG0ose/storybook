@@ -111,6 +111,8 @@ function ownStyleReferenceUrl(raw: string | undefined): string | null {
 
 ### Task 3 — Media URL signer: config, sign, verify
 
+**Status:** Done (2026-11-16)
+
 **Zone:** server
 **Depends on:** Task 1
 **Parallel-safe with:** 7
