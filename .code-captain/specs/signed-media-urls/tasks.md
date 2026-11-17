@@ -381,6 +381,7 @@ export function useMediaRefresh(refetch: () => void, urls: ReadonlyArray<string 
 **OWNER DECIDES WHEN THIS MERGES.** Not before the 48-hour window in spec open question 5, and checklist A passing.
 
 **Zone:** config
+**Status:** Done (2026-11-17, merge pending owner)
 **Depends on:** Tasks 5, 7 and 8 deployed, and checklist A done
 **Parallel-safe with:** none
 **Owner step after merge:** YES. Spec checklist B, items 1, 2, 4 and 5. Rollback: dashboard `MEDIA_URL_MODE=lenient`, then revert.

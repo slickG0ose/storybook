@@ -116,13 +116,15 @@ services:
       # Verify-only old secret, for rotation. Never used to sign. Blank = none.
       - key: MEDIA_URL_SECRET_PREVIOUS
         sync: false
-      # Rollout stage (#237 decision 6). `lenient` serves unsigned links as
-      # today and only counts them, so this ships with no visible change.
-      # Flip to `enforce` in Task 9 after the API signs every URL. A `value:`
-      # entry on purpose: a Blueprint sync reasserts it. Unset or malformed
-      # means `enforce` in code, so never delete this line to "turn it off".
+      # Rollout stage 4 (#237 decision 6): `enforce` is live. A missing,
+      # expired or bad link is a 403. Rollback: set MEDIA_URL_MODE=lenient in
+      # the Render dashboard (instant, restarts the service, lasts only until
+      # the next Blueprint sync), then revert the PR that set this line for a
+      # durable rollback. A `value:` entry on purpose: a Blueprint sync
+      # reasserts it. Never delete this line: unset or malformed means
+      # `enforce` in code anyway.
       - key: MEDIA_URL_MODE
-        value: lenient
+        value: enforce
       # Seeds the registration allowlist (F4a / #5) on first start, so the
       # deployment isn't locked out of its own signup. Only applies while the
       # AllowedEmail table is empty; after that, manage it in the admin UI.

@@ -86,7 +86,7 @@ export default function Privacy() {
           <Link to="/my-books" className="text-purple-600 dark:text-purple-300 underline">Your library</Link>.
         </li>
         <li>
-          Pictures and audio are stored at web addresses that are hard to guess but not password-protected.
+          Pictures, audio and style pictures are shown through private links that stop working within two hours. Anyone you share a link with can open it until then.
         </li>
         <li>The person running this test can see accounts, books and feedback.</li>
       </ul>
