@@ -144,9 +144,10 @@ export function createGeneratedProvider(deps: GeneratedProviderDeps): NarrationP
     if (existing) return existing
 
     const run = (async (): Promise<NarrationReady> => {
-      const cached = await getNarration(target.bookId, target.slot, voiceId, fetchImpl)
-      if (cached.status === 'ready') return cached
       const token = deps.getToken()
+      // With the token, so the author of a private book can read its clips (#237 check 3).
+      const cached = await getNarration(target.bookId, target.slot, voiceId, fetchImpl, token)
+      if (cached.status === 'ready') return cached
       if (!token) throw new ReasonError('generation-unavailable')
       return postNarration(target.bookId, { voiceId, slot: target.slot }, token, fetchImpl)
     })()
@@ -175,7 +176,7 @@ export function createGeneratedProvider(deps: GeneratedProviderDeps): NarrationP
   async function refresh(target: NarrationTarget, voiceId: NarrationVoiceId): Promise<NarrationReady | null> {
     const key = cacheKey(target, voiceId)
     try {
-      const fresh = await getNarration(target.bookId, target.slot, voiceId, fetchImpl)
+      const fresh = await getNarration(target.bookId, target.slot, voiceId, fetchImpl, deps.getToken())
       if (fresh.status !== 'ready') {
         ready.delete(key)
         return null

@@ -69,16 +69,24 @@ export async function fetchVoices(fetchImpl: typeof fetch = fetch): Promise<Narr
   return readJson(res, NarrationVoicesResponseSchema, 'voices')
 }
 
-/** `GET /api/books/:id/narration` — free; never generates. `missing` on a cache miss. */
+/**
+ * `GET /api/books/:id/narration` — free; never generates. `missing` on a cache miss.
+ *
+ * Pass `token` when signed in. The route reads auth only to decide draft visibility, so
+ * without it a private book's clips 404 for its own author and the reader falls back to
+ * the device voice. Signed out, it still serves any published book.
+ */
 export async function getNarration(
   bookId: string,
   slot: NarrationSlot,
   voiceId: NarrationVoiceId,
   fetchImpl: typeof fetch = fetch,
+  token: string | null = null,
 ): Promise<NarrationGetResponse> {
   const query = new URLSearchParams({ voice: voiceId, slot: String(slot) })
   const url = api(`/api/books/${encodeURIComponent(bookId)}/narration?${query.toString()}`)
-  const res = await send(fetchImpl, url, {}, `narration ${slotKey(slot)}`)
+  const init: RequestInit = token ? { headers: { Authorization: `Bearer ${token}` } } : {}
+  const res = await send(fetchImpl, url, init, `narration ${slotKey(slot)}`)
   return readJson(res, NarrationGetResponseSchema, `narration ${slotKey(slot)}`)
 }
 
