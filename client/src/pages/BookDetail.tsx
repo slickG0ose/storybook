@@ -5,6 +5,7 @@ import { useCart } from '../context/CartContext'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../context/ToastContext'
 import { withSiteName } from '../lib/pageTitle'
+import { BookDetailSkeleton } from '../components/Skeletons'
 import { api } from '../lib/apiBase'
 import { authFetch } from '../lib/authFetch'
 import { commerceEnabled } from '../lib/commerce'
@@ -286,7 +287,7 @@ export default function BookDetail() {
   // with no illustration. Declared above the early returns because it is a hook.
   const readerIllustration = useImageFallback(book?.pages?.[currentPage]?.illustration_url)
 
-  if (loading) return <div className="text-center py-20 text-gray-400 text-lg">Loading...</div>
+  if (loading) return <BookDetailSkeleton />
   if (!book && loadFailed) {
     return (
       <div className="max-w-xl mx-auto px-4 py-20 text-center" role="alert">
