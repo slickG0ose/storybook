@@ -118,13 +118,15 @@ The safe fallback for both `MEDIA_URL_MODE` and the secret is the **closed** one
 
 Matching by key and value, not by value alone, keeps the admin orphan list's `path: "/illustrations/<bookId>"` (`server/src/routes/admin.ts:301,309`) unsigned. `Admin.tsx:21-23` takes the last path segment of it as an id. `/hero/...` frames never match the pattern.
 
-**Every route that emits a media URL.** Verified by grepping `res.json` across `server/src/routes`, and against `docs/conventions/call-graph.md`. All are covered by the one middleware:
+**Every route that emits a media URL.** Verified by grepping `res.json` across `server/src/routes`, and against `docs/conventions/call-graph.md`. All are covered by the one middleware. Line numbers are as of 2026-11-16 (they drift; re-grep `res.json` rather than trusting them). Corrected in Task 10: the table originally omitted `GET /api/books/:id/versions` and `POST /api/books/:id/cover`:
 
 | Route | Emits | Site |
 |---|---|---|
 | `GET /api/books`, `GET /api/books/mine`, `GET /api/books/:id` | `cover_url`, `pages[].illustration_url`, `characters[].portrait_url`, `style_reference_url` | `books.ts:107,124,188` |
 | `PUT /api/books/:id/{publish,unpublish}`, `PUT /:id/pages/:n`, `PUT /:id/typography`, `POST /:id/revise`, `PUT /:id/versions/:v/restore` | the same hydrated book | `books.ts:212,239,308,349,546,729` |
 | `POST /api/books/:id/illustrate`, `POST /:id/characters/:i/portrait`, `PUT /:id/illustrations/:n/revert` | the same hydrated book | `books.ts:924,1051,1163` |
+| `POST /api/books/:id/cover` | the same hydrated book (`cover_url`); add-only, 409 if a cover exists | `books.ts:963` (route), `:1028` (`res.json`); covered by the `/api` wrapper |
+| `GET /api/books/:id/versions` | **no media.** Version snapshots carry text and `illustrationDescription` only. Listed because the `/api` wrapper covers it, so nothing to sign and nothing to do | `books.ts:755,780` |
 | `GET /api/books/:id/illustrations/:n`, `GET /:id/characters/:i/portraits` | `[].url` | `books.ts:1103,1083` (from `illustrations.ts:504,604,672`) |
 | `GET` and `POST /api/books/:id/narration` | `segments[].url` | `narration.ts:103,140` (from `services/narration/narration.ts:103`) |
 | `POST /api/generate` | the hydrated book | `generate.ts:355` |

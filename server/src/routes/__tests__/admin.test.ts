@@ -461,6 +461,24 @@ describe('Admin API routes', () => {
       }
     });
 
+    it('omits the reserved `uploads` entry from the orphan list and refuses to delete it (#237)', async () => {
+      const { token: adminToken } = await createUserAndGetToken(app, 'admin@example.com', 'admin');
+      const dir = await trackOrphanDir('uploads');
+
+      const list = await request(app)
+        .get('/api/admin/orphan-illustrations')
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(list.status).toBe(200);
+      expect(list.body.some((o: { path: string }) => o.path === '/illustrations/uploads')).toBe(false);
+
+      const del = await request(app)
+        .delete('/api/admin/orphan-illustrations/uploads')
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(del.status).toBe(400);
+      expect(del.body).toMatchObject({ error: expect.any(String) });
+      expect(existsSync(join(dir, 'placeholder.png'))).toBe(true);
+    });
+
     it('returns 401 without auth', async () => {
       const res = await request(app).delete('/api/admin/orphan-illustrations/anything');
       expect(res.status).toBe(401);

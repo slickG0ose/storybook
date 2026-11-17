@@ -28,7 +28,7 @@ server/
       generate.ts          # Claude story generation
       hero.ts              # GET /api/hero/pool — public hero-rotation frames (no auth, on purpose)
       orders.ts            # checkout flow
-      uploads.ts           # file uploads (illustrations)
+      uploads.ts           # style-reference upload; bytes go through getUploadStorage() (signed on the way out)
       test.ts              # E2E helpers, mounted only when NODE_ENV !== 'production'
     services/
       illustrations.ts     # illustration generation + versioning
@@ -216,7 +216,8 @@ existing book re-rolls, and that is the point.
 - **`process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'`** is set unconditionally — required for the corporate proxy's self-signed cert. The test global setup mirrors this.
 - **CORS:** allowlisted via `CORS_ORIGIN`, parsed by `server/src/lib/cors.ts` (`corsPolicy`). Comma-separated, lowercased, trailing slashes stripped. Unset in non-prod allows any origin (Vite on :5173, Playwright, curl); unset in production warns loudly but **stays permissive on purpose** — a drifted env var must not take a live service offline. Bearer-token auth means this was never the classic cross-site-request hole; what it closes is any page on the web scripting the API from a victim's browser and reading the response.
 - **Body limit:** 10 MB (`app.use(express.json({ limit: '10mb' }))`). AI-generated content + illustrations can be large.
-- **Static assets:** `/illustrations/*`, `/uploads/*` and `/hero/*` are served from `server/public/`. The first two hold runtime-generated content and are gitignored; `server/public/hero/` is the opposite — hand-derived, byte-budgeted hero-rotation frames, re-included in `.gitignore` and committed. See `server/public/hero/README.md`.
+- **Media (`/illustrations/*`, `/uploads/*`) is signed, not static.** Both roots are mounted by `mountMedia()` in `middleware/media.ts` (rate limit, signature gate, disk, presign redirect), and the bytes live behind the storage seam ([data.md §Illustration storage](data.md#illustration-storage)). Every JSON response under `/api` passes through `signMediaResponses`, the single outbound choke point, which signs `illustration_url`, `cover_url`, `portrait_url`, `style_reference_url` and `url` values on a copy of the body. **Do not sign in a route.** A new route that returns a media URL under one of those keys is covered for free; under any other key it is **not**, so use one of the five or add the key to `SIGNED_KEYS` with a test. **Inbound rule:** any new write path that accepts a media URL from the client must store `mediaPath(url)` (from `@storybook/shared`), never the raw value, because the client holds signed URLs. Today that is `PUT /api/books/:id/illustrations/:n/revert` and `POST /api/generate` (`styleReferenceUrl`). Media keys are immutable: write a new key, never overwrite one. Rollout is incomplete: production serves `lenient` and the bucket is still public until the owner finishes the rollout (spec `signed-media-urls`, stages 4 and 5).
+- **Hero frames:** `/hero/*` is plain `express.static` from `server/public/hero/`: hand-derived, byte-budgeted hero-rotation frames, committed and public on purpose, never signed. See `server/public/hero/README.md`.
 - **`/api/_test`** is mounted **only** when `NODE_ENV !== 'production'`. Handlers themselves also re-check the env to belt-and-suspender.
 - **Auto-snapshot on boot:** `snapshotDb()` copies `dev.db` to `.backups/dev-{timestamp}.db` on every `npm run dev`. 7-day retention. No-op on first run before any DB exists.
 

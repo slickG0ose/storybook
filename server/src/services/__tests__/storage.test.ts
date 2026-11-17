@@ -40,6 +40,9 @@ const {
   readR2Config,
   resolveBackendName,
   ILLUSTRATIONS_DIR,
+  UPLOADS_DIR,
+  RESERVED_TOP_LEVEL_KEYS,
+  getUploadStorage,
 } = await import('../storage');
 
 type Cmd = { constructor: { name: string }; input: Record<string, unknown> };
@@ -438,5 +441,31 @@ describe('getStorage', () => {
   it('rejects an unknown backend name instead of silently using local', () => {
     vi.stubEnv('STORAGE_BACKEND', 's3');
     expect(() => getStorage()).toThrow(/STORAGE_BACKEND/);
+  });
+});
+
+describe('getUploadStorage (#237, decision 5)', () => {
+  it('reserves `uploads` as a top-level key', () => {
+    expect(RESERVED_TOP_LEVEL_KEYS).toEqual(['uploads']);
+  });
+
+  it('is a LocalStorage rooted at UPLOADS_DIR under local', () => {
+    vi.stubEnv('STORAGE_BACKEND', 'local');
+    __resetStorageForTests();
+    const u = getUploadStorage();
+    expect(u).toBeInstanceOf(LocalStorage);
+    expect(u).toBe(getUploadStorage());
+    expect((u as unknown as { root: string }).root).toBe(UPLOADS_DIR);
+  });
+
+  it('is an R2Storage prefixing uploads/ under r2, with a UPLOADS_DIR fallback', async () => {
+    vi.stubEnv('STORAGE_BACKEND', 'r2');
+    for (const [k, v] of Object.entries(R2_ENV)) vi.stubEnv(k, v);
+    __resetStorageForTests();
+    send.mockResolvedValue({});
+    const u = getUploadStorage();
+    expect(u).toBeInstanceOf(R2Storage);
+    await u.put('style-refs/x.png', Buffer.from('b'), 'image/png');
+    expect(((send.mock.calls[0][0]) as Cmd).input).toMatchObject({ Bucket: 'storybook-art', Key: 'uploads/style-refs/x.png' });
   });
 });

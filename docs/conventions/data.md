@@ -131,7 +131,9 @@ This file pre-dates the Prisma migration. It exports `getStore` / `resetStore` /
 
 ## Illustration storage
 
-The database holds illustration **URLs**, never image bytes. The bytes — page art, covers, character portraits, every version of each — live behind a storage seam, and where that is depends on one env var. Decisions: ADR-025 (seam), ADR-026 (redirect serving, `r2.dev`), ADR-027 (R2 + `@aws-sdk/client-s3`) in `.code-captain/product/decisions.md`.
+The database holds illustration **URLs**, never image bytes. The bytes — page art, covers, character portraits, every version of each — live behind a storage seam, and where that is depends on one env var. Decisions: ADR-025 (seam), ADR-026 (redirect serving, `r2.dev`; superseded for serving by the signed-links design below), ADR-027 (R2 + `@aws-sdk/client-s3`) in `.code-captain/product/decisions.md`. Signed media links: [spec `signed-media-urls`](../../.code-captain/specs/signed-media-urls/spec.md) (#237); its ADRs are filed separately.
+
+> **Rollout state (as of 2026-11-17, update this when it changes).** The mechanism below is in the code. Production still ships `MEDIA_URL_MODE: lenient` in `render.yaml`, so unsigned links still work there, and the R2 bucket is still **public-read** (the `r2.dev` subdomain is still allowed). **Enforcement and the private bucket are both pending** (spec stages 4 and 5). Read every "private" and "enforce" sentence below as describing the target state until those two steps are done and recorded on #237.
 
 ### The seam
 
@@ -139,7 +141,9 @@ The database holds illustration **URLs**, never image bytes. The bytes — page 
 
 - **Keys** are the stored web path minus `/illustrations/`: `<bookId>/page-4-v2.png`, `<bookId>/portrait-<slot>.png`. Key validation lives in `storage.ts` and nowhere else — it rejects `..`, a leading `/`, a backslash, NUL, and a `.` segment. It is the path-traversal fence for both backends and for the admin orphan endpoints.
 - **Stored URLs never change.** `Page.illustration_url` / `Book.cover_url` stay relative (`/illustrations/<bookId>/<file>.png`) under either backend, so switching backends needs no migration and a row written under one is readable under the other.
-- `public/uploads` and `public/hero` are **not** behind the seam. Hero frames are committed and bundled on purpose (ADR-014).
+- **Style-reference uploads** (`/api/uploads/style-reference`) go through the same seam under the reserved `uploads/` key prefix: `getUploadStorage()` returns the same backend with that prefix, so under `r2` an upload lives in the same bucket at `uploads/style-refs/<uuid>.jpg`. Served at `/uploads/<key>`. `uploads` is a reserved first segment: `/illustrations/uploads/...` is never served or signed (`RESERVED_TOP_LEVEL_KEYS` in `storage.ts`), so a book id can never collide with it. `public/uploads` on disk is the local backend for that root.
+- `public/hero` is **not** behind the seam. Hero frames are committed, bundled and public on purpose (ADR-014); they are never signed.
+- **Immutable keys.** A media key is never overwritten in place. Signed links and browser caches can hold the old bytes for up to two TTL windows, so an in-place overwrite would serve stale art. Page art and portraits get a new versioned key per change (`page-4-v2.png`), narration keys include the text hash, and `cover.png` is written once per book (creation, or the add-only `POST /api/books/:id/cover`, which answers 409 if a cover already exists, so no issued link ever points at bytes that later change). A new write path that wants to replace bytes must mint a new key instead.
 
 ### Backends: `STORAGE_BACKEND`
 
@@ -150,7 +154,7 @@ The database holds illustration **URLs**, never image bytes. The bytes — page 
 
 Any other value **throws at boot** — a typo must not quietly select ephemeral disk in production. The backend is resolved once at startup (`getStorage()` in `server/src/index.ts`); under `r2` the boot log says `[storage] backend: r2 (local disk is the read fallback)`. Changing the var takes a restart.
 
-Under `r2`, all five `R2_*` vars are required. If any is missing or blank the server **refuses to start** with `STORAGE_BACKEND=r2 requires <VAR, VAR> to be set (missing or blank).` — it names the variables, never a value, so the secret can't reach a log.
+Under `r2`, the four `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` vars are required (`R2_PUBLIC_BASE_URL` is not). If any is missing or blank the server **refuses to start** with `STORAGE_BACKEND=r2 requires <VAR, VAR> to be set (missing or blank).` — it names the variables, never a value, so the secret can't reach a log.
 
 | Var | What it is |
 |-----|-----------|
@@ -158,7 +162,7 @@ Under `r2`, all five `R2_*` vars are required. If any is missing or blank the se
 | `R2_BUCKET` | Bucket name |
 | `R2_ACCESS_KEY_ID` | R2 API token access key (secret) |
 | `R2_SECRET_ACCESS_KEY` | R2 API token secret (secret) |
-| `R2_PUBLIC_BASE_URL` | Public read URL of the bucket, e.g. `https://pub-<hash>.r2.dev`. Trailing slashes are stripped. |
+| `R2_PUBLIC_BASE_URL` | **Optional and unused.** No code reads it any more (#237): serving is a signed link plus a presigned R2 GET. An existing dashboard value is harmless; delete it once the bucket is private. |
 
 ### Seed-book art
 
@@ -179,25 +183,46 @@ New writes under `r2` go **only** to R2.
 
 ### Serving
 
-`/illustrations/*` is `express.static` against local disk **first**, then `server/src/middleware/illustrationRedirect.ts`:
+`/illustrations/*` and `/uploads/*` are mounted by `mountMedia()` in `server/src/middleware/media.ts`. Per root, in this order: **per-IP rate limit -> `mediaGate` (verify the signed link) -> `express.static` against local disk -> `mediaPresignRedirect`**. The verifier runs for every backend, so `local` is gated exactly like `r2`.
 
-- **`local`:** a disk miss falls through to Express's default 404 — the pre-seam behaviour.
-- **`r2`:** a disk miss on a GET/HEAD answers **302 → `${R2_PUBLIC_BASE_URL}/<key>`**. Image bytes never cross the Render instance. The redirect host is always `R2_PUBLIC_BASE_URL`; an invalid key is a 404, never a redirect. The handler does not check that the key exists in R2 — a genuinely missing image 302s and the bucket answers the 404.
+- **Disk hit:** served by `express.static` with `Cache-Control: private, max-age=<seconds until the link expires>`, so no cache outlives the link.
+- **Disk miss, `local`:** falls through to Express's default 404.
+- **Disk miss, `r2`:** `302` to a short presigned R2 GET (`R2Storage.presignGet`). Image bytes never cross the Render instance. The `Location` host is always the R2 endpoint, and an invalid key is a 404, never a redirect. The handler does not check the key exists in R2: a genuinely missing object 302s and R2 answers the 404.
+- **Signature format:** a link is `/<root>/<key>?e=<unix-seconds>&s=<sig>`, where `s` is base64url HMAC-SHA256 over `v1\n<root>\n<key>\n<e>`. Code: `server/src/lib/mediaUrl.ts` (pure: sign and verify); shared helpers `mediaPath` / `mediaExpiresAt` in `shared/src/media.ts`.
+- **Windows:** `e = (floor(t/W)+2)*W`, so every link in a window shares one expiry and a link lives between W and 2W (default 60 to 120 minutes). A link whose `e` is more than 2W (+60 s slack) ahead is refused (`too-far`).
+- **Outbound signing:** `signMediaResponses` is mounted at `app.use('/api', ...)` ahead of every router. It signs the keys `illustration_url`, `cover_url`, `portrait_url`, `style_reference_url` and `url` when the value is a `/illustrations/` or `/uploads/` path, on a copy of the body. Stored rows always hold the canonical unsigned path (`mediaPath()`).
+- **Per-IP limit:** one `express-rate-limit` budget per client across **both** roots, checked **before** the gate so bad links cost the same as good ones. `MEDIA_RATE_LIMIT_PER_MINUTE`, default 600, valid 60 to 100000 (anything else falls back to 600 with a warning, never unlimited). Over budget: `429 { error: 'Too many requests. Try again in a minute.' }`, `no-store`. In-process store (ADR-018), keyed on `req.ip` (correct only with `TRUST_PROXY_HOPS`, ADR-030).
 
-This needs the bucket to be **public-read**. For the alpha that is R2's `r2.dev` development subdomain, which **Cloudflare rate-limits and says not to use in production**. A custom domain in front of the bucket is the upgrade path, tracked in [#192](https://github.com/slickG0ose/storybook/issues/192) with version pruning. The art is storefront content and book IDs are UUIDs, so a public bucket exposes nothing that isn't already public.
+| Var | Default | Meaning |
+|-----|---------|---------|
+| `MEDIA_URL_SECRET` | dev: a committed constant; production unset or under 32 chars: random per process | HMAC key. In production, a missing key means links break on every restart, with a boot warning that names the var. `render.yaml` uses `generateValue: true`. |
+| `MEDIA_URL_SECRET_PREVIOUS` | none | Verify-only old key, for rotation. Move the old value here before replacing `MEDIA_URL_SECRET`. Never used to sign. |
+| `MEDIA_URL_TTL_MINUTES` | `60` | Window W, integer 5 to 1440; otherwise 60 with a warning. |
+| `MEDIA_URL_MODE` | `enforce` | `enforce` or `lenient`. Unset or malformed means `enforce` (fails closed), so never delete the `render.yaml` line to "turn it off". |
+| `MEDIA_RATE_LIMIT_PER_MINUTE` | `600` | See above. e2e raises it to `100000`. |
+
+**`enforce`:** a missing, malformed, expired or wrong-signature link is `403 { error: 'Link expired' }` with `no-store`. That includes an invalid key: no valid link can exist for one, so under `enforce` it is always a 403. The 404-for-an-invalid-key behaviour only appears under `lenient`, where the gate lets the request through.
+
+**`lenient`** (rollout stage): the gate lets unsigned or invalid links through and counts them. The log line `[media] lenient: served N request(s) without a valid link (last reason: <reason>)` fires on the **1st and every 100th** such request since boot (never the query string), and `getLenientMediaCount()` exposes the counter. A valid link is still verified and still gets the bounded `Cache-Control`. e2e runs `enforce` (it raises only the rate limit); production currently runs `lenient`.
+
+**Why private by default.** Illustrations of a book a user has not published, and the style photo they uploaded, belong to that user. The old design relied on unguessable UUID paths and a public bucket, so any leaked URL worked forever and could not be revoked. Short-lived signed links make a leak expire, and a private bucket removes the path around the signature. Book ids being UUIDs is a speed bump, not the control. Seed and published-book art goes through the same signer for simplicity (one rule, no per-book branch).
+
+**Pending, stated plainly:** production is `lenient` and the bucket is public-read today. Until `MEDIA_URL_MODE` is flipped to `enforce` (Task 9, owner decides when) and the R2.dev subdomain is disallowed (Task 11, owner only), previously leaked URLs keep working. A custom domain in front of the bucket is not part of this design and must **not** be connected, since it would be a second public path ([#192](https://github.com/slickG0ose/storybook/issues/192) tracks version pruning).
 
 ### Operator setup: switching production to R2
 
-About 20 minutes. Do every step before flipping `STORAGE_BACKEND` — the server won't boot under `r2` with a blank `R2_*` var.
+About 20 minutes. Do every step before flipping `STORAGE_BACKEND` — the server won't boot under `r2` with a blank required `R2_*` var.
 
 1. **Create the bucket.** Cloudflare dashboard → R2 → Create bucket. Note the name (`R2_BUCKET`) and, from the R2 overview page, the Account ID (`R2_ACCOUNT_ID`).
-2. **Enable public access.** Bucket → Settings → Public access → R2.dev subdomain → Allow. Copy the `https://pub-<hash>.r2.dev` URL (`R2_PUBLIC_BASE_URL`).
+2. **Leave public access OFF.** Do not enable the R2.dev subdomain and do not connect a custom domain: the server reaches the bucket with the S3 credentials and hands the browser short presigned links. (Production's bucket was created public-read under the older design and is still public until the owner disallows it; see [Rollback](#operator-setup-switching-production-to-r2) and spec stage 5.)
 3. **Create an API token.** R2 → Manage R2 API Tokens → Create API token, permission **Object Read & Write**, scoped to **this bucket only**. Copy the Access Key ID and Secret Access Key (`R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`) — the secret is shown once.
-4. **Set the five `R2_*` vars in Render.** `storybook-server` → Environment. They are declared `sync: false` in `render.yaml`, so they appear listed but **blank** — a listed key is not a set key; check each value.
+4. **Set the four `R2_*` vars in Render** (`R2_ACCOUNT_ID`, `R2_BUCKET`, the two credentials; `R2_PUBLIC_BASE_URL` is optional and unused). `storybook-server` → Environment. They are declared `sync: false` in `render.yaml`, so they appear listed but **blank** — a listed key is not a set key; check each value.
 5. **Flip `STORAGE_BACKEND` to `r2`** in the same Environment tab and save (this restarts the service). It is also `sync: false`, so a later Blueprint sync will not reset it; blank means `local`, which is why merging the Blueprint changed nothing.
-6. **Verify.** Check the deploy log for `[storage] backend: r2` and no `STORAGE_BACKEND=r2 requires …` error. Generate a book, confirm its pages render, then **restart the service** (Manual Deploy → Restart) and confirm they still render. `curl -sI https://<service>/illustrations/<bookId>/page-1.png` should answer `302` with a `Location` on your `r2.dev` URL. The fixture book's art should still load (served from disk).
+6. **Verify.** Check the deploy log for `[storage] backend: r2`, no `STORAGE_BACKEND=r2 requires …` error and no `MEDIA_URL_SECRET` warning. Then run the owner checklists in the spec, not an ad hoc check: **checklist A** (after signed URLs ship: private book renders, signed link 302s to a presigned R2 URL, `Range` gives `206`, seed art from disk, a style upload survives a restart) and **checklist B** (after enforce and the bucket flip: unsigned and tampered links are `403`, the old `r2.dev` URL stops returning the image). Both live in [spec.md](../../.code-captain/specs/signed-media-urls/spec.md) under Decision 6. **Neither has been run in production yet.**
 
-**Rollback:** set `STORAGE_BACKEND` back to `local` (or blank). Books generated while on `r2` will then 404 their art until it is switched back — the bytes stay in the bucket.
+**Making the bucket private (stage 5, owner only).** Cloudflare dashboard → R2 → the bucket → Settings → Public access → R2.dev subdomain → **Disallow**, and confirm no custom domain is connected. Run checklist B items 3, 4 and 6. **Rollback:** re-allow the R2.dev subdomain (instant, no code involved). Enforce (`MEDIA_URL_MODE`) and the bucket flip are independent, and the bucket goes private last on purpose.
+
+**Backend rollback:** set `STORAGE_BACKEND` back to `local` (or blank). Books generated while on `r2` will then 404 their art until it is switched back — the bytes stay in the bucket.
 
 ## Things to NEVER do without user confirmation (CLAUDE.md guardrails)
 

@@ -8,6 +8,7 @@ import { createTestApp, allowEmail, resetDatabase } from '../../__tests__/setup'
 import prisma from '../../db/prisma';
 import { COST_CENTS } from '../../services/spend';
 import { resetRateLimits } from '../../middleware/rateLimit';
+import { __resetStorageForTests } from '../../services/storage';
 
 // Stub the Anthropic SDK at the module boundary, as books/generate do. The
 // style-reference route asks Claude to describe the uploaded image; nothing
@@ -18,6 +19,24 @@ vi.mock('@anthropic-ai/sdk', () => {
     messages = { create: (...args: unknown[]) => mockCreate(...args) };
   }
   return { default: MockAnthropic };
+});
+
+// Mock the S3 client: under STORAGE_BACKEND=r2 nothing may reach R2.
+const s3Send = vi.fn();
+vi.mock('@aws-sdk/client-s3', () => {
+  class Command {
+    constructor(public input: Record<string, unknown>) {}
+  }
+  return {
+    S3Client: class {
+      send = s3Send;
+    },
+    PutObjectCommand: class PutObjectCommand extends Command {},
+    GetObjectCommand: class GetObjectCommand extends Command {},
+    HeadObjectCommand: class HeadObjectCommand extends Command {},
+    ListObjectsV2Command: class ListObjectsV2Command extends Command {},
+    DeleteObjectsCommand: class DeleteObjectsCommand extends Command {},
+  };
 });
 
 // A 1x1 transparent PNG — the smallest thing multer's filter will accept.
@@ -426,5 +445,80 @@ describe('POST /api/uploads/style-reference — what gets stored', () => {
     const res = await upload(PNG_BYTES, 'x.png', 'image/png');
     expect(res.status).toBe(500);
     expect(JSON.stringify(res.body)).not.toContain('sk-ant-secret');
+  });
+});
+
+describe('POST /api/uploads/style-reference — storage seam (#237)', () => {
+  let app: Express;
+  let token: string;
+
+  beforeEach(async () => {
+    await resetDatabase();
+    app = createTestApp();
+    mockCreate.mockReset();
+    s3Send.mockReset();
+    s3Send.mockResolvedValue({});
+    resetRateLimits();
+    ({ token } = await createUserAndGetToken(app));
+    vi.stubEnv('ANTHROPIC_API_KEY', undefined);
+    vi.stubEnv('STORAGE_BACKEND', 'r2');
+    vi.stubEnv('R2_ACCOUNT_ID', 'acct123');
+    vi.stubEnv('R2_BUCKET', 'storybook-art');
+    vi.stubEnv('R2_ACCESS_KEY_ID', 'AKIA-test');
+    vi.stubEnv('R2_SECRET_ACCESS_KEY', 'secret');
+    __resetStorageForTests();
+  });
+
+  afterEach(async () => {
+    vi.unstubAllEnvs();
+    __resetStorageForTests();
+    resetRateLimits();
+    for (const filename of written.splice(0)) {
+      await rm(join(UPLOADS_DIR, filename), { force: true });
+    }
+  });
+
+  function seg(marker: number, payload: Buffer): Buffer {
+    const head = Buffer.alloc(4);
+    head[0] = 0xff;
+    head[1] = marker;
+    head.writeUInt16BE(payload.length + 2, 2);
+    return Buffer.concat([head, payload]);
+  }
+
+  it('PutObjects the STRIPPED bytes under uploads/style-refs/<uuid>.jpg, and writes nothing to disk', async () => {
+    const photo = Buffer.concat([
+      Buffer.from([0xff, 0xd8]),
+      seg(0xe1, Buffer.from('Exif\0\0GPS:51.5007N,0.1246W', 'latin1')),
+      seg(0xdb, Buffer.alloc(65, 1)),
+      seg(0xda, Buffer.alloc(10, 2)),
+      Buffer.from([0x11, 0x22, 0xff, 0xd9]),
+    ]);
+
+    const res = await request(app)
+      .post('/api/uploads/style-reference')
+      .set('Authorization', `Bearer ${token}`)
+      .attach('image', photo, { filename: 'family.jpg', contentType: 'image/jpeg' });
+    const url: unknown = res.body?.url;
+    if (typeof url === 'string') written.push(mediaPath(url).split('/').pop() as string);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      url: expect.stringMatching(/^\/uploads\/style-refs\/[0-9a-f-]{36}\.jpg\?e=\d+&s=[A-Za-z0-9_-]{43}$/),
+      descriptor: null,
+    });
+    expect(s3Send).toHaveBeenCalledTimes(1);
+    const input = (s3Send.mock.calls[0][0] as { input: Record<string, unknown> }).input;
+    const filename = mediaPath(res.body.url as string).split('/').pop() as string;
+    expect(input).toMatchObject({
+      Bucket: 'storybook-art',
+      Key: `uploads/style-refs/${filename}`,
+      ContentType: 'image/jpeg',
+    });
+    const body = input.Body as Buffer;
+    expect(body.toString('latin1')).not.toContain('GPS');
+    expect(body.toString('latin1')).not.toContain('Exif');
+    expect(body.length).toBeLessThan(photo.length);
+    await expect(readFile(join(UPLOADS_DIR, filename))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 });

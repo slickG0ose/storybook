@@ -7,9 +7,11 @@
 # Free plan caveats (read these before clicking deploy):
 #   - Web service spins down after 15 min idle. Cold-start ~30s on wake.
 #   - Web service filesystem is ephemeral. Runtime-generated illustration
-#     PNGs are LOST on next deploy or restart. Committed demo-seed PNGs
-#     and the committed seed-book JPEGs in server/public/illustrations/
-#     ship inside the deploy bundle and survive. Long-term fix: blob storage (R2/S3/Cloudinary).
+#     PNGs and style-reference uploads written to local disk are LOST on the
+#     next deploy or restart, so production is meant to run STORAGE_BACKEND=r2
+#     (a dashboard value, below) and keep them in Cloudflare R2 (docs/conventions/data.md, Illustration storage).
+#     Committed demo-seed PNGs and the committed seed-book JPEGs in
+#     server/public/illustrations/ ship inside the deploy bundle and survive.
 #   - Postgres is NOT a Render service any more. The free instance was
 #     retired ahead of its 2026-09-14 deletion date and the database now
 #     lives on Neon's free tier, so DATABASE_URL is set by hand in the

@@ -29,6 +29,8 @@ const proxy = {
   // is server-relative in dev, so without this the rotating layer would load Vite's
   // index.html, fire `onerror`, and the pool would silently skip every frame.
   '/hero': API_ORIGIN,
+  // Style-reference uploads are server-relative too; without this the style-picture preview 404s into index.html.
+  '/uploads': API_ORIGIN,
 }
 
 export default defineConfig({

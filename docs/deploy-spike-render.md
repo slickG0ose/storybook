@@ -118,7 +118,7 @@ If you see `bash: line N: cd: server: No such file or directory` in a build log 
 
 ### 1. Runtime-generated illustrations don't survive restarts (BLOCKER for a real beta)
 
-> **Resolved in code by the R2 storage seam** ([spec](../.code-captain/specs/blob-storage-r2/spec.md), ADR-025 to ADR-027). It takes effect only once `STORAGE_BACKEND=r2` is set in Render with a bucket behind it — until then the behaviour below is still what production does. Operator setup: [`docs/conventions/data.md`](conventions/data.md) §Illustration storage. Version pruning and the custom-domain upgrade: [#192](https://github.com/slickG0ose/storybook/issues/192).
+> **Resolved in code by the R2 storage seam** ([spec](../.code-captain/specs/blob-storage-r2/spec.md), ADR-025 to ADR-027). It takes effect only once `STORAGE_BACKEND=r2` is set in Render with a bucket behind it — until then the behaviour below is still what production does. Operator setup: [`docs/conventions/data.md`](conventions/data.md) §Illustration storage. How media is now served (signed links, presigned R2 GET, rollout state): [`docs/conventions/data.md`](conventions/data.md) §Serving. Version pruning and the custom-domain upgrade: [#192](https://github.com/slickG0ose/storybook/issues/192).
 
 Render free web service has **ephemeral filesystem** — no persistent disk on the free plan. The server writes generated PNGs to `server/public/illustrations/{book-id}/page-N.png`. On the next restart (deploy, crash, or 15-min-idle spin-down + cold-start), those files are gone.
 

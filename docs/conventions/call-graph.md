@@ -49,6 +49,11 @@ called from; change a route's shape and this tells you the single file to update
 | `pages/Admin.tsx` | all of `/api/admin/*` (includes `/api/admin/feedback[/:id]`) |
 | `lib/feedback.ts` | `POST /api/feedback` (called from `components/FeedbackDialog.tsx`) |
 
+Media bytes are a fifth, non-`api()` edge: `<img>`/`<audio>` load `/illustrations/*` and
+`/uploads/*` straight from the server origin, through `components/FallbackImage.tsx` and
+`hooks/useImageFallback.ts`. `lib/mediaRefresh.ts` (`useMediaRefresh`) is the recovery path
+when a link expires; `Home`, `MyBooks` and `BookDetail` call it.
+
 Rules this table encodes:
 
 - **`components/` never calls `api()` directly.** It reaches the network through a
@@ -70,12 +75,20 @@ Fan-out per router. `db/prisma` is elided where a route only reads through a ser
 | `generate` | `illustrations`, `imagePin`, `parseAiJson`, `spend` | `apiKeys`, `models` | `requireAuth`, `spendGate` |
 | `cart` | — | `availability` | `validate` |
 | `orders` | — | `availability` | `validate` |
-| `uploads` | `spend` | `apiKeys` | `requireAuth`, `spendGate`, `rateLimit` |
-| `admin` | `allowlist`, `spend` | `heroPool` | `validate` |
+| `uploads` | `spend`, `storage` | `apiKeys`, `imageSanitize`, `models` | `requireAuth`, `spendGate`, `rateLimit` |
+| `admin` | `allowlist`, `spend`, `storage` | `heroPool` | `rateLimit`, `validate` |
 | `hero` | — | `heroPool` | `validate` |
 | `narration` | `narration/narration`, `narration/synthesizer` (`isNarrationConfigured`) | — | `requireAuth`, `spendGate`, `validate` |
 | `feedback` | — | — | `requireAuth`, `rateLimit`, `validate` |
 | `test` | `allowlist` | — | `validate` |
+
+Not a router, but the other half of every media URL: `index.ts` mounts two things from
+`middleware/media.ts`. `mountMedia(app)` serves `/illustrations/*` and `/uploads/*`
+(rate limit → `mediaGate` → static → presign redirect) and depends on `lib/mediaUrl`
+(verify) and `services/storage` (`getStorage`, `getUploadStorage`, `R2Storage.presignGet`).
+`app.use('/api', signMediaResponses)` runs ahead of every router and signs their JSON
+through `lib/mediaUrl`, so **no router imports it** and none needs to. `routes/generate`
+and `routes/books` import `mediaPath` from `@storybook/shared` for the inbound rule.
 
 ### Fan-in — change here, check there
 
@@ -92,6 +105,11 @@ Ranked by blast radius. These are the modules where a signature change is not lo
    `middleware/requireAuth`, `routes/books`, and `routes/admin` (see inversion below).
 5. **`lib/availability.ts`** — `books`, `cart`, `orders`. Stock/publish-state logic that
    the checkout path depends on three times over.
+
+Also not local: **`services/storage.ts`** (`uploads`, `admin`, `services/{illustrations,imagePin,pdf,providers/fal}`,
+`services/narration/{narration,synthesizer}`, `lib/mediaUrl` (`isValidKey`), `middleware/media`, `index.ts`, `seed/seedArt` — owns key validation, the
+path-traversal fence) and **`lib/mediaUrl.ts`** (`middleware/media` only, but its signature
+format is a contract with the client's `mediaExpiresAt` in `shared/src/media.ts`).
 
 ### Two edges that look wrong and are not
 
@@ -123,6 +141,12 @@ validate at runtime: `client/src/lib/cartCache.ts` (`CartGetResponseSchema`),
 schemas to `validate()` (`books`, `cart`, `orders`, `admin`, `hero`, `test`, `generate`,
 `narration`, `feedback`), plus `client/src/lib/narration/api.ts`, which `safeParse`s all
 three narration responses.
+
+**`shared/src/media.ts`** (`mediaPath`, `mediaExpiresAt`, `MEDIA_ROOTS`, `MEDIA_PATH_RE`,
+`MEDIA_EXPIRES_PARAM`, `MEDIA_SIG_PARAM`) is plain functions, no schema, imported directly by
+`server/src/lib/mediaUrl.ts`, `server/src/middleware/media.ts`, `server/src/routes/{books,generate}.ts`,
+and on the client `lib/mediaRefresh.ts`, `hooks/useImageFallback.ts`, `pages/BookDetail.tsx` and
+`components/BookSpread.tsx`. Client and server must agree on the `?e=&s=` format.
 
 One further exception, for the same underlying reason — it needs a **value** at
 runtime, not a type: `client/src/lib/ageRanges.ts` re-exports `AGE_RANGES`, so it cannot

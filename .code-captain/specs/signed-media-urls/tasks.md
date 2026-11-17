@@ -270,6 +270,8 @@ export function signMediaResponses(req: Request, res: Response, next: NextFuncti
 ---
 
 ### Task 6 — Style-reference uploads behind the storage seam
+**Status:** Done (2026-11-17)
+
 **WAITS FOR PR #238 TO MERGE.**
 
 **Zone:** server
@@ -350,6 +352,8 @@ export function useMediaRefresh(refetch: () => void, urls: ReadonlyArray<string 
 
 ### Task 8 — e2e: expired link recovers; unsigned link refused
 
+**Status:** Done (2026-11-17)
+
 **Zone:** e2e
 **Depends on:** Tasks 5 and 7
 **Parallel-safe with:** 10
@@ -382,6 +386,7 @@ export function useMediaRefresh(refetch: () => void, urls: ReadonlyArray<string 
 **Owner step after merge:** YES. Spec checklist B, items 1, 2, 4 and 5. Rollback: dashboard `MEDIA_URL_MODE=lenient`, then revert.
 
 **Files to add or change:**
+- **Privacy copy ships with this task or after it (moved from Task 10, 2026-11-17).** `client/src/pages/Privacy.tsx:89` changes to the "private links that stop working within two hours" sentence only together with, or after, the enforce switch, and is only *fully* true after Task 11 (bucket private): while the bucket is public-read, an old `r2.dev` URL still works indefinitely. Update `Privacy.test.tsx` if it pins the sentence. The proposed sentence is in Task 10's hand-back.
 - `render.yaml`: `MEDIA_URL_MODE` `value: enforce`, with the comment updated to name the dashboard rollback.
 - `server/src/__tests__/mediaRenderYaml.test.ts`: tighten to `enforce`.
 
@@ -394,6 +399,7 @@ export function useMediaRefresh(refetch: () => void, urls: ReadonlyArray<string 
 **Zone:** docs, plus one client copy edit
 **Depends on:** Tasks 4 to 7
 **Parallel-safe with:** 8
+**Status:** Done (2026-11-17) with two holds: `client/src/pages/Privacy.tsx` and `CLAUDE.md` were NOT edited (see hand-back). The rest shipped; `data.md` states rollout state plainly (prod `lenient`, bucket still public-read).
 **Owner step after merge:** none
 
 **Files to add or change:**

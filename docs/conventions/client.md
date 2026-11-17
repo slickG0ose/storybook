@@ -150,6 +150,16 @@ const res = await fetch('/api/books');
 
 **Never** hardcode `http://localhost:3001` in client code — it breaks the production build (where client and server may be on different hosts) and breaks the GitHub Pages subpath deployment.
 
+## Media URLs are signed and expire
+
+The API returns `/illustrations/...` and `/uploads/...` URLs with `?e=<expiry>&s=<signature>` (spec `signed-media-urls`). They stop working after one to two hours. Rules:
+
+- **Render media only through `FallbackImage` or `useImageFallback`.** A bare `<img src={media_url}>` shows a broken image the moment a link expires; these two show a placeholder and report the expired URL so the page can refetch. Narration clips load through `generatedProvider` the same way.
+- **Compare media URLs with `mediaPath`** (from `@storybook/shared`), never `===` on the raw string: two signed URLs for the same file differ. Send `mediaPath(url)` back to the server, not the signed value.
+- **Any page that holds book JSON calls `useMediaRefresh(refetch, urls)`** (`lib/mediaRefresh.ts`; today `Home`, `MyBooks`, `BookDetail`). It refetches on a media-expired event and on tab re-focus after expiry, at most once per 30 s, and only with a free `GET`. Never pass a paid route as `refetch`.
+- Do not cache a signed URL in `localStorage` or a long-lived store. `sessionStorage` drafts may hold one (the create wizard does) because the server canonicalises it on the way in.
+- Rollout note: production still runs `MEDIA_URL_MODE=lenient`, so unsigned links work there today; do not rely on that.
+
 ## TypeScript — strict, no `any`
 
 - `tsconfig.json` has `strict: true`. Don't disable it; don't pepper `any` in.
