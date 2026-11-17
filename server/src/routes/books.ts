@@ -957,8 +957,9 @@ router.post(
 // the same ownership / mutability / pin / quota gates as the portrait route below.
 //
 // Deliberately add-only: a book that already has a cover gets 409. Covers have no
-// version history (storage key `<id>/cover.png` is overwritten in place), so a
-// re-roll here would silently discard art the owner may have wanted to keep.
+// version history, so a re-roll here would have to overwrite `<id>/cover.png` in
+// place, silently discarding art the owner may have wanted to keep and breaking the
+// "media keys are immutable" rule signed links rely on (data.md, #237).
 router.post(
   '/:id/cover',
   requireAuth,

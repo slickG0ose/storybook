@@ -201,7 +201,7 @@ New writes under `r2` go **only** to R2.
 | `MEDIA_URL_MODE` | `enforce` | `enforce` or `lenient`. Unset or malformed means `enforce` (fails closed), so never delete the `render.yaml` line to "turn it off". |
 | `MEDIA_RATE_LIMIT_PER_MINUTE` | `600` | See above. e2e raises it to `100000`. |
 
-**`enforce`:** a missing, malformed, expired or wrong-signature link is `403 { error: 'Link expired' }` with `no-store`. That includes an invalid key: it is a 403 when the link is bad or missing, and a 404 only when the link is valid but the key is not.
+**`enforce`:** a missing, malformed, expired or wrong-signature link is `403 { error: 'Link expired' }` with `no-store`. That includes an invalid key: no valid link can exist for one, so under `enforce` it is always a 403. The 404-for-an-invalid-key behaviour only appears under `lenient`, where the gate lets the request through.
 
 **`lenient`** (rollout stage): the gate lets unsigned or invalid links through and counts them. The log line `[media] lenient: served N request(s) without a valid link (last reason: <reason>)` fires on the **1st and every 100th** such request since boot (never the query string), and `getLenientMediaCount()` exposes the counter. A valid link is still verified and still gets the bounded `Cache-Control`. e2e runs `enforce` (it raises only the rate limit); production currently runs `lenient`.
 
