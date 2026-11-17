@@ -20,7 +20,7 @@ AI-powered children's book store. React + Express + Claude API. Working storefro
 
 Stack details, patterns, and zone-specific conventions live in `docs/conventions/{server,client,testing,data}.md`. Agents read these on demand — they're the source of truth, not duplicated into agent prompts. For edges that cross a zone boundary — which page calls which route, which router pulls which service, what a `@storybook/shared` schema change touches — read [docs/conventions/call-graph.md](docs/conventions/call-graph.md) instead of grepping all four workspaces.
 
-Illustration bytes don't live in the database: they go through a storage seam (`STORAGE_BACKEND=local|r2`, default `local`) — where they live, how they're served, and the Cloudflare R2 setup for prod are in [docs/conventions/data.md](docs/conventions/data.md) §Illustration storage.
+Illustration bytes don't live in the database: they go through a storage seam (`STORAGE_BACKEND=local|r2`, default `local`) — where they live, how they're served, and the Cloudflare R2 setup for prod are in [docs/conventions/data.md](docs/conventions/data.md) §Illustration storage. Those bytes are served through short-lived signed links (`/illustrations/<key>?e=…&s=…`, `MEDIA_URL_*`, default 60 to 120 minutes) that the API attaches to every response, with a per-IP limit (`MEDIA_RATE_LIMIT_PER_MINUTE`), not a public bucket. **Rollout is incomplete as of 2026-11-17:** production runs `MEDIA_URL_MODE=lenient` and the R2 bucket is still public-read until the owner enforces and disallows the `r2.dev` subdomain ([#237](https://github.com/slickG0ose/storybook/issues/237)). Style-reference uploads use the same seam under the `uploads/` key prefix.
 
 ## Branching
 
