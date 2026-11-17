@@ -169,6 +169,26 @@ describe('createGeneratedProvider', () => {
     expect(calls[0]!.url).toBe(`/api/books/${BOOK_ID}/narration?voice=af_heart&slot=1`)
   })
 
+  it('sends the bearer token on the GET when signed in, so a private book reads its own clips', async () => {
+    token = 'tok-owner'
+    const { fetchImpl, calls } = stubFetch({ get: () => json(readyFor()) })
+    make(fetchImpl).speak(CHUNKS, OPTS, recorder().events)
+    await flush()
+
+    expect(calls.map((c) => c.method)).toEqual(['GET'])
+    expect(calls[0]!.headers).toMatchObject({ Authorization: 'Bearer tok-owner' })
+  })
+
+  it('sends no Authorization header on the GET when signed out', async () => {
+    token = null
+    const { fetchImpl, calls } = stubFetch({ get: () => json(readyFor()) })
+    make(fetchImpl).speak(CHUNKS, OPTS, recorder().events)
+    await flush()
+
+    expect(calls[0]!.method).toBe('GET')
+    expect(calls[0]!.headers).not.toHaveProperty('Authorization')
+  })
+
   it('on a miss with a token, POSTs { voiceId, slot } with the bearer header and never a text field', async () => {
     const { fetchImpl, calls } = stubFetch({
       get: () => json({ status: 'missing' }),
