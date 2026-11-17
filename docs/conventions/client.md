@@ -158,7 +158,7 @@ The API returns `/illustrations/...` and `/uploads/...` URLs with `?e=<expiry>&s
 - **Compare media URLs with `mediaPath`** (from `@storybook/shared`), never `===` on the raw string: two signed URLs for the same file differ. Send `mediaPath(url)` back to the server, not the signed value.
 - **Any page that holds book JSON calls `useMediaRefresh(refetch, urls)`** (`lib/mediaRefresh.ts`; today `Home`, `MyBooks`, `BookDetail`). It refetches on a media-expired event and on tab re-focus after expiry, at most once per 30 s, and only with a free `GET`. Never pass a paid route as `refetch`.
 - Do not cache a signed URL in `localStorage` or a long-lived store. `sessionStorage` drafts may hold one (the create wizard does) because the server canonicalises it on the way in.
-- Rollout note: production still runs `MEDIA_URL_MODE=lenient`, so unsigned links work there today; do not rely on that.
+- Rollout note: production runs `MEDIA_URL_MODE=enforce` (Task 9), so unsigned links are refused with a 403 there.
 
 ## TypeScript — strict, no `any`
 

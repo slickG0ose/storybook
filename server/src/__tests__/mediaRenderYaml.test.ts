@@ -39,9 +39,9 @@ describe('render.yaml media URL settings', () => {
     expect(envBlock(yaml, 'MEDIA_URL_SECRET_PREVIOUS')).toMatch(/^\s*sync:\s*false\s*$/m);
   });
 
-  it('declares MEDIA_URL_MODE as lenient or enforce', () => {
+  it('declares MEDIA_URL_MODE as exactly enforce (stage 4)', () => {
     const block = envBlock(yaml, 'MEDIA_URL_MODE');
     expect(block, 'MEDIA_URL_MODE is not declared in render.yaml').not.toBeNull();
-    expect(block).toMatch(/^\s*value:\s*(lenient|enforce)\s*$/m);
+    expect(block).toMatch(/^\s*value:\s*enforce\s*$/m);
   });
 });

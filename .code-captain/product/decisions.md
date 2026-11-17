@@ -43,7 +43,7 @@ Rejected: more owner setup and more env vars, for isolation the reserved prefix 
 ## ADR-039 — Private media is served through short-lived signed links, for every book and every backend
 
 **Date:** 2026-11-17
-**Status:** Accepted. Nick Konecny accepted the spec and all five owner rulings as recommended on 2026-11-16, in chat. **Rollout incomplete as of this date:** production ships `MEDIA_URL_MODE: lenient` and the R2 bucket is still public-read. Task 9 (enforce) and Task 11 (owner disallows `r2.dev`) close it, tracked on #237.
+**Status:** Accepted. Nick Konecny accepted the spec and all five owner rulings as recommended on 2026-11-16, in chat. **Rollout incomplete:** production runs `MEDIA_URL_MODE: enforce` as of the merge of Task 9, but the R2 bucket is still public-read, so already-leaked `r2.dev` URLs keep working. Task 11 (owner disallows `r2.dev`) closes it, tracked on #237.
 **Scope:** `signed-media-urls` spec, Tasks 1–8 and 10 (#237; PRs #242, #244, #245). Files: `shared/src/media.ts`, `server/src/lib/mediaUrl.ts`, `server/src/middleware/media.ts`, `server/src/routes/{books,generate}.ts`, `server/src/index.ts`, `render.yaml`, `client/src/lib/mediaRefresh.ts`, `client/src/hooks/useImageFallback.ts`, `client/src/lib/narration/generatedProvider.ts`. Spec at [.code-captain/specs/signed-media-urls/spec.md](../specs/signed-media-urls/spec.md), decisions 1–4. Supersedes [[ADR-026]]; amends [[ADR-025]].
 
 ### Decision

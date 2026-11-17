@@ -133,7 +133,7 @@ This file pre-dates the Prisma migration. It exports `getStore` / `resetStore` /
 
 The database holds illustration **URLs**, never image bytes. The bytes — page art, covers, character portraits, every version of each — live behind a storage seam, and where that is depends on one env var. Decisions: ADR-025 (seam), ADR-026 (redirect serving, `r2.dev`; superseded for serving by the signed-links design below), ADR-027 (R2 + `@aws-sdk/client-s3`) in `.code-captain/product/decisions.md`. Signed media links: [spec `signed-media-urls`](../../.code-captain/specs/signed-media-urls/spec.md) (#237); its ADRs are filed separately.
 
-> **Rollout state (as of 2026-11-17, update this when it changes).** The mechanism below is in the code. Production still ships `MEDIA_URL_MODE: lenient` in `render.yaml`, so unsigned links still work there, and the R2 bucket is still **public-read** (the `r2.dev` subdomain is still allowed). **Enforcement and the private bucket are both pending** (spec stages 4 and 5). Read every "private" and "enforce" sentence below as describing the target state until those two steps are done and recorded on #237.
+> **Rollout state (update this when it changes).** The mechanism below is in the code. As of the merge of Task 9, production runs `MEDIA_URL_MODE: enforce` in `render.yaml`, so unsigned links are refused there. The R2 bucket is still **public-read** (the `r2.dev` subdomain is still allowed), so already-leaked `r2.dev` URLs keep working. **The private bucket is pending** (spec stage 5, Task 11, owner only). Read every "private" sentence below as describing the target state until that step is done and recorded on #237.
 
 ### The seam
 
@@ -203,11 +203,11 @@ New writes under `r2` go **only** to R2.
 
 **`enforce`:** a missing, malformed, expired or wrong-signature link is `403 { error: 'Link expired' }` with `no-store`. That includes an invalid key: no valid link can exist for one, so under `enforce` it is always a 403. The 404-for-an-invalid-key behaviour only appears under `lenient`, where the gate lets the request through.
 
-**`lenient`** (rollout stage): the gate lets unsigned or invalid links through and counts them. The log line `[media] lenient: served N request(s) without a valid link (last reason: <reason>)` fires on the **1st and every 100th** such request since boot (never the query string), and `getLenientMediaCount()` exposes the counter. A valid link is still verified and still gets the bounded `Cache-Control`. e2e runs `enforce` (it raises only the rate limit); production currently runs `lenient`.
+**`lenient`** (rollout stage): the gate lets unsigned or invalid links through and counts them. The log line `[media] lenient: served N request(s) without a valid link (last reason: <reason>)` fires on the **1st and every 100th** such request since boot (never the query string), and `getLenientMediaCount()` exposes the counter. A valid link is still verified and still gets the bounded `Cache-Control`. e2e runs `enforce` (it raises only the rate limit); production runs `enforce` (Task 9).
 
 **Why private by default.** Illustrations of a book a user has not published, and the style photo they uploaded, belong to that user. The old design relied on unguessable UUID paths and a public bucket, so any leaked URL worked forever and could not be revoked. Short-lived signed links make a leak expire, and a private bucket removes the path around the signature. Book ids being UUIDs is a speed bump, not the control. Seed and published-book art goes through the same signer for simplicity (one rule, no per-book branch).
 
-**Pending, stated plainly:** production is `lenient` and the bucket is public-read today. Until `MEDIA_URL_MODE` is flipped to `enforce` (Task 9, owner decides when) and the R2.dev subdomain is disallowed (Task 11, owner only), previously leaked URLs keep working. A custom domain in front of the bucket is not part of this design and must **not** be connected, since it would be a second public path ([#192](https://github.com/slickG0ose/storybook/issues/192) tracks version pruning).
+**Pending, stated plainly:** production runs `enforce` (Task 9), but the bucket is still public-read. Until the R2.dev subdomain is disallowed (Task 11, owner only), previously leaked `r2.dev` URLs keep working. A custom domain in front of the bucket is not part of this design and must **not** be connected, since it would be a second public path ([#192](https://github.com/slickG0ose/storybook/issues/192) tracks version pruning).
 
 ### Operator setup: switching production to R2
 
