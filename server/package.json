@@ -26,6 +26,7 @@
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",
     "express": "^5.3.0",
+    "express-rate-limit": "8.7.3",
     "jsonrepair": "^3.14.0",
     "multer": "^2.5.0",
     "prisma": "^6.19.3",

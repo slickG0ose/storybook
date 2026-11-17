@@ -225,6 +225,21 @@ The R2 presign uses `signingDate = floor(t / W) × W` and `expiresIn = e − sig
 5. Leave a private book open in a tab for more than 2 hours, then turn a page. The art reloads by itself (Task 7 recovery). If it shows placeholders, reload once and file a bug.
 6. Delete a test book. Within 2 hours, its previously copied signed URL stops working.
 
+### Amendment 2026-11-17: per-IP rate limit on the media routes
+
+**Why.** CodeQL alert #41 (`js/missing-rate-limiting`, high, merge-blocking under the ruleset) flagged `/illustrations` and `/uploads` once the signature gate made them look like "authorization in front of a disk read". The repo's own limiter (`rateLimit.ts`) keys on the signed-in user and cannot serve `<img>`/`<audio>` requests, which carry no auth. The owner chose to add a real limiter over dismissing the alert (PR #244, 2026-11-17).
+
+**Decision.**
+- New dependency `express-rate-limit`, pinned to `8.7.3` (owner-approved in chat). It brings one transitive package, `ip-address`.
+- One limiter, created in `mountMedia` and shared by both roots, so a client has one budget for all media. It runs **before** the signature gate, so a flood of bad links costs the same as a flood of good ones.
+- Keyed on `req.ip` with IPv6 reduced to a /64 (`ipv6Subnet: 64`), matching `authRateLimit.ts`. `req.ip` is only the real client when `trust proxy` is right: prod depends on `TRUST_PROXY_HOPS=3` (`render.yaml`, ADR-030).
+- Budget: `MEDIA_RATE_LIMIT_PER_MINUTE`, default **600** per one-minute fixed window. One book is about 20 images plus its narration clips (an audio element can make several Range requests per clip), and a household shares one IP, so the default is about 10 books a minute per address. Anything other than an integer from 60 to 100000 falls back to 600 with one warning, never to "unlimited".
+- Over budget: `429 { "error": "Too many requests. Try again in a minute." }` with `Cache-Control: no-store` and the standard `RateLimit` headers.
+- In-process memory store, the same single-instance assumption as ADR-018.
+- The e2e API server sets `MEDIA_RATE_LIMIT_PER_MINUTE=100000`: the whole suite loads images from one loopback address.
+
+**Not changed.** The signature design, the gate order (gate, then disk, then presign), and every other decision above.
+
 ## Schema / contract changes
 
 - **Prisma:** none.
@@ -321,4 +336,5 @@ Next free number is ADR-039.
 - [ ] **Expiry is window-bucketed and deterministic (`MEDIA_URL_TTL_MINUTES`, default 60, links live 1 to 2 windows); the client recovers with a bounded, event-driven refetch.** Main alternative rejected: per-request expiry (defeats every cache layer).
 - [ ] **`@aws-sdk/s3-request-presigner` is added at the `client-s3` minor.** Amends ADR-027's "no presigner". Main alternative rejected: hand-rolled SigV4 on the undeclared transitive `@smithy/signature-v4`.
 - [ ] **Style-reference uploads go through the storage seam under the reserved top-level prefix `uploads/` in the same bucket.** Amends ADR-025's "`public/uploads` is not behind the seam". Main alternative rejected: a second bucket (more owner setup and more env vars, for isolation the reserved prefix already gives).
+- [ ] **Media routes get a per-IP limiter (`express-rate-limit`, 600 requests per minute per address by default, ahead of the signature gate).** Added 2026-11-17 for CodeQL alert #41. Main alternative rejected: dismissing the alert as a false positive (the owner preferred a real bound on anonymous disk reads).
 - [ ] **`MEDIA_URL_SECRET` is Render-generated; when unset it falls back to a random per-process secret in prod and a fixed constant in dev, and never to unsigned. `MEDIA_URL_MODE` defaults to `enforce`.** Main alternative rejected: refusing to boot when the secret is unset (it would take a live service offline over a drifted env var, against the `cors.ts` precedent).

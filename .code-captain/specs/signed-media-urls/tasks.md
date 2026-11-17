@@ -214,6 +214,22 @@ HMAC input: `` `v1\n${root}\n${key}\n${e}` ``. Output: base64url, unpadded.
 
 ---
 
+### Task 4a — Per-IP rate limit on the media routes (added 2026-11-17)
+
+**Status:** Done (2026-11-17)
+**Zone:** server and e2e config
+**Why:** CodeQL alert #41 on PR #244. Spec §Amendment 2026-11-17.
+**Dependency:** `express-rate-limit@8.7.3`, owner-approved in chat.
+
+**Files:**
+- `server/src/middleware/media.ts`: `resolveMediaRateLimit(env)`, and one limiter created in `mountMedia` ahead of `mediaGate` on both roots.
+- `server/src/middleware/__tests__/media.test.ts`: limit, shared budget across roots, 429 envelope and headers, env fallbacks.
+- `server/.env.example`, `e2e/playwright.config.ts`.
+
+**Owner step after merge:** none beyond checklist A; a book should still load in full.
+
+---
+
 ### Task 5 — Sign every outbound media URL (stage 2)
 
 **Status:** Done (2026-11-16)

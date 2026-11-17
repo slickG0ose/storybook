@@ -139,7 +139,9 @@ export default defineConfig({
       // lenient until the API signs its media URLs (signed-media-urls Task 5): the code
       // default is `enforce`, which would 403 every unsigned /illustrations image.
       // Task 8 removes this so e2e runs the production default.
-      env: { PORT: API_PORT, MEDIA_URL_MODE: 'lenient' },
+      // The whole suite loads media from one loopback address, so the per-IP media
+      // limit (default 600/min) is raised for the test server only.
+      env: { PORT: API_PORT, MEDIA_URL_MODE: 'lenient', MEDIA_RATE_LIMIT_PER_MINUTE: '100000' },
       url: `${API_BASE}/api/health`,
       reuseExistingServer: !process.env.CI,
       timeout: 15_000,

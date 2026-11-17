@@ -27,7 +27,14 @@ vi.mock('@aws-sdk/client-s3', () => {
   };
 });
 
-const { mountMedia, getLenientMediaCount, __resetLenientMediaCountForTests } = await import('../media');
+const {
+  mountMedia,
+  getLenientMediaCount,
+  __resetLenientMediaCountForTests,
+  resolveMediaRateLimit,
+  DEFAULT_MEDIA_RATE_LIMIT_PER_MINUTE,
+  MEDIA_RATE_LIMIT_ERROR,
+} = await import('../media');
 const { signMediaPath, mediaWindow, __resetMediaConfigForTests, getMediaConfig } = await import('../../lib/mediaUrl');
 const { __resetStorageForTests, ILLUSTRATIONS_DIR, UPLOADS_DIR } = await import('../../services/storage');
 
@@ -307,5 +314,49 @@ describe('r2 backend, enforce', () => {
     expect(res.status).toBe(403);
     expect(res.headers.location).toBeUndefined();
     expect(getSignedUrl).not.toHaveBeenCalled();
+  });
+});
+
+describe('per-IP rate limit (spec amendment 2026-11-17, CodeQL alert #41)', () => {
+  beforeEach(() => setMode('enforce'));
+
+  it('answers 429 with no-store and the error envelope once the budget is spent', async () => {
+    vi.stubEnv('MEDIA_RATE_LIMIT_PER_MINUTE', '60');
+    const app = buildApp();
+    const url = signMediaPath(ILL_PATH);
+    for (let i = 0; i < 60; i++) expect((await request(app).get(url)).status).toBe(200);
+    const res = await request(app).get(url);
+    expect(res.status).toBe(429);
+    expect(res.headers['cache-control']).toBe('no-store');
+    expect(res.body).toMatchObject({ error: MEDIA_RATE_LIMIT_ERROR });
+    expect(res.headers['ratelimit-policy']).toBeDefined();
+    expect(res.headers['retry-after']).toBeDefined();
+  });
+
+  it('is one budget across /illustrations and /uploads', async () => {
+    vi.stubEnv('MEDIA_RATE_LIMIT_PER_MINUTE', '60');
+    const app = buildApp();
+    for (let i = 0; i < 60; i++) expect((await request(app).get(signMediaPath(ILL_PATH))).status).toBe(200);
+    expect((await request(app).get(signMediaPath(UP_PATH))).status).toBe(429);
+  });
+
+  it('counts requests before the signature gate, so bad links spend the budget too', async () => {
+    vi.stubEnv('MEDIA_RATE_LIMIT_PER_MINUTE', '60');
+    const app = buildApp();
+    for (let i = 0; i < 60; i++) expect((await request(app).get(ILL_PATH)).status).toBe(403);
+    expect((await request(app).get(signMediaPath(ILL_PATH))).status).toBe(429);
+  });
+
+  it('defaults to 600 and falls back to it, with one warning naming the variable, on a bad value', () => {
+    expect(resolveMediaRateLimit({})).toBe(DEFAULT_MEDIA_RATE_LIMIT_PER_MINUTE);
+    expect(DEFAULT_MEDIA_RATE_LIMIT_PER_MINUTE).toBe(600);
+    expect(resolveMediaRateLimit({ MEDIA_RATE_LIMIT_PER_MINUTE: ' 1200 ' })).toBe(1200);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    for (const bad of ['59', '100001', '0', '-5', '1.5', 'abc', '600/min']) {
+      expect(resolveMediaRateLimit({ MEDIA_RATE_LIMIT_PER_MINUTE: bad })).toBe(600);
+    }
+    expect(warn).toHaveBeenCalledTimes(7);
+    for (const [msg] of warn.mock.calls) expect(String(msg)).toContain('MEDIA_RATE_LIMIT_PER_MINUTE');
+    warn.mockRestore();
   });
 });

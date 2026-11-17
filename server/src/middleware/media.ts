@@ -18,6 +18,7 @@
  * getUploadStorage(); until then it presigns through the illustrations client.
  */
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import type { Express, NextFunction, Request, RequestHandler, Response } from 'express';
 import { MEDIA_PATH_RE, MEDIA_ROOTS, mediaPath, type MediaRoot } from '@storybook/shared';
 import { getMediaConfig, mediaWindow, signMediaPath, verifyMediaRequest } from '../lib/mediaUrl';
@@ -103,10 +104,51 @@ export function mediaPresignRedirect(root: MediaRoot): RequestHandler {
   };
 }
 
+export const DEFAULT_MEDIA_RATE_LIMIT_PER_MINUTE = 600;
+const MIN_MEDIA_RATE_LIMIT = 60;
+const MAX_MEDIA_RATE_LIMIT = 100_000;
+export const MEDIA_RATE_LIMIT_WINDOW_MS = 60_000;
+export const MEDIA_RATE_LIMIT_ERROR = 'Too many requests. Try again in a minute.';
+
+/**
+ * Requests per IP per minute across both media roots (spec §Amendment 2026-11-17).
+ * Anything but an integer in range falls back to the default with one warning, never
+ * to "unlimited", so a typo cannot switch the limit off.
+ */
+export function resolveMediaRateLimit(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.MEDIA_RATE_LIMIT_PER_MINUTE;
+  if (raw === undefined || raw.trim() === '') return DEFAULT_MEDIA_RATE_LIMIT_PER_MINUTE;
+  if (/^\d+$/.test(raw.trim())) {
+    const n = Number(raw.trim());
+    if (n >= MIN_MEDIA_RATE_LIMIT && n <= MAX_MEDIA_RATE_LIMIT) return n;
+  }
+  console.warn(
+    `MEDIA_RATE_LIMIT_PER_MINUTE is not an integer from ${MIN_MEDIA_RATE_LIMIT} to ${MAX_MEDIA_RATE_LIMIT}; using ${DEFAULT_MEDIA_RATE_LIMIT_PER_MINUTE}`,
+  );
+  return DEFAULT_MEDIA_RATE_LIMIT_PER_MINUTE;
+}
+
 export function mountMedia(app: Express): void {
+  // One budget per client across /illustrations and /uploads, checked BEFORE the
+  // signature gate so bad links cost the same as good ones. Keyed on req.ip, which is
+  // the real client only when `trust proxy` is right (TRUST_PROXY_HOPS, ADR-030); IPv6
+  // is reduced to a /64 like authRateLimit.ts. In-process store: ADR-018's
+  // single-instance assumption. CodeQL alert #41.
+  const mediaRateLimiter = rateLimit({
+    windowMs: MEDIA_RATE_LIMIT_WINDOW_MS,
+    limit: resolveMediaRateLimit(),
+    ipv6Subnet: 64,
+    standardHeaders: 'draft-8',
+    legacyHeaders: false,
+    handler: (_req, res, _next, options) => {
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(options.statusCode).json({ error: MEDIA_RATE_LIMIT_ERROR });
+    },
+  });
   for (const root of MEDIA_ROOTS) {
     app.use(
       `/${root}`,
+      mediaRateLimiter,
       mediaGate(root),
       express.static(ROOT_DIRS[root], {
         setHeaders: res => {
