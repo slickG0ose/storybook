@@ -216,6 +216,8 @@ HMAC input: `` `v1\n${root}\n${key}\n${e}` ``. Output: base64url, unpadded.
 
 ### Task 5 — Sign every outbound media URL (stage 2)
 
+**Status:** Done (2026-11-16)
+
 **Zone:** server
 **Depends on:** Tasks 2 and 4
 **Parallel-safe with:** 7

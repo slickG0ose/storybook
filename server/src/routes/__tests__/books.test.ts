@@ -8,7 +8,7 @@ import prisma from '../../db/prisma';
 import { PUBLISHED_IMMUTABLE_ERROR } from '../../lib/availability';
 import { COST_CENTS, costCentsFor } from '../../services/spend';
 import { getStorage } from '../../services/storage';
-import { AGE_RANGES } from '@storybook/shared';
+import { AGE_RANGES, mediaPath } from '@storybook/shared';
 
 // Stub the Anthropic SDK at module boundary so /revise tests can drive the
 // handler past the API key check without making real network calls.
@@ -681,7 +681,7 @@ describe('Books API routes', () => {
 
         const res = await restore(token);
         expect(res.status).toBe(200);
-        expect(res.body.pages[0].illustration_url).toBe('/illustrations/luna-star-garden/page-1.png');
+        expect(mediaPath(res.body.pages[0].illustration_url)).toBe('/illustrations/luna-star-garden/page-1.png');
       });
 
       it('pins the restored page wire shape', async () => {
@@ -716,7 +716,9 @@ describe('Books API routes', () => {
               page_number: 1,
               text: 'Old page 1',
               illustration_description: 'Old illust 1',
-              illustration_url: '/illustrations/luna-star-garden/page-1.png',
+              illustration_url: expect.stringMatching(
+                /^\/illustrations\/luna-star-garden\/page-1\.png\?e=\d+&s=[A-Za-z0-9_-]{43}$/,
+              ),
             },
           ],
         });
@@ -732,7 +734,7 @@ describe('Books API routes', () => {
 
         const res = await restore(token);
         expect(res.status).toBe(200);
-        expect(res.body.pages[0].illustration_url).toBe('/illustrations/luna-star-garden/page-1-v2.png');
+        expect(mediaPath(res.body.pages[0].illustration_url)).toBe('/illustrations/luna-star-garden/page-1-v2.png');
       });
 
       it('re-attaches art to an unchanged page that a past restore orphaned', async () => {
@@ -743,7 +745,7 @@ describe('Books API routes', () => {
 
         const res = await restore(token);
         expect(res.status).toBe(200);
-        expect(res.body.pages[0].illustration_url).toBe('/illustrations/luna-star-garden/page-1.png');
+        expect(mediaPath(res.body.pages[0].illustration_url)).toBe('/illustrations/luna-star-garden/page-1.png');
       });
 
       it('does not attach art drawn for different content', async () => {
@@ -781,7 +783,7 @@ describe('Books API routes', () => {
 
         const res = await restore(token);
         expect(res.status).toBe(200);
-        expect(res.body.pages[1].illustration_url).toBe('/illustrations/luna-star-garden/page-2.png');
+        expect(mediaPath(res.body.pages[1].illustration_url)).toBe('/illustrations/luna-star-garden/page-2.png');
       });
 
       it('survives a round trip: restoring away and back keeps both sets of art', async () => {
@@ -796,13 +798,13 @@ describe('Books API routes', () => {
 
         const away = await restore(token, 1);
         expect(away.status).toBe(200);
-        expect(away.body.pages[0].illustration_url).toBe('/illustrations/luna-star-garden/page-1.png');
+        expect(mediaPath(away.body.pages[0].illustration_url)).toBe('/illustrations/luna-star-garden/page-1.png');
 
         // The first restore snapshotted the live content as v2.
         const back = await restore(token, 2);
         expect(back.status).toBe(200);
         expect(back.body.pages[0].text).toBe(livePage(1).text);
-        expect(back.body.pages[0].illustration_url).toBe('/illustrations/luna-star-garden/page-1-v2.png');
+        expect(mediaPath(back.body.pages[0].illustration_url)).toBe('/illustrations/luna-star-garden/page-1-v2.png');
       });
 
       it('rewrites pointers only: no blob is written or removed', async () => {
@@ -1308,7 +1310,7 @@ describe('Books API routes', () => {
       expect(res.body).toHaveProperty('id', 'luna-star-garden');
       expect(Array.isArray(res.body.pages)).toBe(true);
       const updatedPage = res.body.pages.find((p: { page_number: number }) => p.page_number === 2);
-      expect(updatedPage.illustration_url).toBe(fakeUrl);
+      expect(mediaPath(updatedPage.illustration_url)).toBe(fakeUrl);
 
       // Other pages should be untouched (no illustration_url set).
       for (const page of res.body.pages) {
@@ -1949,9 +1951,10 @@ describe('Books API routes', () => {
         id: 'luna-star-garden',
         title: expect.any(String),
         status: 'draft',
-        cover_url: coverUrl,
+        cover_url: expect.stringMatching(/^\/illustrations\/[^?]+\?e=\d+&s=[A-Za-z0-9_-]{43}$/),
         pages: expect.any(Array),
       });
+      expect(mediaPath(res.body.cover_url)).toBe(coverUrl);
       // (bookId, title, description, style, characters, refs, { pin })
       const args = mockGenerateCover.mock.calls[0];
       expect(args[0]).toBe('luna-star-garden');
@@ -2108,8 +2111,9 @@ describe('Books API routes', () => {
       expect(res.body.characters[0]).toMatchObject({
         role: expect.any(String),
         name: expect.any(String),
-        portrait_url: portraitUrl,
+        portrait_url: expect.stringMatching(/^\/illustrations\/[^?]+\?e=\d+&s=[A-Za-z0-9_-]{43}$/),
       });
+      expect(mediaPath(res.body.characters[0].portrait_url)).toBe(portraitUrl);
 
       // The mutated character carries the new URL; the other character is
       // untouched (no portrait_url).
@@ -2141,7 +2145,7 @@ describe('Books API routes', () => {
         .send({ feedback: 'make her hair red' });
 
       expect(res.status).toBe(200);
-      expect(res.body.characters[0].portrait_url).toBe(v2Url);
+      expect(mediaPath(res.body.characters[0].portrait_url)).toBe(v2Url);
       // Feedback was forwarded to the service (5th positional arg).
       expect(mockGenerateCharacterPortrait.mock.calls[0][4]).toBe('make her hair red');
     });

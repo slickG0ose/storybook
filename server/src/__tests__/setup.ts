@@ -12,7 +12,7 @@ import { narrationRouter, bookNarrationRouter } from '../routes/narration';
 import feedbackRouter from '../routes/feedback';
 import { resetAuthRateLimits } from '../middleware/authRateLimit';
 import { resetRateLimits } from '../middleware/rateLimit';
-import { mountMedia } from '../middleware/media';
+import { mountMedia, signMediaResponses } from '../middleware/media';
 
 const seedBooks = [
   { id: 'luna-star-garden', title: 'Luna and the Star Garden', author: 'AI Storybook', description: 'A story about stars.', theme: 'fantasy', age_range: '4-7', cover_emoji: '\u{1F31F}', cover_color: '#7c3aed', price: 19.99, is_featured: true, is_user_created: false },
@@ -95,6 +95,7 @@ export function createTestApp(): express.Express {
   const app = express();
   app.use(express.json());
 
+  app.use('/api', signMediaResponses);
   app.use('/api/auth', authRouter);
   app.use('/api/books', booksRouter);
   app.use('/api/books', bookNarrationRouter);

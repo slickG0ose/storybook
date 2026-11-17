@@ -43,7 +43,7 @@ import { checkForNewerModel } from './lib/models';
 import { buildCorsPolicy } from './lib/cors';
 import { assertSingleInstanceAssumption } from './middleware/rateLimit';
 import { resolveTrustProxyHops } from './middleware/authRateLimit';
-import { mountMedia } from './middleware/media';
+import { mountMedia, signMediaResponses } from './middleware/media';
 import { securityHeaders } from './middleware/securityHeaders';
 import { jsonBody, errorHandler } from './middleware/jsonBody';
 import { getStorage, resolveBackendName } from './services/storage';
@@ -105,6 +105,8 @@ mountMedia(app);
 // and committed. server/src/__tests__/heroFrameAssets.test.ts is the budget gate.
 app.use('/hero', express.static(join(import.meta.dirname, '../public/hero')));
 
+// Signs every media URL in an /api JSON body (#237). Must precede the first /api router.
+app.use('/api', signMediaResponses);
 app.use('/api/auth', authRouter);
 app.use('/api/books', booksRouter);
 // Only declares /:id/narration, so it cannot shadow GET /api/books/:id.

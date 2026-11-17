@@ -19,8 +19,8 @@
  */
 import express from 'express';
 import type { Express, NextFunction, Request, RequestHandler, Response } from 'express';
-import { MEDIA_ROOTS, type MediaRoot } from '@storybook/shared';
-import { getMediaConfig, mediaWindow, verifyMediaRequest } from '../lib/mediaUrl';
+import { MEDIA_PATH_RE, MEDIA_ROOTS, mediaPath, type MediaRoot } from '@storybook/shared';
+import { getMediaConfig, mediaWindow, signMediaPath, verifyMediaRequest } from '../lib/mediaUrl';
 import { ILLUSTRATIONS_DIR, R2Storage, UPLOADS_DIR, getStorage, resolveBackendName } from '../services/storage';
 
 const ROOT_DIRS: Record<MediaRoot, string> = {
@@ -117,4 +117,56 @@ export function mountMedia(app: Express): void {
       mediaPresignRedirect(root),
     );
   }
+}
+
+const SIGNED_KEYS = new Set(['illustration_url', 'cover_url', 'portrait_url', 'style_reference_url', 'url']);
+const MAX_SIGN_DEPTH = 8;
+
+const isPlainObject = (v: unknown): v is Record<string, unknown> => {
+  if (v === null || typeof v !== 'object') return false;
+  const proto = Object.getPrototypeOf(v);
+  return proto === Object.prototype || proto === null;
+};
+
+/** Copy-on-write: returns the same reference when nothing under `value` changed. */
+function signDeep(value: unknown, now: Date, depth: number): unknown {
+  if (depth > MAX_SIGN_DEPTH) return value;
+  if (Array.isArray(value)) {
+    let out: unknown[] | null = null;
+    value.forEach((item, i) => {
+      const next = signDeep(item, now, depth + 1);
+      if (next !== item) {
+        out ??= value.slice();
+        out[i] = next;
+      }
+    });
+    return out ?? value;
+  }
+  if (!isPlainObject(value)) return value;
+  let out: Record<string, unknown> | null = null;
+  for (const [key, v] of Object.entries(value)) {
+    let next: unknown = v;
+    if (typeof v === 'string' && SIGNED_KEYS.has(key)) {
+      // Canonicalise first, so an already-signed value is re-signed, not double-signed.
+      if (MEDIA_PATH_RE.test(v)) next = signMediaPath(mediaPath(v), now);
+    } else {
+      next = signDeep(v, now, depth + 1);
+    }
+    if (next !== v) {
+      out ??= { ...value };
+      out[key] = next;
+    }
+  }
+  return out ?? value;
+}
+
+/**
+ * The outbound choke point (#237, decision 2). Mounted at `app.use('/api', ...)` ahead of every
+ * router. Wraps `res.json` once and signs allowlisted media fields on a copy of the body; stored
+ * rows are never mutated. `now` is captured once per response so every URL shares a window.
+ */
+export function signMediaResponses(_req: Request, res: Response, next: NextFunction): void {
+  const original = res.json.bind(res);
+  res.json = (body?: unknown): Response => original(signDeep(body, new Date(), 0));
+  next();
 }
