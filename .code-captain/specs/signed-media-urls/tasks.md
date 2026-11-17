@@ -440,6 +440,8 @@ Not a developer task. No agent performs any step here.
 
 ### Task 12 — Pre-merge follow-ups
 
+**Status:** Done (2026-11-17). ADR-039 (serving and signing: items 1–4 and the secret/mode defaults) and ADR-040 (presigner, rate limiter, uploads keyspace: items 5, 6 and the 2026-11-17 limiter). ADR-026 marked superseded; ADR-025 and ADR-027 amended. Follow-up: #246 (read-only presign token). Deferred: no issue for dropping retained style photos; the owner ruled "keep" on open question 3 and has not asked to revisit it.
+
 **Zone:** docs (harness)
 **Depends on:** none (run last, in PR C)
 

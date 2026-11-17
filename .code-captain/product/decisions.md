@@ -4,6 +4,85 @@ Append-only log. Newest entries on top. Each entry should answer: *what was deci
 
 ---
 
+## ADR-040 — Media dependencies and the uploads keyspace: `s3-request-presigner`, `express-rate-limit`, and a reserved `uploads/` prefix
+
+**Date:** 2026-11-17
+**Status:** Accepted. Nick Konecny accepted the spec, including `@aws-sdk/s3-request-presigner`, on 2026-11-16. He chose `express-rate-limit` over dismissing CodeQL alert #41 on 2026-11-17, in chat.
+**Scope:** `signed-media-urls` spec, Tasks 4, 4a and 6 (#237; PRs #244, #245). Files: `server/package.json`, `server/src/services/storage.ts`, `server/src/middleware/media.ts`, `server/src/routes/{uploads,admin}.ts`. Spec at [.code-captain/specs/signed-media-urls/spec.md](../specs/signed-media-urls/spec.md), decisions 1 and 5 and §Amendment 2026-11-17. Amends [[ADR-025]] and [[ADR-027]].
+
+### Decision
+
+1. **`@aws-sdk/s3-request-presigner` is a declared dependency,** at the same version as the installed `@aws-sdk/client-s3` (3.1164.0). It is used only for `R2Storage.presignGet`, with an explicit `signingDate` so a presigned URL is stable within a media window.
+2. **`express-rate-limit` 8.7.3, pinned exactly, limits `/illustrations` and `/uploads` per IP.** It is one budget across both roots, checked **before** the signature gate. The default is 600 requests a minute, set by `MEDIA_RATE_LIMIT_PER_MINUTE` (60 to 100000; anything else falls back to 600). Over the limit is a `429` with `no-store`. The key is `req.ip` with IPv6 reduced to a /64. The store is in-process ([[ADR-018]]).
+3. **Style-reference uploads go through the storage seam** via `getUploadStorage()`. That is local disk at `public/uploads` in dev and the same R2 bucket under the key prefix `uploads/` in prod. `uploads` is a reserved first segment (`RESERVED_TOP_LEVEL_KEYS`): the admin orphan scan skips it, the orphan DELETE refuses it with a 400, and `/illustrations/uploads/...` is never served or signed. The stored URL is unchanged: `/uploads/style-refs/<uuid>.<ext>`.
+
+### Why
+
+- **The presigner keeps image bytes off Render.** Hand-rolling SigV4 would mean importing `@smithy/signature-v4`, which is only a transitive dependency, and that breaks silently when the SDK tree moves.
+- **The repo's own limiter cannot serve images.** `rateLimit.ts` keys on the signed-in user, but `<img>` and `<audio>` requests carry no auth. CodeQL only recognises a limiter by package name, and alert #41 blocked the merge.
+- **The limit counts before the gate,** so a flood of forged links costs an attacker the same budget as real ones.
+- **Render's disk is wiped on restart,** so style photos written there were already lost in prod. The reserved prefix gives isolation without a second bucket or more env vars.
+
+### Alternative considered: dismissing alert #41 as a false positive
+
+The case for it: request load was unchanged from before (every image already hit Render once, unlimited), and the gate is an in-memory HMAC. It was rejected because the owner preferred a real bound on anonymous disk reads. The cost is that the limit depends on `TRUST_PROXY_HOPS` being right ([[ADR-030]]). Otherwise every reader shares Cloudflare's address and one budget.
+
+### Alternative considered: a second bucket for uploads
+
+Rejected: more owner setup and more env vars, for isolation the reserved prefix already gives.
+
+### Consequences
+
+- **The presign token is the read-write token.** Moving presigning to a read-only token is [#246](https://github.com/slickG0ose/storybook/issues/246).
+- **A household reading many books at once can hit 600 a minute.** One book is about 20 images plus narration clips. Raise `MEDIA_RATE_LIMIT_PER_MINUTE` if 429s show up in the logs.
+- **The e2e server raises the limit to 100000,** because the whole suite shares one loopback address.
+- **Photos uploaded to prod before Task 6 are already gone** (ephemeral disk). Their rows still hold `/uploads/...` paths that 404. Nothing renders them after creation.
+
+---
+
+## ADR-039 — Private media is served through short-lived signed links, for every book and every backend
+
+**Date:** 2026-11-17
+**Status:** Accepted. Nick Konecny accepted the spec and all five owner rulings as recommended on 2026-11-16, in chat. **Rollout incomplete as of this date:** production ships `MEDIA_URL_MODE: lenient` and the R2 bucket is still public-read. Task 9 (enforce) and Task 11 (owner disallows `r2.dev`) close it, tracked on #237.
+**Scope:** `signed-media-urls` spec, Tasks 1–8 and 10 (#237; PRs #242, #244, #245). Files: `shared/src/media.ts`, `server/src/lib/mediaUrl.ts`, `server/src/middleware/media.ts`, `server/src/routes/{books,generate}.ts`, `server/src/index.ts`, `render.yaml`, `client/src/lib/mediaRefresh.ts`, `client/src/hooks/useImageFallback.ts`, `client/src/lib/narration/generatedProvider.ts`. Spec at [.code-captain/specs/signed-media-urls/spec.md](../specs/signed-media-urls/spec.md), decisions 1–4. Supersedes [[ADR-026]]; amends [[ADR-025]].
+
+### Decision
+
+1. **Every media URL the API returns is a signed link,** `/<root>/<key>?e=<unix-seconds>&s=<sig>`, where `s` is base64url HMAC-SHA256 over `v1\n<root>\n<key>\n<e>`. One server path verifies it for `local`, `r2` and both roots: rate limit, then gate, then `express.static`, then on a disk miss under `r2` a `302` to a short presigned R2 GET. Bytes never cross Render.
+2. **One choke point signs.** `signMediaResponses` wraps `res.json` on `/api` and signs the keys `illustration_url`, `cover_url`, `portrait_url`, `style_reference_url` and `url` on a copy of the body. Stored URLs stay unsigned. The two write paths that take a media URL from the client (illustration revert, `styleReferenceUrl` on generate) strip it back with the shared `mediaPath()`. No Prisma or `@storybook/shared` schema change.
+3. **Published books use the same links.** There is no public media path. `/hero` frames stay public ([[ADR-014]]).
+4. **Expiry is window-bucketed:** `e = (floor(t/W)+2)·W` with `W = MEDIA_URL_TTL_MINUTES` (default 60). Links are byte-identical within a window and live 1–2 windows. Responses carry `Cache-Control: private, max-age=<seconds left>`. The client recovers from an expired link with a bounded refetch: once per URL, at most every 30 s per page, and only free GETs.
+5. **Configuration fails closed.** `MEDIA_URL_SECRET` is `generateValue: true` in `render.yaml`. If it is unset in production, the server uses a random per-process secret and warns; in dev it uses a fixed constant. It never falls back to unsigned. `MEDIA_URL_SECRET_PREVIOUS` is verify-only, for rotation. `MEDIA_URL_MODE` defaults to `enforce`, and a malformed value means `enforce`. `lenient` serves unsigned links and only counts them, for the rollout.
+
+### Why
+
+- **Books are private by default since #235,** and [[ADR-026]]'s premise that "the art is already public" stopped being true. A private book's art, audio and the parent's uploaded photo were protected only by an unguessable URL that never expired and survived deletion.
+- **Verifying on the server keeps the disk fallback.** Seed and fixture art lives only in the deploy bundle. Putting presigned R2 URLs straight in the JSON would break that art, or cost an R2 `HEAD` per image per read.
+- **One wrapper beats about 25 `res.json` sites.** A sweep test fails on any unsigned media path in any route.
+- **Deterministic windows keep every cache working:** the browser HTTP cache, the reader's decode cache and stable presigned URLs. Per-request expiry would defeat all three.
+
+### Alternative considered: presigned R2 URLs in the API JSON, HMAC only for `local`
+
+The issue's original proposal. Rejected because it breaks the seed-art disk fallback or costs a `HEAD` per key, puts the R2 host in responses, and leaves two verifiers of which only one runs in CI.
+
+### Alternative considered: a stable public path for published books
+
+Rejected. It needs a per-image database lookup on a free instance that auto-suspends, or a copy on every publish and unpublish. A public custom domain belongs to #192 and must not be connected while this design holds.
+
+### Alternative considered: refusing to boot without `MEDIA_URL_SECRET`
+
+Rejected. It would take a live service offline over a drifted env var, against the `cors.ts` precedent. A random secret only breaks links across restarts, and clients recover by refetching.
+
+### Consequences
+
+- **A signed link is a bearer link for up to 2 hours.** Anyone holding it can fetch the file until then. A book made private again, or deleted, stops being reachable within that window, not instantly.
+- **`r2.dev` URLs leaked before Task 11 keep working until the owner disallows public access.** No code can revoke them.
+- **Media keys must be immutable.** A new write path that replaces bytes must mint a new key, or caches serve stale art for up to two windows.
+- **Under `enforce`, an old client that echoes an unsigned URL sees placeholders until reload.** That is why enforcement waits about 48 hours after the client release.
+- **The service worker caches no media.** A test pins it, so a future offline feature must key on `mediaPath()` and decide what sign-out clears.
+
+---
+
 ## ADR-038 — Auth tokens: 30-day absolute expiry on the single per-user token, stored as sha256, existing sessions purged at deploy
 
 **Date:** 2026-11-15
@@ -459,7 +538,7 @@ Rejected here for the reason [[ADR-028]] already gives: it needs a Neon branch a
 ## ADR-027 — Cloudflare R2, not Neon Object Storage, holds illustration bytes; the client is `@aws-sdk/client-s3`
 
 **Date:** 2026-09-30
-**Status:** Accepted — Nick, 2026-10-31 (new runtime dependency and new external service approved).
+**Status:** Accepted — Nick, 2026-10-31 (new runtime dependency and new external service approved). **Amended 2026-11-17 by [[ADR-040]]:** `@aws-sdk/s3-request-presigner` is now a dependency (signed media links, [[ADR-039]]), so "no `s3-request-presigner`" below no longer holds.
 **Scope:** `server/package.json`, `server/src/services/storage.ts`. Spec: `.code-captain/specs/blob-storage-r2/spec.md` design decision 5.
 
 ### Decision
@@ -489,7 +568,7 @@ Revisit if Neon Object Storage reaches `us-west-2` or GA. The seam in [[ADR-025]
 ## ADR-026 — Illustrations are served by 302-redirecting to a public bucket, not proxied or presigned; `r2.dev` for the alpha
 
 **Date:** 2026-09-30
-**Status:** Accepted — Nick, 2026-10-31, with [[ADR-027]].
+**Status:** Superseded by [[ADR-039]] (2026-11-17). Was Accepted — Nick, 2026-10-31, with [[ADR-027]]. Its premise that the art is public stopped holding when books became private by default (#235). Media is now served through signed links, and a disk miss under `r2` redirects to a presigned GET, not a public URL. The bucket stays public-read until the owner disallows `r2.dev` (#237, Task 11).
 **Scope:** `server/src/index.ts` (the `/illustrations` mount, currently `:62`). Spec: `.code-captain/specs/blob-storage-r2/spec.md` design decision 4.
 
 ### Decision
@@ -522,7 +601,7 @@ Static-first is not decoration: the fixture book's 13 PNGs ship inside the deplo
 
 **Date:** 2026-09-30
 **Status:** Accepted — Nick, 2026-10-31, with [[ADR-027]].
-**Scope:** new `server/src/services/storage.ts`; call sites in `illustrations.ts`, `providers/fal.ts`, `imagePin.ts`, `pdf.tsx`, `routes/admin.ts`. Spec: `.code-captain/specs/blob-storage-r2/spec.md` design decisions 1–3. **Keyspace widened 2026-11-08 by [[ADR-034]]:** generated narration audio is stored under `<bookId>/narration/` through the same seam and served by the same `/illustrations` mount, so "illustration bytes" in this entry now covers those WAVs too.
+**Scope:** new `server/src/services/storage.ts`; call sites in `illustrations.ts`, `providers/fal.ts`, `imagePin.ts`, `pdf.tsx`, `routes/admin.ts`. Spec: `.code-captain/specs/blob-storage-r2/spec.md` design decisions 1–3. **Keyspace widened 2026-11-08 by [[ADR-034]]:** generated narration audio is stored under `<bookId>/narration/` through the same seam and served by the same `/illustrations` mount, so "illustration bytes" in this entry now covers those WAVs too. **Amended 2026-11-17 by [[ADR-039]] and [[ADR-040]]:** stored URLs still never change, but the API now returns them signed and strips signatures on the way in. Style-reference uploads now go through the seam too (`getUploadStorage()`, reserved `uploads/` prefix), so `public/uploads` is no longer outside it.
 
 ### Decision
 
