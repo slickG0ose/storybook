@@ -27,6 +27,9 @@ vi.mock('@aws-sdk/client-s3', () => {
   };
 });
 
+const getSignedUrl = vi.fn();
+vi.mock('@aws-sdk/s3-request-presigner', () => ({ getSignedUrl }));
+
 const {
   LocalStorage,
   R2Storage,
@@ -50,7 +53,6 @@ const R2_ENV = {
   R2_BUCKET: 'storybook-art',
   R2_ACCESS_KEY_ID: 'AKIA-test',
   R2_SECRET_ACCESS_KEY: 'super-secret-value',
-  R2_PUBLIC_BASE_URL: 'https://pub-abc.r2.dev/',
 };
 
 let root: string;
@@ -202,16 +204,18 @@ describe('R2 config', () => {
     expect(message).not.toContain(R2_ENV.R2_ACCOUNT_ID);
   });
 
-  it('rejects a public base URL without https://, naming the variable only', () => {
-    for (const bad of ['pub-abc.r2.dev', 'http://pub-abc.r2.dev', '//pub-abc.r2.dev']) {
-      expect(() => readR2Config({ ...R2_ENV, R2_PUBLIC_BASE_URL: bad })).toThrow(
-        /^R2_PUBLIC_BASE_URL must be an absolute https:\/\/ URL/,
-      );
-    }
+  it('does not require R2_PUBLIC_BASE_URL, and ignores it even when malformed (#237)', () => {
+    expect(() => readR2Config(R2_ENV)).not.toThrow();
+    const cfg = readR2Config({ ...R2_ENV, R2_PUBLIC_BASE_URL: 'not-a-url' });
+    expect(cfg).not.toHaveProperty('publicBaseUrl');
+    expect(cfg).toMatchObject({ bucket: 'storybook-art', accountId: 'acct123' });
   });
 
-  it('strips a trailing slash from the public base URL', () => {
-    expect(readR2Config(R2_ENV).publicBaseUrl).toBe('https://pub-abc.r2.dev');
+  it('still names all four remaining required variables when blank', () => {
+    const env = { R2_ACCOUNT_ID: '', R2_BUCKET: '', R2_ACCESS_KEY_ID: '', R2_SECRET_ACCESS_KEY: '' };
+    expect(() => readR2Config(env)).toThrow(
+      'STORAGE_BACKEND=r2 requires R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY to be set (missing or blank).',
+    );
   });
 
   it('builds the client against the account endpoint in region auto', () => {
@@ -334,6 +338,68 @@ describe('R2Storage', () => {
       Delete: { Objects: [{ Key: 'book1/page-1.png' }, { Key: 'book1/page-2.png' }] },
     });
     await expect(stat(join(root, 'book1'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+});
+
+describe('R2Storage.presignGet and keyPrefix (#237)', () => {
+  const lastCmd = () => send.mock.calls.at(-1)![0] as Cmd;
+
+  it('presignGet passes signingDate and expiresIn through and returns the URL', async () => {
+    getSignedUrl.mockReset();
+    getSignedUrl.mockResolvedValue('https://acct123.r2.cloudflarestorage.com/storybook-art/book1/p.png?X-Amz-Signature=abc');
+    const signingDate = new Date('2026-11-16T10:00:00Z');
+    const r2 = new R2Storage(readR2Config(R2_ENV), new LocalStorage(root));
+    const url = await r2.presignGet('book1/p.png', { signingDate, expiresIn: 3600 });
+    expect(url).toContain('X-Amz-Signature=abc');
+    const [client, command, opts] = getSignedUrl.mock.calls[0];
+    expect(client).toBeDefined();
+    expect((command as Cmd).constructor.name).toBe('GetObjectCommand');
+    expect((command as Cmd).input).toEqual({ Bucket: 'storybook-art', Key: 'book1/p.png' });
+    expect(opts).toEqual({ signingDate, expiresIn: 3600 });
+  });
+
+  it('presignGet refuses an invalid key', async () => {
+    const r2 = new R2Storage(readR2Config(R2_ENV), new LocalStorage(root));
+    await expect(r2.presignGet('../x', { signingDate: new Date(), expiresIn: 60 })).rejects.toThrow(
+      /Invalid storage key/,
+    );
+  });
+
+  it('keyPrefix is applied to put, get, head, presignGet and remove; stripped from list', async () => {
+    getSignedUrl.mockReset();
+    getSignedUrl.mockResolvedValue('https://signed.example');
+    const r2 = new R2Storage(readR2Config(R2_ENV), new LocalStorage(root), { keyPrefix: 'uploads/' });
+
+    send.mockResolvedValue({});
+    await r2.put('style-refs/a.png', Buffer.from('x'), 'image/png');
+    expect(lastCmd().input).toMatchObject({ Key: 'uploads/style-refs/a.png' });
+
+    send.mockResolvedValue({ Body: { transformToByteArray: async () => new Uint8Array(Buffer.from('r')) } });
+    await r2.get('style-refs/a.png');
+    expect(lastCmd().input).toMatchObject({ Key: 'uploads/style-refs/a.png' });
+
+    send.mockResolvedValue({ ContentLength: 1, LastModified: new Date(0) });
+    await r2.head('style-refs/a.png');
+    expect(lastCmd().input).toMatchObject({ Key: 'uploads/style-refs/a.png' });
+
+    await r2.presignGet('style-refs/a.png', { signingDate: new Date(), expiresIn: 60 });
+    expect((getSignedUrl.mock.calls[0][1] as Cmd).input).toMatchObject({ Key: 'uploads/style-refs/a.png' });
+
+    send.mockResolvedValue({
+      Contents: [{ Key: 'uploads/style-refs/a.png', LastModified: new Date(0) }],
+      IsTruncated: false,
+    });
+    expect(await r2.list('style-refs/')).toEqual([{ key: 'style-refs/a.png', lastModified: new Date(0) }]);
+    expect(lastCmd().input).toMatchObject({ Prefix: 'uploads/style-refs/' });
+
+    send.mockClear();
+    send.mockResolvedValue({
+      Contents: [{ Key: 'uploads/style-refs/a.png', LastModified: new Date(0) }],
+      IsTruncated: false,
+    });
+    await r2.remove('style-refs/');
+    const del = send.mock.calls.map(c => c[0] as Cmd).find(c => c.constructor.name === 'DeleteObjectsCommand')!;
+    expect(del.input).toMatchObject({ Delete: { Objects: [{ Key: 'uploads/style-refs/a.png' }] } });
   });
 });
 

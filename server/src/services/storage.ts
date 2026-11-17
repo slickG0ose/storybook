@@ -8,6 +8,7 @@ import {
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 // The storage seam for illustration bytes (ADR-025). Every read, write, list,
 // and delete against public/illustrations goes through getStorage(); nothing
@@ -45,6 +46,8 @@ export interface StorageBackend {
 }
 
 export const ILLUSTRATIONS_DIR = join(import.meta.dirname, '../../public/illustrations');
+/** Root of the style-reference uploads on local disk (served at /uploads, #237). */
+export const UPLOADS_DIR = join(import.meta.dirname, '../../public/uploads');
 
 // ---------------------------------------------------------------------------
 // Key validation — lives here and nowhere else. It is the path-traversal fence
@@ -206,8 +209,6 @@ export interface R2Config {
   bucket: string;
   accessKeyId: string;
   secretAccessKey: string;
-  /** No trailing slash. */
-  publicBaseUrl: string;
 }
 
 const R2_REQUIRED_VARS = [
@@ -215,8 +216,10 @@ const R2_REQUIRED_VARS = [
   'R2_BUCKET',
   'R2_ACCESS_KEY_ID',
   'R2_SECRET_ACCESS_KEY',
-  'R2_PUBLIC_BASE_URL',
 ] as const;
+
+// R2_PUBLIC_BASE_URL is no longer read (#237): media is served through signed
+// links and a presigned R2 GET, never a public bucket URL. It may stay set.
 
 // Reads and validates the R2 env. Errors name the VARIABLE, never a value —
 // this message can reach a log line, and R2_SECRET_ACCESS_KEY must not.
@@ -227,17 +230,11 @@ export function readR2Config(env: NodeJS.ProcessEnv = process.env): R2Config {
       `STORAGE_BACKEND=r2 requires ${missing.join(', ')} to be set (missing or blank).`,
     );
   }
-  // Without a scheme every redirect Location becomes a relative path on our own
-  // host and all R2 art 404s silently. Naming the var only, as above.
-  if (!/^https:\/\//i.test(env.R2_PUBLIC_BASE_URL!.trim())) {
-    throw new Error('R2_PUBLIC_BASE_URL must be an absolute https:// URL (e.g. https://pub-<hash>.r2.dev).');
-  }
   return {
     accountId: env.R2_ACCOUNT_ID!.trim(),
     bucket: env.R2_BUCKET!.trim(),
     accessKeyId: env.R2_ACCESS_KEY_ID!.trim(),
     secretAccessKey: env.R2_SECRET_ACCESS_KEY!.trim(),
-    publicBaseUrl: env.R2_PUBLIC_BASE_URL!.trim().replace(/\/+$/, ''),
   };
 }
 
@@ -254,11 +251,18 @@ function isS3NotFound(err: unknown): boolean {
 export class R2Storage implements StorageBackend {
   private readonly client: S3Client;
   private readonly bucket: string;
+  private readonly keyPrefix: string;
 
+  /**
+   * `keyPrefix` ('' or e.g. 'uploads/') is prepended to every S3 key and
+   * stripped from every key returned; the fallback sees unprefixed keys.
+   */
   constructor(
     config: R2Config,
     private readonly fallback: StorageBackend = new LocalStorage(),
+    options: { keyPrefix?: string } = {},
   ) {
+    this.keyPrefix = options.keyPrefix ?? '';
     this.bucket = config.bucket;
     this.client = new S3Client({
       region: 'auto',
@@ -270,12 +274,26 @@ export class R2Storage implements StorageBackend {
     });
   }
 
+  /**
+   * A presigned GET for `key`. `signingDate` and `expiresIn` are explicit so the
+   * URL is byte-identical within a media window (cacheable); `getSignedUrl`
+   * would otherwise stamp the wall clock.
+   */
+  async presignGet(key: string, opts: { signingDate: Date; expiresIn: number }): Promise<string> {
+    assertValidKey(key);
+    return getSignedUrl(
+      this.client,
+      new GetObjectCommand({ Bucket: this.bucket, Key: this.keyPrefix + key }),
+      { signingDate: opts.signingDate, expiresIn: opts.expiresIn },
+    );
+  }
+
   async put(key: string, bytes: Buffer, contentType: string): Promise<void> {
     assertValidKey(key);
     await this.client.send(
       new PutObjectCommand({
         Bucket: this.bucket,
-        Key: key,
+        Key: this.keyPrefix + key,
         Body: bytes,
         ContentType: contentType,
       }),
@@ -285,7 +303,7 @@ export class R2Storage implements StorageBackend {
   async get(key: string): Promise<Buffer> {
     assertValidKey(key);
     try {
-      const res = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+      const res = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: this.keyPrefix + key }));
       if (!res.Body) throw new Error(`R2 returned an empty body for key ${key}`);
       return Buffer.from(await res.Body.transformToByteArray());
     } catch (err) {
@@ -299,7 +317,7 @@ export class R2Storage implements StorageBackend {
   async head(key: string): Promise<{ size: number; lastModified: Date } | null> {
     assertValidKey(key);
     try {
-      const res = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
+      const res = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: this.keyPrefix + key }));
       return {
         size: res.ContentLength ?? 0,
         lastModified: res.LastModified ?? new Date(0),
@@ -329,13 +347,14 @@ export class R2Storage implements StorageBackend {
       const res = await this.client.send(
         new ListObjectsV2Command({
           Bucket: this.bucket,
-          Prefix: prefix || undefined,
+          Prefix: this.keyPrefix + prefix || undefined,
           ContinuationToken: token,
         }),
       );
       for (const obj of res.Contents ?? []) {
         if (!obj.Key) continue;
-        out.push({ key: obj.Key, lastModified: obj.LastModified ?? new Date(0) });
+        if (!obj.Key.startsWith(this.keyPrefix)) continue;
+        out.push({ key: obj.Key.slice(this.keyPrefix.length), lastModified: obj.LastModified ?? new Date(0) });
       }
       token = res.IsTruncated ? res.NextContinuationToken : undefined;
     } while (token);
@@ -353,7 +372,7 @@ export class R2Storage implements StorageBackend {
       await this.client.send(
         new DeleteObjectsCommand({
           Bucket: this.bucket,
-          Delete: { Objects: batch.map(Key => ({ Key })), Quiet: true },
+          Delete: { Objects: batch.map(k => ({ Key: this.keyPrefix + k })), Quiet: true },
         }),
       );
     }

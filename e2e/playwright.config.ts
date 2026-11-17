@@ -136,7 +136,10 @@ export default defineConfig({
       // it; they only widened the window to land inside a restart. See #166.
       command: process.env.CI ? 'npx tsx src/index.ts' : 'npx tsx watch src/index.ts',
       cwd: '../server',
-      env: { PORT: API_PORT },
+      // lenient until the API signs its media URLs (signed-media-urls Task 5): the code
+      // default is `enforce`, which would 403 every unsigned /illustrations image.
+      // Task 8 removes this so e2e runs the production default.
+      env: { PORT: API_PORT, MEDIA_URL_MODE: 'lenient' },
       url: `${API_BASE}/api/health`,
       reuseExistingServer: !process.env.CI,
       timeout: 15_000,

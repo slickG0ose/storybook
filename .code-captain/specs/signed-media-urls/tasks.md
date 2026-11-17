@@ -158,6 +158,8 @@ HMAC input: `` `v1\n${root}\n${key}\n${e}` ``. Output: base64url, unpadded.
 
 ### Task 4 — Serving: verifier, disk, presign redirect, lenient mode (stage 1)
 
+**Status:** Done (2026-11-16)
+
 > USER CONFIRMATION REQUIRED: new dependency. The spec must be `Status: Accepted`.
 
 **Zone:** server and config

@@ -43,7 +43,7 @@ import { checkForNewerModel } from './lib/models';
 import { buildCorsPolicy } from './lib/cors';
 import { assertSingleInstanceAssumption } from './middleware/rateLimit';
 import { resolveTrustProxyHops } from './middleware/authRateLimit';
-import { illustrationRedirect } from './middleware/illustrationRedirect';
+import { mountMedia } from './middleware/media';
 import { securityHeaders } from './middleware/securityHeaders';
 import { jsonBody, errorHandler } from './middleware/jsonBody';
 import { getStorage, resolveBackendName } from './services/storage';
@@ -97,14 +97,9 @@ if (corsPolicy.warning) {
 app.use(securityHeaders);
 app.use(cors(corsPolicy.options));
 app.use(jsonBody);
-// Disk first; on a miss, illustrationRedirect 302s to R2_PUBLIC_BASE_URL under the
-// r2 backend and falls through to the default 404 under local (ADR-026).
-app.use(
-  '/illustrations',
-  express.static(join(import.meta.dirname, '../public/illustrations')),
-  illustrationRedirect,
-);
-app.use('/uploads', express.static(join(import.meta.dirname, '../public/uploads')));
+// /illustrations and /uploads: signed-link gate, then disk, then (r2 backend) a presigned
+// 302 on a disk miss. See middleware/media.ts (#237; supersedes ADR-026's public redirect).
+mountMedia(app);
 // Derived, committed, byte-budgeted hero-rotation frames. Unlike /illustrations these
 // are never written at runtime -- they are produced by server/scripts/derive-hero-frames.sh
 // and committed. server/src/__tests__/heroFrameAssets.test.ts is the budget gate.
