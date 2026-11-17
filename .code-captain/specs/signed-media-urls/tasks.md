@@ -352,6 +352,8 @@ export function useMediaRefresh(refetch: () => void, urls: ReadonlyArray<string 
 
 ### Task 8 — e2e: expired link recovers; unsigned link refused
 
+**Status:** Done (2026-11-17)
+
 **Zone:** e2e
 **Depends on:** Tasks 5 and 7
 **Parallel-safe with:** 10
