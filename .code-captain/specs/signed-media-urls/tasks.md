@@ -270,6 +270,8 @@ export function signMediaResponses(req: Request, res: Response, next: NextFuncti
 ---
 
 ### Task 6 — Style-reference uploads behind the storage seam
+**Status:** Done (2026-11-17)
+
 **WAITS FOR PR #238 TO MERGE.**
 
 **Zone:** server

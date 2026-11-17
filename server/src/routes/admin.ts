@@ -32,7 +32,7 @@ import { getAuthUser, requireAdmin } from './auth';
 import { rateLimit, PAID_RATE_LIMITS } from '../middleware/rateLimit';
 import { validate } from '../middleware/validate';
 import { normalizeEmail } from '../services/allowlist';
-import { getStorage, isValidKey } from '../services/storage';
+import { RESERVED_TOP_LEVEL_KEYS, getStorage, isValidKey } from '../services/storage';
 import {
   startOfUtcDay,
   startOfUtcMonth,
@@ -291,7 +291,7 @@ router.get(
     // means nothing to reconcile.
     const entries = [
       ...new Set((await getStorage().list('')).map(obj => obj.key.split('/')[0])),
-    ];
+    ].filter(entry => !RESERVED_TOP_LEVEL_KEYS.includes(entry));
 
     const orphans: OrphanRow[] = [];
 
@@ -335,6 +335,10 @@ router.delete(
     // prefix passed to remove() is `${id}/` — remove() is a PREFIX match, and a
     // bare id would also delete every book whose id merely starts with it.
     const prefix = `${id}/`;
+    // `uploads` holds style-reference photos, not a book. Never deletable here.
+    if (RESERVED_TOP_LEVEL_KEYS.includes(id)) {
+      return res.status(400).json({ error: 'Invalid request: reserved name' });
+    }
     if (id.includes('/') || !isValidKey(prefix)) {
       return res.status(400).json({ error: 'Invalid request: path traversal' });
     }

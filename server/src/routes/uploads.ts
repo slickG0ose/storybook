@@ -1,8 +1,6 @@
 import { Router } from 'express';
 import multer from 'multer';
 import Anthropic from '@anthropic-ai/sdk';
-import { mkdir, writeFile } from 'fs/promises';
-import { join } from 'path';
 import { randomUUID } from 'crypto';
 import type { Request, Response, NextFunction } from 'express';
 import { ImageSanitizeError, sniffImageType, stripImageMetadata } from '../lib/imageSanitize';
@@ -12,8 +10,7 @@ import { requireAuth } from '../middleware/requireAuth';
 import { spendGate } from '../middleware/spendGate';
 import { recordUsage } from '../services/spend';
 import { rateLimit } from '../middleware/rateLimit';
-
-const UPLOADS_DIR = join(import.meta.dirname, '../../public/uploads/style-refs');
+import { getUploadStorage } from '../services/storage';
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -135,11 +132,11 @@ router.post(
   }
 
   try {
-    await mkdir(UPLOADS_DIR, { recursive: true });
     const ext = type === 'image/png' ? 'png' : 'jpg';
     const id = randomUUID();
     const filename = `${id}.${ext}`;
-    await writeFile(join(UPLOADS_DIR, filename), bytes);
+    // The sanitised bytes, through the storage seam: disk locally, R2 `uploads/style-refs/...` in prod.
+    await getUploadStorage().put(`style-refs/${filename}`, bytes, type);
     const url = `/uploads/style-refs/${filename}`;
 
     let descriptor: string | null = null;

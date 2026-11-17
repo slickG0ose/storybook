@@ -396,6 +396,14 @@ export function resolveBackendName(env: NodeJS.ProcessEnv = process.env): Storag
 }
 
 let memo: StorageBackend | null = null;
+let uploadMemo: StorageBackend | null = null;
+
+/**
+ * First key segments in the illustrations bucket that are NOT book ids. `uploads/`
+ * holds style-reference photos (getUploadStorage), so the orphan scan skips it and
+ * the orphan DELETE refuses it (#237, decision 5).
+ */
+export const RESERVED_TOP_LEVEL_KEYS: readonly string[] = ['uploads'];
 
 export function getStorage(): StorageBackend {
   if (!memo) {
@@ -404,7 +412,23 @@ export function getStorage(): StorageBackend {
   return memo;
 }
 
-/** Test-only: drop the memoized backend so the next getStorage() re-reads env. */
+/**
+ * Style-reference uploads (#237, decision 5). Keys are relative to the uploads root
+ * (`style-refs/<uuid>.jpg`). Under r2 they live in the same bucket as `uploads/<key>`;
+ * the local fallback is `public/uploads`, the directory /uploads serves.
+ */
+export function getUploadStorage(): StorageBackend {
+  if (!uploadMemo) {
+    uploadMemo =
+      resolveBackendName() === 'r2'
+        ? new R2Storage(readR2Config(), new LocalStorage(UPLOADS_DIR), { keyPrefix: 'uploads/' })
+        : new LocalStorage(UPLOADS_DIR);
+  }
+  return uploadMemo;
+}
+
+/** Test-only: drop the memoized backends so the next getStorage() re-reads env. */
 export function __resetStorageForTests(): void {
   memo = null;
+  uploadMemo = null;
 }

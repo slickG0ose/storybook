@@ -14,15 +14,15 @@
  *     key is validated, so the request path cannot steer it elsewhere. An
  *     invalid key is a 404, never a redirect, in both modes.
  *
- * The `uploads` root keys as `uploads/<key>` in the bucket. Task 6 moves that to
- * getUploadStorage(); until then it presigns through the illustrations client.
+ * The `uploads` root presigns through getUploadStorage(), whose R2 client prefixes
+ * every key with `uploads/` in the bucket.
  */
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import type { Express, NextFunction, Request, RequestHandler, Response } from 'express';
 import { MEDIA_PATH_RE, MEDIA_ROOTS, mediaPath, type MediaRoot } from '@storybook/shared';
 import { getMediaConfig, mediaWindow, signMediaPath, verifyMediaRequest } from '../lib/mediaUrl';
-import { ILLUSTRATIONS_DIR, R2Storage, UPLOADS_DIR, getStorage, resolveBackendName } from '../services/storage';
+import { ILLUSTRATIONS_DIR, R2Storage, UPLOADS_DIR, getStorage, getUploadStorage, resolveBackendName } from '../services/storage';
 
 const ROOT_DIRS: Record<MediaRoot, string> = {
   illustrations: ILLUSTRATIONS_DIR,
@@ -83,15 +83,14 @@ export function mediaPresignRedirect(root: MediaRoot): RequestHandler {
       if (resolveBackendName() !== 'r2') return next();
       const key = res.locals.mediaKey as string | null | undefined;
       if (!key || reservedForOtherRoot(root, key)) return next();
-      const storage = getStorage();
+      const storage = root === 'uploads' ? getUploadStorage() : getStorage();
       if (!(storage instanceof R2Storage)) return next();
 
       const { ttlMinutes } = getMediaConfig();
       const window = mediaWindow(new Date(), ttlMinutes);
       const mediaExpiresAt = res.locals.mediaExpiresAt as number | null | undefined;
       const expiresAt = typeof mediaExpiresAt === 'number' ? mediaExpiresAt : window.expiresAt;
-      const storageKey = root === 'uploads' ? `uploads/${key}` : key;
-      const url = await storage.presignGet(storageKey, {
+      const url = await storage.presignGet(key, {
         signingDate: window.windowStart,
         expiresIn: expiresAt - Math.floor(window.windowStart.getTime() / 1000),
       });
