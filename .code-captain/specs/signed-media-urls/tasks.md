@@ -283,6 +283,8 @@ export function signMediaResponses(req: Request, res: Response, next: NextFuncti
 
 ### Task 7 — Client: tolerate and recover from expired links
 
+**Status:** Done (2026-11-16)
+
 **Zone:** client
 **Depends on:** Task 1
 **Parallel-safe with:** 2 to 6 (and ships safely before them: unsigned URLs make every new path a no-op)

@@ -851,3 +851,34 @@ describe('BookSpread — image fails to load', () => {
     expect(screen.getByRole('button', { name: /generate illustration/i })).toBeInTheDocument()
   })
 })
+
+describe('BookSpread — version strip across a signing-window boundary', () => {
+  it('keeps the "Current" marker when the same image carries a different signature on each side', async () => {
+    // Two fetches either side of a window boundary return the same key with a different
+    // `e` and `s`. The marker compares mediaPath(), not the full URL.
+    const sig = (e: number, c: string) => `?e=${e}&s=${c.repeat(43)}`
+    const book: BookWithPages = {
+      ...mockBook,
+      pages: mockBook.pages.map(p => ({
+        ...p,
+        illustration_url: `/illustrations/book-1/page-${p.page_number}-v2.png${sig(2_000_000_000, 'a')}`,
+      })),
+    }
+    renderSpread({
+      book,
+      isOwner: true,
+      isDraft: true,
+      showVersions: true,
+      onRevertIllustration: vi.fn(),
+      illustrationVersions: [
+        { url: `/illustrations/book-1/page-1-v1.png${sig(2_000_003_600, 'b')}`, version: 1, created_at: new Date().toISOString(), feedback: null },
+        { url: `/illustrations/book-1/page-1-v2.png${sig(2_000_003_600, 'b')}`, version: 2, created_at: new Date().toISOString(), feedback: null },
+      ],
+    })
+    await goToFirstStoryPage()
+
+    expect(screen.getByLabelText('Version 2 (current)')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Revert to version 1' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Revert to version 2' })).not.toBeInTheDocument()
+  })
+})

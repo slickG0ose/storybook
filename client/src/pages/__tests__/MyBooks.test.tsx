@@ -1,8 +1,9 @@
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import MyBooks from '../MyBooks'
 import { AUTH_EXPIRED_EVENT } from '../../lib/authFetch'
+import { MEDIA_EXPIRED_EVENT } from '../../lib/mediaRefresh'
 import { ToastProvider } from '../../context/ToastContext'
 import type { Book, Page } from '../../types'
 
@@ -514,5 +515,25 @@ describe('MyBooks when the library cannot be loaded', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     renderMyBooks()
     expect(await screen.findByRole('alert')).toHaveTextContent("We couldn't load your books just now")
+  })
+})
+
+describe('MyBooks — expired media links', () => {
+  beforeEach(() => { vi.restoreAllMocks() })
+  afterEach(() => { vi.restoreAllMocks() })
+
+  it('refetches the list once on an expired-media event, and not again within 30 seconds', async () => {
+    const { calls } = setupFetchMock({})
+    const listGets = () => calls.filter(c => c.url === '/api/books/mine')
+    renderMyBooks()
+    await waitFor(() => expect(listGets()).toHaveLength(1))
+    await screen.findByText('Published Adventure')
+
+    act(() => { window.dispatchEvent(new CustomEvent(MEDIA_EXPIRED_EVENT, { detail: { url: 'x' } })) })
+    await waitFor(() => expect(listGets()).toHaveLength(2))
+
+    act(() => { window.dispatchEvent(new CustomEvent(MEDIA_EXPIRED_EVENT, { detail: { url: 'y' } })) })
+    await new Promise(r => setTimeout(r, 20))
+    expect(listGets()).toHaveLength(2)
   })
 })

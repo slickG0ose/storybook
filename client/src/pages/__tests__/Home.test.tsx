@@ -1,7 +1,8 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import Home from '../Home'
+import { MEDIA_EXPIRED_EVENT } from '../../lib/mediaRefresh'
 import type { Book } from '../../types'
 import type { CartContextValue } from '../../context/CartContext'
 
@@ -343,5 +344,32 @@ describe('Home — a catalog cover fails to load', () => {
     expect(screen.getByText('🦊')).toBeInTheDocument()
     expect(container.querySelector('img[src="/illustrations/book-2/cover.png"]')).toBeInTheDocument()
     expect(screen.queryByText('👑')).not.toBeInTheDocument()
+  })
+})
+
+describe('Home — expired media links', () => {
+  beforeEach(() => { vi.restoreAllMocks() })
+
+  it('reloads the catalog once on an expired-media event, and not again within 30 seconds', async () => {
+    const urls: string[] = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(input => {
+      const url = String(input)
+      urls.push(url)
+      const body = url.includes('/themes') ? mockThemes : url.includes('/age-ranges') ? mockAgeRanges : mockBooks
+      return Promise.resolve(new Response(JSON.stringify(body), { headers: { 'Content-Type': 'application/json' } }))
+    })
+    const catalogGets = () => urls.filter(u => u === '/api/books')
+    renderHome()
+    expect(await screen.findByText('Kindness Kingdom')).toBeInTheDocument()
+    expect(catalogGets()).toHaveLength(1)
+
+    act(() => { window.dispatchEvent(new CustomEvent(MEDIA_EXPIRED_EVENT, { detail: { url: 'x' } })) })
+    await waitFor(() => expect(catalogGets()).toHaveLength(2))
+    // The grid stays on screen while links refresh.
+    expect(screen.getByText('Kindness Kingdom')).toBeInTheDocument()
+
+    act(() => { window.dispatchEvent(new CustomEvent(MEDIA_EXPIRED_EVENT, { detail: { url: 'y' } })) })
+    await new Promise(r => setTimeout(r, 20))
+    expect(catalogGets()).toHaveLength(2)
   })
 })

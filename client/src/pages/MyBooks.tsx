@@ -6,6 +6,7 @@ import { useToast } from '../context/ToastContext'
 import { MyBooksSkeleton } from '../components/Skeletons'
 import { api } from '../lib/apiBase'
 import { authFetch } from '../lib/authFetch'
+import { useMediaRefresh } from '../lib/mediaRefresh'
 import { commerceEnabled } from '../lib/commerce'
 import FallbackImage from '../components/FallbackImage'
 import type { Book, BookWithPages } from '../types'
@@ -40,6 +41,9 @@ export default function MyBooks() {
   }, [user])
 
   useEffect(() => { fetchBooks() }, [fetchBooks])
+
+  // Signed media links expire: refetch the (free) list when a cover reports one.
+  useMediaRefresh(fetchBooks, books.map(b => b.cover_url))
 
   /**
    * Making a book public shows it to anyone who visits, signed in or not, so it always asks

@@ -13,7 +13,7 @@ import type { NarrationChunk, NarrationPosition } from '../lib/narration/types'
 import type { NarrationTarget } from '../lib/narration/provider'
 import { createGeneratedProvider } from '../lib/narration/generatedProvider'
 import { useAuth } from '../context/AuthContext'
-import { narrationTextFor, nextSlot, type NarrationSlot } from '@storybook/shared'
+import { mediaPath, narrationTextFor, nextSlot, type NarrationSlot } from '@storybook/shared'
 
 function formatRelativeTime(iso: string): string {
   const then = new Date(iso).getTime()
@@ -909,7 +909,7 @@ function PageIllustration({
             {showVersions && illustrationVersions && illustrationVersions.length > 1 && (
               <div className="mt-2 flex gap-3 overflow-x-auto pb-1">
                 {illustrationVersions.map(v => {
-                  const isActive = v.url === page.illustration_url;
+                  const isActive = mediaPath(v.url) === mediaPath(page.illustration_url);
                   const truncatedFeedback = v.feedback && v.feedback.length > 60
                     ? `${v.feedback.slice(0, 60).trimEnd()}…`
                     : v.feedback;

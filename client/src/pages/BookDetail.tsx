@@ -15,6 +15,8 @@ import type { BookWithPages, BookVersion, FontFamily, IllustrationVersion, Page,
 import BookSpread from '../components/BookSpread'
 import FallbackImage from '../components/FallbackImage'
 import { useImageFallback } from '../hooks/useImageFallback'
+import { useMediaRefresh } from '../lib/mediaRefresh'
+import { mediaPath } from '@storybook/shared'
 import PublishStateBar from '../components/PublishStateBar'
 
 // A character "requires" a portrait (for the approve-cast soft gate) when its
@@ -286,6 +288,10 @@ export default function BookDetail() {
   // Reader view: a stored illustration URL whose file is gone (404) renders as a page
   // with no illustration. Declared above the early returns because it is a hook.
   const readerIllustration = useImageFallback(book?.pages?.[currentPage]?.illustration_url)
+
+  // Signed media links expire. A long-open tab refetches the book (a free GET) when an image
+  // reports an expired link, or on return to a tab whose earliest link has lapsed.
+  useMediaRefresh(fetchBook, [book?.cover_url, ...(book?.pages ?? []).map(p => p.illustration_url)])
 
   if (loading) return <BookDetailSkeleton />
   if (!book && loadFailed) {
@@ -1191,7 +1197,7 @@ export default function BookDetail() {
                       {showVersions && illustrationVersions.length > 1 && (
                         <div className="flex gap-3 overflow-x-auto pb-1">
                           {illustrationVersions.map(v => {
-                            const isActive = v.url === page.illustration_url
+                            const isActive = mediaPath(v.url) === mediaPath(page.illustration_url)
                             const truncatedFeedback = v.feedback && v.feedback.length > 60
                               ? `${v.feedback.slice(0, 60).trimEnd()}…`
                               : v.feedback

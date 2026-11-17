@@ -492,4 +492,95 @@ describe('createGeneratedProvider', () => {
       expect(calls).toHaveLength(before)
     })
   })
+  describe('signed clip links expiring (signed-media-urls)', () => {
+    const nowS = () => Math.floor(Date.now() / 1000)
+    /** A ready entry whose clip URLs carry `e`, `n` seconds from now (negative = already past). */
+    const signedReady = (n: number, tag: string): NarrationReady => {
+      const base = readyFor()
+      return {
+        ...base,
+        segments: base.segments.map((seg) => ({
+          ...seg,
+          url: `${seg.url.replace('.wav', `-${tag}.wav`)}?e=${nowS() + n}&s=${'x'.repeat(43)}`,
+        })),
+      }
+    }
+
+    it('refetches a cached entry whose first link is under 2 minutes from expiry, before playing', async () => {
+      let gets = 0
+      const { fetchImpl, calls } = stubFetch({
+        get: () => json(gets++ === 0 ? signedReady(60, 'old') : signedReady(3600, 'new')),
+      })
+      const provider = make(fetchImpl)
+
+      provider.speak(CHUNKS, OPTS, recorder().events)
+      await flush()
+      expect(player().src).toContain('-old.wav')
+
+      provider.speak(CHUNKS, OPTS, recorder().events)
+      await flush()
+
+      expect(calls.map((c) => c.method)).toEqual(['GET', 'GET'])
+      expect(player().src).toContain('-new.wav')
+    })
+
+    it('does not refetch a cached entry with a comfortable margin, or an unsigned one', async () => {
+      const { fetchImpl, calls } = stubFetch({ get: () => json(signedReady(3600, 'ok')) })
+      const provider = make(fetchImpl)
+      provider.speak(CHUNKS, OPTS, recorder().events)
+      await flush()
+      provider.speak(CHUNKS, OPTS, recorder().events)
+      await flush()
+      expect(calls).toHaveLength(1)
+    })
+
+    it('on an error with a past e, refetches once (GET only) and resumes at the same index', async () => {
+      let gets = 0
+      const { fetchImpl, calls } = stubFetch({
+        get: () => json(gets++ === 0 ? signedReady(-10, 'old') : signedReady(3600, 'new')),
+      })
+      const { events, log } = recorder()
+
+      make(fetchImpl).speak(CHUNKS, { ...OPTS, fromChunk: 1 }, events)
+      await flush()
+      expect(player().src).toContain('-1-old.wav')
+
+      player().fail()
+      await flush()
+
+      expect(calls.map((c) => c.method)).toEqual(['GET', 'GET'])
+      expect(player().src).toContain('-1-new.wav')
+      expect(log).not.toContain('error:synthesis-failed')
+    })
+
+    it('a second failure after the one refetch reports synthesis-failed, with no further fetch', async () => {
+      const { fetchImpl, calls } = stubFetch({ get: () => json(signedReady(-10, 'stale')) })
+      const { events, log } = recorder()
+
+      make(fetchImpl).speak(CHUNKS, OPTS, events)
+      await flush()
+      player().fail()
+      await flush()
+      expect(calls).toHaveLength(2)
+
+      player().fail()
+      await flush()
+
+      expect(calls).toHaveLength(2)
+      expect(log.filter((l) => l === 'error:synthesis-failed')).toHaveLength(1)
+    })
+
+    it('an error on a clip whose link has not expired fails at once, without a refetch', async () => {
+      const { fetchImpl, calls } = stubFetch({ get: () => json(signedReady(3600, 'live')) })
+      const { events, log } = recorder()
+
+      make(fetchImpl).speak(CHUNKS, OPTS, events)
+      await flush()
+      player().fail()
+      await flush()
+
+      expect(calls).toHaveLength(1)
+      expect(log).toContain('error:synthesis-failed')
+    })
+  })
 })

@@ -1,4 +1,9 @@
 import { useCallback, useState } from 'react'
+import { mediaExpiresAt } from '@storybook/shared'
+import { reportExpiredMedia } from '../lib/mediaRefresh'
+
+/** A link this close to its `e` (or past it) that fails to load is treated as expired. */
+const EXPIRY_SLOP_MS = 30_000
 
 /**
  * Treats an image URL that failed to load as if it were absent.
@@ -12,7 +17,12 @@ import { useCallback, useState } from 'react'
  *
  * The failure is remembered **by URL, not as a boolean**. A re-roll or a page turn
  * hands the hook a different URL, and that one gets a fresh attempt without any
- * reset effect; the same dead URL stays suppressed instead of flickering back.
+ * reset effect; the same dead URL stays suppressed instead of flickering back. This memory
+ * stays keyed on the **full** URL (signature included) on purpose: an expired link that the
+ * page refetches comes back as a different URL and so gets its retry.
+ *
+ * When the failed URL is a signed link at or near its expiry, `onError` also reports it
+ * (`reportExpiredMedia`, once per URL) so the owning page can refetch fresh links.
  */
 export function useImageFallback(url: string | null | undefined): {
   /** The URL to render, or `null` when there is none or it failed to load. */
@@ -21,6 +31,11 @@ export function useImageFallback(url: string | null | undefined): {
   onError: () => void
 } {
   const [failedUrl, setFailedUrl] = useState<string | null>(null)
-  const onError = useCallback(() => setFailedUrl(url ?? null), [url])
+  const onError = useCallback(() => {
+    setFailedUrl(url ?? null)
+    if (!url) return
+    const expiresAt = mediaExpiresAt(url)
+    if (expiresAt !== null && expiresAt <= Date.now() + EXPIRY_SLOP_MS) reportExpiredMedia(url)
+  }, [url])
   return { src: url && url !== failedUrl ? url : null, onError }
 }

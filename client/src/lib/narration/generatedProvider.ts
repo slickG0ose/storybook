@@ -2,6 +2,7 @@ import {
   GENERATED_VOICE_PREFIX,
   NARRATION_VOICES,
   NarrationVoiceIdSchema,
+  mediaExpiresAt,
   slotKey,
   type NarrationReady,
   type NarrationVoiceId,
@@ -43,6 +44,20 @@ import type {
 /** ~10 ms of 8 kHz mono 8-bit silence. Only ever used to unlock the element in a gesture. */
 export const SILENT_WAV =
   'data:audio/wav;base64,UklGRnQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YVAAAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA=='
+
+/**
+ * A cached entry whose first clip link expires within this long is refetched before it plays
+ * (signed-media-urls, decision 4). Clips are short, so this margin is what matters, not
+ * expiry mid-clip.
+ */
+const STALE_MARGIN_MS = 2 * 60_000
+
+/** True when the entry's first segment carries an `e` less than `STALE_MARGIN_MS` away. */
+function isStale(entry: NarrationReady): boolean {
+  const first = [...entry.segments].sort((a, b) => a.index - b.index)[0]
+  const expiresAt = mediaExpiresAt(first?.url)
+  return expiresAt !== null && expiresAt - Date.now() < STALE_MARGIN_MS
+}
 
 const DEFAULT_GENERATED_VOICE: NarrationVoiceId = 'af_heart'
 
@@ -152,6 +167,26 @@ export function createGeneratedProvider(deps: GeneratedProviderDeps): NarrationP
     return tracked
   }
 
+  /**
+   * Re-reads a slot's clips with the free GET only: never `postNarration`, so a refresh can
+   * not reach fal or spend. Returns the fresh entry (and caches it), or `null` when the GET
+   * fails or the clips are gone, leaving the caller to use what it has or fail.
+   */
+  async function refresh(target: NarrationTarget, voiceId: NarrationVoiceId): Promise<NarrationReady | null> {
+    const key = cacheKey(target, voiceId)
+    try {
+      const fresh = await getNarration(target.bookId, target.slot, voiceId, fetchImpl)
+      if (fresh.status !== 'ready') {
+        ready.delete(key)
+        return null
+      }
+      ready.set(key, fresh)
+      return fresh
+    } catch {
+      return null
+    }
+  }
+
   return {
     id: 'generated',
     needsStartWatchdog: false,
@@ -196,6 +231,8 @@ export function createGeneratedProvider(deps: GeneratedProviderDeps): NarrationP
       /** The clip currently loaded on the element, or null while preparing. */
       let current: number | null = null
       let startedCurrent = false
+      /** One expiry retry per speak(); a second failure takes the normal failure path. */
+      let retried = false
 
       const silent = (): boolean => dead || run !== activeRun
 
@@ -258,7 +295,21 @@ export function createGeneratedProvider(deps: GeneratedProviderDeps): NarrationP
           }
           playClip(clips, index + 1)
         }
-        el.onerror = () => failWith('synthesis-failed')
+        el.onerror = () => {
+          if (silent()) return
+          const expiresAt = mediaExpiresAt(segment.url)
+          if (retried || !target || !voiceId || expiresAt === null || expiresAt > Date.now()) {
+            return failWith('synthesis-failed')
+          }
+          // The clip's link has expired: drop the entry, refetch once, resume at this index.
+          retried = true
+          el.onerror = null
+          void refresh(target, voiceId).then((fresh) => {
+            if (silent()) return
+            if (!fresh) return failWith('synthesis-failed')
+            playClip(fresh, index)
+          })
+        }
 
         el.src = api(segment.url)
         // Loading a new source resets `playbackRate` to `defaultPlaybackRate`; set both.
@@ -285,6 +336,10 @@ export function createGeneratedProvider(deps: GeneratedProviderDeps): NarrationP
         if (quotaBlocked) return failWith('quota')
 
         let clips = ready.get(key)
+        if (clips && isStale(clips)) {
+          // Free GET for fresh links; if it fails, play what we have and let `onerror` decide.
+          clips = (await refresh(target, voiceId)) ?? clips
+        }
         if (!clips) {
           try {
             clips = await load(target, voiceId)

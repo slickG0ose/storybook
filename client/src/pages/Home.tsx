@@ -5,6 +5,7 @@ import BookCard from '../components/BookCard'
 import HeroArt from '../components/HeroArt'
 import { SERVER_READY_EVENT } from '../lib/serverStatus'
 import { api } from '../lib/apiBase'
+import { useMediaRefresh } from '../lib/mediaRefresh'
 import { commerceEnabled } from '../lib/commerce'
 import type { Book, Page } from '../types'
 
@@ -200,6 +201,10 @@ export default function Home() {
       cancelled = true
     }
   }, [loadAttempt])
+
+  // Signed media links expire: reload the catalog (free GETs) when a cover reports one.
+  // No `setLoading(true)`, so the grid stays on screen while the new links arrive.
+  useMediaRefresh(() => setLoadAttempt(n => n + 1), books.map(b => b.cover_url))
 
   // The catalog failed while the API was still starting: load it as soon as the health
   // check reports the server is up, rather than leaving the reader to press Try again.
