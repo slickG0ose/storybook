@@ -40,6 +40,7 @@ Written for the spec's recommended rulings on its five open questions. A differe
 **Depends on:** none
 **Parallel-safe with:** none on the server; Task 7 starts after this
 **Owner step after merge:** none
+**Status:** Done (2026-11-16)
 
 **Files to add or change:**
 - `shared/src/media.ts`: new
