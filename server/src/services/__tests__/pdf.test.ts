@@ -67,7 +67,7 @@ describe('pdf renderer service', () => {
     it('returns the MVP watermark string for any book', async () => {
       const book = await seededBook();
       expect(watermarkFor(book)).toBe(
-        'Created with StoryBook Storefront · storybook.example.com',
+        'Created with StoryBook Storefront · slickg0ose.github.io/storybook',
       );
     });
   });
