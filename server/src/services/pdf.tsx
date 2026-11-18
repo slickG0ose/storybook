@@ -60,7 +60,7 @@ console.warn('[pdf] Display font not registered; falling back to Helvetica.');
 // scope). PS3 swaps the body of this one function to make the band
 // tier-aware; the <Page> templates below never need to change.
 export function watermarkFor(_book: PdfBook): string | null {
-  return 'Created with StoryBook Storefront · storybook.example.com';
+  return 'Created with StoryBook Storefront · slickg0ose.github.io/storybook';
 }
 
 // ---------------------------------------------------------------------------

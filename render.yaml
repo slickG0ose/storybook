@@ -161,10 +161,12 @@ services:
         value: https://slickg0ose.github.io
       # Spend ceilings (F4b / #6), in whole cents. Daily is per-user and
       # admin-bypassable; monthly is global and bypassable by nobody.
+      # Tester round: $5/day per tester, $100/month shared (a full illustrated
+      # book is ~70c). There is no weekly cap.
       - key: QUOTA_DAILY_PER_USER_CENTS
-        value: '200'
+        value: '500'
       - key: QUOTA_MONTHLY_GLOBAL_CENTS
-        value: '2000'
+        value: '10000'
       # Neon (free tier), NOT a Render database — see the caveat block at the
       # top of this file and docs/neon-migration-runbook.md. sync:false means
       # Render keeps whatever the dashboard holds and a Blueprint sync never
