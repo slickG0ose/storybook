@@ -8,6 +8,7 @@ import { withSiteName } from '../lib/pageTitle'
 import { BookDetailSkeleton } from '../components/Skeletons'
 import { api } from '../lib/apiBase'
 import { authFetch } from '../lib/authFetch'
+import { downloadBookPdf } from '../lib/bookPdf'
 import { commerceEnabled } from '../lib/commerce'
 import { resolveReaderTypography } from '../lib/typography'
 import { PER_IMAGE_COST_USD, fmtUsd, portraitStepCostNote } from '../lib/cost'
@@ -25,16 +26,6 @@ import PublishStateBar from '../components/PublishStateBar'
 // optional Generate affordance but never block approval.
 const isRequiredRole = (role: string): boolean =>
   role === 'primary' || role === 'antagonist'
-
-// Mirrors the server's slugify in routes/books.ts so the browser-side download
-// filename matches the Content-Disposition the route sends. If one changes,
-// change the other.
-const pdfSlug = (title: string): string =>
-  title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 80) || 'storybook'
 
 function formatRelativeTime(iso: string): string {
   const then = new Date(iso).getTime()
@@ -547,23 +538,7 @@ export default function BookDetail() {
     setPdfError('')
     setDownloadingPdf(true)
     try {
-      const res = await authFetch(user.token, api(`/api/books/${book.id}/pdf`), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: '{}',
-      })
-      if (!res.ok) throw new Error(`Download failed (${res.status})`)
-      const blob = await res.blob()
-      // Object-URL + synthetic anchor click: the response is a stream, not a
-      // navigable URL, so there's nothing to point an <a href> at directly.
-      const objectUrl = URL.createObjectURL(blob)
-      const anchor = document.createElement('a')
-      anchor.href = objectUrl
-      anchor.download = `${pdfSlug(book.title)}.pdf`
-      anchor.click()
-      URL.revokeObjectURL(objectUrl)
+      await downloadBookPdf(user.token, book.id, book.title)
     } catch (err: unknown) {
       setPdfError(err instanceof Error ? err.message : 'Download failed')
     } finally {

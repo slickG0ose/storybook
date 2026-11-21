@@ -102,6 +102,11 @@ test.describe('Money path on mobile', () => {
         await expect(page).toHaveURL(/\/order\/.+/);
         await expect(page.getByText('Order Confirmed!')).toBeVisible();
         await expectNoHorizontalOverflow(page);
+
+        // #87: a guest buyer is pointed at sign-in for the keep-a-copy PDF, and the
+        // link is a full-size tap target in either theme.
+        await expect(page.getByTestId('keep-a-copy')).toBeVisible();
+        await expectTapTargets(page, '[data-testid="keep-a-copy"] a', PRIMARY_TAP_MIN);
       });
     });
   });
