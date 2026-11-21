@@ -101,6 +101,15 @@ services:
         sync: false
       - key: R2_SECRET_ACCESS_KEY
         sync: false
+      # Optional read-only R2 token (#246), used ONLY to presign media GETs so a
+      # leaked presigning secret can't write or delete art. Set both or neither:
+      # while either is blank, links are presigned with the main token above and
+      # the boot log names the blank one. Cloudflare permission: Object Read
+      # only, this bucket only.
+      - key: R2_PRESIGN_ACCESS_KEY_ID
+        sync: false
+      - key: R2_PRESIGN_SECRET_ACCESS_KEY
+        sync: false
       # UNUSED and optional (#237); kept only so an existing dashboard value
       # does not look orphaned. Safe to delete once the bucket is private.
       - key: R2_PUBLIC_BASE_URL
