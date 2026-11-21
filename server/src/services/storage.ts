@@ -209,6 +209,14 @@ export interface R2Config {
   bucket: string;
   accessKeyId: string;
   secretAccessKey: string;
+  /**
+   * Optional read-only token used only to presign media GETs (#246). Null when
+   * neither R2_PRESIGN_* var is set, or only one is: presigning then falls back
+   * to the main read-write token, so media links never break mid-setup.
+   */
+  presign: { accessKeyId: string; secretAccessKey: string } | null;
+  /** The R2_PRESIGN_* var left blank when exactly one of the pair is set; else []. */
+  presignMissing: string[];
 }
 
 const R2_REQUIRED_VARS = [
@@ -230,11 +238,19 @@ export function readR2Config(env: NodeJS.ProcessEnv = process.env): R2Config {
       `STORAGE_BACKEND=r2 requires ${missing.join(', ')} to be set (missing or blank).`,
     );
   }
+  const presignId = (env.R2_PRESIGN_ACCESS_KEY_ID ?? '').trim();
+  const presignSecret = (env.R2_PRESIGN_SECRET_ACCESS_KEY ?? '').trim();
+  const presignMissing: string[] = [];
+  if (presignId && !presignSecret) presignMissing.push('R2_PRESIGN_SECRET_ACCESS_KEY');
+  if (presignSecret && !presignId) presignMissing.push('R2_PRESIGN_ACCESS_KEY_ID');
   return {
     accountId: env.R2_ACCOUNT_ID!.trim(),
     bucket: env.R2_BUCKET!.trim(),
     accessKeyId: env.R2_ACCESS_KEY_ID!.trim(),
     secretAccessKey: env.R2_SECRET_ACCESS_KEY!.trim(),
+    presign:
+      presignId && presignSecret ? { accessKeyId: presignId, secretAccessKey: presignSecret } : null,
+    presignMissing,
   };
 }
 
@@ -250,6 +266,12 @@ function isS3NotFound(err: unknown): boolean {
 
 export class R2Storage implements StorageBackend {
   private readonly client: S3Client;
+  /**
+   * Signs presigned GETs only (#246). A separate read-only token when
+   * R2_PRESIGN_* is set, so a leaked presigning secret can't write or delete;
+   * otherwise the same client as everything else.
+   */
+  private readonly presignClient: S3Client;
   private readonly bucket: string;
   private readonly keyPrefix: string;
 
@@ -264,14 +286,18 @@ export class R2Storage implements StorageBackend {
   ) {
     this.keyPrefix = options.keyPrefix ?? '';
     this.bucket = config.bucket;
+    const endpoint = `https://${config.accountId}.r2.cloudflarestorage.com`;
     this.client = new S3Client({
       region: 'auto',
-      endpoint: `https://${config.accountId}.r2.cloudflarestorage.com`,
+      endpoint,
       credentials: {
         accessKeyId: config.accessKeyId,
         secretAccessKey: config.secretAccessKey,
       },
     });
+    this.presignClient = config.presign
+      ? new S3Client({ region: 'auto', endpoint, credentials: { ...config.presign } })
+      : this.client;
   }
 
   /**
@@ -282,7 +308,7 @@ export class R2Storage implements StorageBackend {
   async presignGet(key: string, opts: { signingDate: Date; expiresIn: number }): Promise<string> {
     assertValidKey(key);
     return getSignedUrl(
-      this.client,
+      this.presignClient,
       new GetObjectCommand({ Bucket: this.bucket, Key: this.keyPrefix + key }),
       { signingDate: opts.signingDate, expiresIn: opts.expiresIn },
     );

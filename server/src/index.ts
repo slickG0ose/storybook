@@ -46,7 +46,7 @@ import { resolveTrustProxyHops } from './middleware/authRateLimit';
 import { mountMedia, signMediaResponses } from './middleware/media';
 import { securityHeaders } from './middleware/securityHeaders';
 import { jsonBody, errorHandler } from './middleware/jsonBody';
-import { getStorage, resolveBackendName } from './services/storage';
+import { getStorage, readR2Config, resolveBackendName } from './services/storage';
 
 import type { Request, Response, NextFunction } from 'express';
 
@@ -79,6 +79,17 @@ assertSingleInstanceAssumption();
 getStorage();
 if (resolveBackendName() === 'r2') {
   console.log('[storage] backend: r2 (local disk is the read fallback)');
+  // Which token signs media links (#246). Names variables only, never a value.
+  const { presign, presignMissing } = readR2Config();
+  if (presignMissing.length > 0) {
+    console.warn(
+      `[storage] ${presignMissing.join(', ')} is blank, so media links are presigned with the main R2 token. Set both R2_PRESIGN_* vars to use the read-only one.`,
+    );
+  } else {
+    console.log(
+      `[storage] media links presigned with the ${presign ? 'read-only R2_PRESIGN_* token' : 'main R2 token (R2_PRESIGN_* not set)'}`,
+    );
+  }
 }
 
 // What req.ip means behind Render's proxy, which is what the auth rate limit keys on.

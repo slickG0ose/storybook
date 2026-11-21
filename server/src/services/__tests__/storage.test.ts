@@ -221,6 +221,33 @@ describe('R2 config', () => {
     );
   });
 
+  it('reads no presign token when neither R2_PRESIGN_* var is set (#246)', () => {
+    expect(readR2Config(R2_ENV)).toMatchObject({ presign: null, presignMissing: [] });
+    expect(
+      readR2Config({ ...R2_ENV, R2_PRESIGN_ACCESS_KEY_ID: ' ', R2_PRESIGN_SECRET_ACCESS_KEY: '' }),
+    ).toMatchObject({ presign: null, presignMissing: [] });
+  });
+
+  it('reads the presign token when both R2_PRESIGN_* vars are set, trimmed (#246)', () => {
+    const cfg = readR2Config({
+      ...R2_ENV,
+      R2_PRESIGN_ACCESS_KEY_ID: ' AKIA-readonly ',
+      R2_PRESIGN_SECRET_ACCESS_KEY: ' readonly-secret ',
+    });
+    expect(cfg).toMatchObject({
+      presign: { accessKeyId: 'AKIA-readonly', secretAccessKey: 'readonly-secret' },
+      presignMissing: [],
+    });
+  });
+
+  it('falls back to the main token and names the blank var when only one is set (#246)', () => {
+    const onlyId = readR2Config({ ...R2_ENV, R2_PRESIGN_ACCESS_KEY_ID: 'AKIA-readonly' });
+    expect(onlyId).toMatchObject({ presign: null, presignMissing: ['R2_PRESIGN_SECRET_ACCESS_KEY'] });
+    const onlySecret = readR2Config({ ...R2_ENV, R2_PRESIGN_SECRET_ACCESS_KEY: 'readonly-secret' });
+    expect(onlySecret).toMatchObject({ presign: null, presignMissing: ['R2_PRESIGN_ACCESS_KEY_ID'] });
+    expect(JSON.stringify(onlySecret.presignMissing)).not.toContain('readonly-secret');
+  });
+
   it('builds the client against the account endpoint in region auto', () => {
     new R2Storage(readR2Config(R2_ENV), new LocalStorage(root));
     expect(clientConfigs[0]).toMatchObject({
@@ -359,6 +386,40 @@ describe('R2Storage.presignGet and keyPrefix (#237)', () => {
     expect((command as Cmd).constructor.name).toBe('GetObjectCommand');
     expect((command as Cmd).input).toEqual({ Bucket: 'storybook-art', Key: 'book1/p.png' });
     expect(opts).toEqual({ signingDate, expiresIn: 3600 });
+  });
+
+  it('presignGet uses the main client when no R2_PRESIGN_* token is set (#246)', async () => {
+    getSignedUrl.mockReset();
+    getSignedUrl.mockResolvedValue('https://signed.example');
+    const r2 = new R2Storage(readR2Config(R2_ENV), new LocalStorage(root));
+    expect(clientConfigs).toHaveLength(1);
+    await r2.presignGet('book1/p.png', { signingDate: new Date(), expiresIn: 60 });
+    const [client] = getSignedUrl.mock.calls[0];
+    expect(client).toBe((r2 as unknown as { client: unknown }).client);
+  });
+
+  it('presignGet signs with the read-only token, and writes keep the main one (#246)', async () => {
+    getSignedUrl.mockReset();
+    getSignedUrl.mockResolvedValue('https://signed.example');
+    const env = {
+      ...R2_ENV,
+      R2_PRESIGN_ACCESS_KEY_ID: ' AKIA-readonly ',
+      R2_PRESIGN_SECRET_ACCESS_KEY: 'readonly-secret',
+    };
+    const r2 = new R2Storage(readR2Config(env), new LocalStorage(root));
+    expect(clientConfigs).toHaveLength(2);
+    expect(clientConfigs[0]).toMatchObject({
+      credentials: { accessKeyId: 'AKIA-test', secretAccessKey: 'super-secret-value' },
+    });
+    expect(clientConfigs[1]).toMatchObject({
+      region: 'auto',
+      endpoint: 'https://acct123.r2.cloudflarestorage.com',
+      credentials: { accessKeyId: 'AKIA-readonly', secretAccessKey: 'readonly-secret' },
+    });
+    await r2.presignGet('book1/p.png', { signingDate: new Date(), expiresIn: 60 });
+    const [presignClient] = getSignedUrl.mock.calls[0];
+    expect(presignClient).toBe((r2 as unknown as { presignClient: unknown }).presignClient);
+    expect(presignClient).not.toBe((r2 as unknown as { client: unknown }).client);
   });
 
   it('presignGet refuses an invalid key', async () => {
