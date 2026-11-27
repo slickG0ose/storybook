@@ -14,6 +14,7 @@ describe('titleForPath', () => {
     ['/my-books/', 'My books · StoryBook'],
     ['/admin', 'Admin · StoryBook'],
     ['/privacy', 'Privacy · StoryBook'],
+    ['/about', 'About · StoryBook'],
     ['/book/abc', 'Book · StoryBook'],
     ['/order/abc', 'Order confirmed · StoryBook'],
     ['/nope', 'Page not found · StoryBook'],

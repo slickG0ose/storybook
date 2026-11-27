@@ -7,7 +7,7 @@
  * the one scrapers and the installed PWA see).
  */
 export const SITE_NAME = 'StoryBook'
-export const HOME_TITLE = "StoryBook — AI children's books"
+export const HOME_TITLE = "StoryBook — Children's books you create with AI"
 
 const EXACT: Record<string, string> = {
   '/login': 'Sign in',
@@ -16,6 +16,7 @@ const EXACT: Record<string, string> = {
   '/my-books': 'My books',
   '/admin': 'Admin',
   '/privacy': 'Privacy',
+  '/about': 'About',
   '/cart': 'Cart',
   '/checkout': 'Checkout',
 }

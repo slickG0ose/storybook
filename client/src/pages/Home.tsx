@@ -266,7 +266,7 @@ export default function Home() {
               Stories made with <span className="text-purple-500 dark:text-purple-300">Magic</span>
             </h1>
             <p className="text-lg sm:text-xl text-gray-600 dark:text-gray-300 max-w-[52ch] mx-auto lg:mx-0 mb-9">
-              Beautiful children's books crafted by AI. Browse our collection or create a one-of-a-kind story for your little one.
+              Beautiful children's books you create with AI. Browse the collection or make a one-of-a-kind story for your little one.
             </p>
             <div className="flex flex-col sm:flex-row items-center lg:items-start justify-center lg:justify-start gap-4">
               <Link

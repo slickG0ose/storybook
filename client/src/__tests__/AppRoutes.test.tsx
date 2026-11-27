@@ -57,5 +57,13 @@ describe('App routes', () => {
       const footer = screen.getByRole('navigation', { name: 'Footer' })
       expect(within(footer).getByRole('link', { name: 'Privacy' })).toHaveAttribute('href', '/privacy')
     })
+
+    it('serves the About page, linked from the footer', () => {
+      vi.stubEnv('VITE_COMMERCE_ENABLED', 'false')
+      renderAt('/about')
+      expect(screen.getByRole('heading', { level: 1, name: 'Stories your family makes together' })).toBeInTheDocument()
+      const footer = screen.getByRole('navigation', { name: 'Footer' })
+      expect(within(footer).getByRole('link', { name: 'About' })).toHaveAttribute('href', '/about')
+    })
   })
 })
