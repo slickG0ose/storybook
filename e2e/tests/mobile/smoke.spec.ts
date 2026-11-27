@@ -119,6 +119,10 @@ const ROUTES: RouteCase[] = [
     path: '/privacy',
     ready: (page) => expect(page.getByRole('heading', { name: 'Privacy', level: 1 })).toBeVisible(),
   },
+  {
+    path: '/about',
+    ready: (page) => expect(page.getByRole('heading', { name: 'Stories your family makes together', level: 1 })).toBeVisible(),
+  },
 ];
 
 /** Clears cart/auth/theme state, optionally seeds a cart, then lands on the route. */

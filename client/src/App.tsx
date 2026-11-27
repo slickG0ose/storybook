@@ -15,6 +15,7 @@ import MyBooks from './pages/MyBooks'
 import Admin from './pages/Admin'
 import NotFound from './pages/NotFound'
 import Privacy from './pages/Privacy'
+import About from './pages/About'
 import { commerceEnabled } from './lib/commerce'
 import { titleForPath } from './lib/pageTitle'
 
@@ -71,6 +72,7 @@ function App() {
             <Route path="/my-books" element={<MyBooks />} />
             <Route path="/admin" element={<Admin />} />
             <Route path="/privacy" element={<Privacy />} />
+            <Route path="/about" element={<About />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </ErrorBoundary>
@@ -102,6 +104,9 @@ function App() {
             </Link>
             <Link to="/my-books" className={FOOTER_LINK}>
               Your library
+            </Link>
+            <Link to="/about" className={FOOTER_LINK}>
+              About
             </Link>
             <Link to="/privacy" className={FOOTER_LINK}>
               Privacy

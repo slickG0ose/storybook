@@ -15,7 +15,7 @@ export const pwaOptions: Partial<VitePWAOptions> = {
   manifest: {
     name: 'StoryBook Storefront',
     short_name: 'StoryBook',
-    description: "Create and collect one-of-a-kind AI children's books.",
+    description: "Create and collect one-of-a-kind children's books, made by you with AI.",
     // Base-relative, NOT '/'. GitHub Pages serves this app under /storybook/ (see
     // deploy-pages.yml building with VITE_BASE_PATH=/storybook/), so an absolute
     // start_url boots the installed app straight to a 404.
